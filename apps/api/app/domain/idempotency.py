@@ -96,6 +96,7 @@ RESOURCE_EXPERIMENT = "experiment"
 RESOURCE_DECISION_RECORD = "decision_record"
 RESOURCE_SERVICE_TOKEN = "service_token"
 RESOURCE_BATCH_PREDICTION = "batch_prediction"
+RESOURCE_IMPROVE_RUN = "improve_run"  # P5.4-A3: a loop start or an acceptance
 
 CK_IDEMPOTENCY_KEYS_PRINCIPAL_KIND = "principal_kind IN ('user', 'service_token')"
 CK_IDEMPOTENCY_KEYS_OPERATION = (

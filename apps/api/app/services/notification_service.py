@@ -481,6 +481,8 @@ _HEADLINES = {
     "scoring_completed": "A scoring you started finished; its predictions are ready.",
     "drift_alert": "Weekly monitoring found an alert-level change in the inputs or predictions of the model in "
                    "use. DCLab did not change or retrain anything.",
+    "below_floor": "Real outcomes fell below a floor set for this project (precision or recall of the model in "
+                   "use). DCLab did not change or retrain anything.",
 }
 _QUOTA_LABELS = {"compute_seconds_month": "monthly compute time", "storage_bytes": "storage",
                  "runs_per_day": "daily runs and scorings"}
@@ -497,8 +499,8 @@ def _headline(kind: str, code: str) -> str:
         if code == "scoring_completed":
             return "This week's scheduled scoring finished; the weekly list is ready."
         return OUTCOME_MESSAGES.get(code) or "This week's scheduled scoring stopped with an error."
-    if kind == n.KIND_DRIFT_ALERT:
-        return _HEADLINES["drift_alert"]
+    if kind == n.KIND_DRIFT_ALERT:  # D5b: a floor alert is named as such, never as drift
+        return _HEADLINES["below_floor" if code == "below_floor" else "drift_alert"]
     if kind == n.KIND_RUN_FAILED and code not in _HEADLINES:
         return "A scoring you started stopped with an error."
     return _HEADLINES.get(code, n.LABELS[kind] + ".")

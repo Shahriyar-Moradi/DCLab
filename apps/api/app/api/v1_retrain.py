@@ -218,7 +218,8 @@ def read_retrain_status(
     db: Session = Depends(get_db),
 ) -> RetrainStatusRead:
     """What the system does on its own, for the Monitoring card: the policy, the state (``idle``,
-    ``drift_found``, ``retraining``, ``ready_to_compare``, ``waiting_for_you``, ``switched``,
+    ``drift_found``, ``below_floor`` (real outcomes below a floor), ``retraining``, ``ready_to_compare``,
+    ``waiting_for_you``, ``switched``,
     ``kept``), the newest retrain, its comparison with the model in use (same kind of test, latest
     months; or why it is not comparable), the switch proposal and the real outcomes of the model in
     use beside it (not the same data). Service tokens get the state without the comparison figures."""

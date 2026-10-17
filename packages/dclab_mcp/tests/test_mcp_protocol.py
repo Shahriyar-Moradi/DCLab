@@ -30,9 +30,10 @@ READ_TOOLS = {"inspect_project", "inspect_dataset", "get_experiment", "compare_e
               "get_operating_points",  # P5.2-A
               "list_releases",  # P7.2-A
               "get_scoring_schedule",  # weekly scoring
-              "get_monitoring"}  # P7.4-A
+              "get_monitoring",  # P7.4-A
+              "get_improve_run"}  # P5.4-A3
 WRITE_TOOLS = {"create_problem_spec", "propose_problem_spec", "run_experiment", "branch_experiment",
-               "predict", "record_decision", "request_agent_review"}
+               "predict", "record_decision", "request_agent_review", "improve"}
 PACKAGES = Path(__file__).resolve().parents[2]
 DEAD_API = "http://127.0.0.1:9"  # nothing listens: any /v1 call is a network error
 

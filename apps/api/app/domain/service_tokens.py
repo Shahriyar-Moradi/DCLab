@@ -108,6 +108,11 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             # retrain and changing the policy stay with people.
             "/v1/projects/{project_id}/retrain-policy",
             "/v1/projects/{project_id}/retrain-status",
+            # P5.4-A3: improve loops (CV evidence only, no person ids, no key naming the holdout).
+            "/v1/improve-runs/{improve_run_id}",
+            "/v1/projects/{project_id}/improve-runs",
+            # D5b: the monitoring thresholds in force (no user ids); changing them stays with people.
+            "/v1/projects/{project_id}/monitoring-thresholds",
             # P7.6-A: the Business view; tokens get the final-test headline withheld (no person ids).
             "/v1/projects/{project_id}/outcomes",
             "/v1/outcomes/projects",  # id and name of projects with a model in use
@@ -140,6 +145,10 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("POST", "/v1/experiments"): SCOPE_EXPERIMENTS_WRITE,
     ("POST", "/v1/experiments/{experiment_id}/branches"): SCOPE_EXPERIMENTS_WRITE,
     ("POST", "/v1/experiments/{experiment_id}/cancel"): SCOPE_EXPERIMENTS_WRITE,
+    # P5.4-A3 (ADR 0007 §10): a token start is clamped (budget only lowered, 5 per hour, half the
+    # comparison bound, no fresh split); a token cancels only a queued / running loop and never accepts.
+    ("POST", "/v1/improve-runs"): SCOPE_EXPERIMENTS_WRITE,
+    ("POST", "/v1/improve-runs/{improve_run_id}/cancel"): SCOPE_EXPERIMENTS_WRITE,
     # Scoring runs a worker job like a run; it never changes the model or a ref.
     ("POST", "/v1/model-versions/{model_version_id}/predictions"): SCOPE_EXPERIMENTS_WRITE,
     # P6.6-A: queues a specialist run that only proposes (the harness authorizes the token again).
@@ -187,6 +196,11 @@ HUMAN_ONLY_ROUTES = frozenset(
         # are a person's acts, even for a token with experiments:write (ADR 0012).
         ("POST", "/v1/projects/{project_id}/retrain"),
         ("PUT", "/v1/projects/{project_id}/retrain-policy"),
+        # P5.4-A3 (ADR 0007 §7): accepting an improve try (or keeping the current model) is a person's act
+        # (403 human_session_required for any token).
+        ("POST", "/v1/improve-runs/{improve_run_id}/accept"),
+        # D5b: changing the monitoring thresholds is an owner's or administrator's act (ADR 0012 D4).
+        ("PUT", "/v1/projects/{project_id}/monitoring-thresholds"),
         # P6.3-B2: the in-app assistant is for signed-in people (403 human_session_required).
         ("GET", "/v1/assistant/threads"),
         ("POST", "/v1/assistant/threads"),

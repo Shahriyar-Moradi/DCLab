@@ -18,10 +18,10 @@ const own = <T>(table: Record<string, T>, key: string): T | undefined => (Object
 const num = (value: unknown): number | null => (typeof value === "number" && Number.isFinite(value) ? value : null);
 
 /** Shown above the tries, always. */
-export const STANDING_BANNER = "Every try is scored on the final test set once. Do not pick a model by its final-test number.";
+export const STANDING_BANNER = "Every try started here is scored on the final test set once. Do not pick a model by its final-test number.";
 export const NOTHING_UNATTENDED = "This page never starts a try by itself. Tries on this list can also be started from code or by a connected tool.";
 export const SAME_FOLDS_NOTE = "A try trains again on the same folds as the run in use, so the two can be compared fairly on cross-validation. It is also scored once on the same final test set; that number is not used to compare.";
-export const SPEND_NOTE = "Every try spends one look at the final test set of this test design.";
+export const SPEND_NOTE = "Every try started here spends one look at the final test set of this test design.";
 export const NOISE_NOTE = "A gain smaller than the noise margin could be luck. Most tries end within the noise.";
 export const KEEP_CURRENT_NOTE = "Keeping the current model is a normal result. If no try beats the noise, leave the model in use as it is. Nothing is recorded when you keep it.";
 export const VIEWER_NOTE = "Your role can read this page but not start a try. Ask someone who can change this workspace.";
@@ -224,13 +224,22 @@ export function newModelsText(n: number | null | undefined): string | null {
 
 // --- tries: the runs based on the run in use ----------------------------------------------
 
-export type RunLike = { id: string; status: string; created_at: string; intent?: string | null; parent_experiment_id?: string | null };
+export type RunLike = { id: string; status: string; created_at: string; intent?: string | null; parent_experiment_id?: string | null; evidence_mode?: string | null };
 
-/** The runs whose parent is the run in use, newest first. A run with no recorded parent is never one of them. */
+/**
+ * The runs whose parent is the run in use, newest first. A run with no recorded parent is never one of them. Sealed improvement-loop
+ * tries are left out: they never score the final test set, so the "one look per try" wording here does not apply to them.
+ */
 export function triesOf(runs: ReadonlyArray<RunLike>, runInUseId: string | null | undefined): RunLike[] {
   if (!runInUseId) return [];
-  return runs.filter((r) => r.parent_experiment_id === runInUseId).sort((a, b) => b.created_at.localeCompare(a.created_at) || a.id.localeCompare(b.id));
+  return runs.filter((r) => r.parent_experiment_id === runInUseId && r.evidence_mode !== "sealed").sort((a, b) => b.created_at.localeCompare(a.created_at) || a.id.localeCompare(b.id));
 }
+
+/** How many sealed improvement-loop tries are based on the run in use (shown on the Improvement loop tab, not here). */
+export function sealedTriesOf(runs: ReadonlyArray<RunLike>, runInUseId: string | null | undefined): number {
+  return runInUseId ? runs.filter((r) => r.parent_experiment_id === runInUseId && r.evidence_mode === "sealed").length : 0;
+}
+export const LOOP_TRIES_NOTE = "Loop tries are on the Improvement loop tab. They are sealed: judged on cross-validation only, and the final test set is not used.";
 
 /** The finished tries whose verdict is read (a cap keeps the page light; the rest say so). */
 export const VERDICT_CAP = 12;

@@ -96,7 +96,7 @@ test("UI-E: approving a model is undone from Model → Approved for scoring; oth
   assert.equal(approvalsHref("not-a-uuid"), null);
 });
 
-test("UI-E: the four event kinds become plain sentences with a link; anything else is not a log row", () => {
+test("UI-E + D5c: the six event kinds become plain sentences with a link; anything else is not a log row", () => {
   const names = new Map([[`experiment:${ID}`, "Run 3"], [`model_version:${MV}`, "Model v2"]]);
   const up = eventRow(ev({}), P, names)!;
   assert.deepEqual([up.who, up.whoKind, up.what], ["You", "human", "Uploaded a training file"]);
@@ -116,7 +116,7 @@ test("UI-E: the four event kinds become plain sentences with a link; anything el
   assert.equal(ft.href, `/projects/${P}/experiments/${ID}`);
   assert.doesNotMatch(ft.what, /\d\.\d/); // no final test value
   const drift = eventRow(ev({ kind: "drift_alert", status: "alert", actor: { kind: "rule" }, subject: { kind: "model_version", id: MV }, link: { kind: "monitoring_window", id: ID } }), P, names)!;
-  assert.match(drift.what, /^Weekly monitoring marked a week as alert for Model v2/);
+  assert.match(drift.what, /^Weekly monitoring marked a week as alert for Model v2: drift, or real outcomes below a floor$/);
   assert.equal(drift.href, `/projects/${P}/monitoring`);
   assert.equal(drift.who, "The rules");
   assert.match(eventRow(ev({ kind: "drift_alert", subject: { kind: "model_version", id: null } }), P, names)!.what, /for the model:/);
@@ -127,7 +127,20 @@ test("UI-E: the four event kinds become plain sentences with a link; anything el
   assert.equal(sched("__proto__").what, "Weekly scoring ran");
   assert.equal(sched(null).href, `/projects/${P}/predictions`);
   for (const kind of ["decision", "run_finished", "run_queued", "agent_run_started", "__proto__"]) assert.equal(eventRow(ev({ kind }), P, names), null, kind);
-  assert.equal(LOG_EVENT_KINDS.size, 4);
+  assert.equal(LOG_EVENT_KINDS.size, 6);
+  // D5c: retrain events: who started it (a person, the rule's question, Automatic) and the comparison outcome, never figures.
+  const rr = (status: string | null, subject = { kind: "experiment", id: ID }) => eventRow(ev({ kind: "retrain_requested", status, actor: { kind: status === "person" ? "person" : "rule", is_you: true }, subject, link: { kind: "retrain_request", id: MV } }), P, names)!;
+  assert.deepEqual([rr("person").what, rr("person").who, rr("person").href, rr("person").linkLabel], ["Started a retrain on newest data", "You", `/projects/${P}/experiments/${ID}`, "Open Run 3"]);
+  assert.match(rr("auto").what, /automatically \(the retrain policy is Automatic\)$/);
+  const asked = rr("ask", { kind: "model_version", id: MV });
+  assert.deepEqual([asked.what, asked.href, asked.linkLabel], ["Asked in the Inbox: retrain on newest data?", `/projects/${P}/monitoring`, "Open Monitoring"]);
+  assert.equal(rr("__proto__").what, "Retrain on newest data");
+  const rc = (status: string) => eventRow(ev({ kind: "retrain_compared", status, actor: { kind: "rule" }, subject: { kind: "experiment", id: ID }, link: { kind: "retrain_comparison", id: MV } }), P, names)!;
+  assert.match(rc("compared").what, /same kind of test, latest months/);
+  assert.equal(rc("not_comparable").what, "Could not compare the retrained model with the model in use");
+  for (const row of [rr("person"), rr("auto"), asked, rc("compared"), rc("not_comparable")]) {
+    for (const text of [row.what, row.undo, row.linkLabel ?? ""]) { assert.doesNotMatch(text, BANNED, text); assert.doesNotMatch(text, /same test|\d\.\d/, text); }
+  }
   assert.equal(eventRow(ev({ actor: { kind: "robot" } }), P, names)!.who, "Someone else");
   for (const row of [up, ft, drift, ...["queued", "failed_to_queue", "skipped_missed"].map(sched)]) {
     for (const text of [row.what, row.undo, row.linkLabel ?? "", row.who]) assert.doesNotMatch(text, BANNED, text);

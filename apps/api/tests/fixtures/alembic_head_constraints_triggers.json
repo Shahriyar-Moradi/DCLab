@@ -1246,6 +1246,16 @@
       "definition": "CHECK ((((char_length((key_column)::text) >= 1) AND (char_length((key_column)::text) <= 256)) AND ((char_length((outcome_column)::text) >= 1) AND (char_length((outcome_column)::text) <= 256)) AND ((key_column)::text <> (outcome_column)::text)))"
     },
     {
+      "table": "monitoring_thresholds",
+      "name": "ck_monitoring_thresholds_bounds",
+      "definition": "CHECK (((psi_watch >= (0.05)::double precision) AND (psi_watch <= (0.5)::double precision) AND (psi_alert > psi_watch) AND (psi_alert <= (1.0)::double precision) AND ((precision_floor IS NULL) OR ((precision_floor >= (0.01)::double precision) AND (precision_floor <= (0.99)::double precision))) AND ((recall_floor IS NULL) OR ((recall_floor >= (0.01)::double precision) AND (recall_floor <= (0.99)::double precision)))))"
+    },
+    {
+      "table": "monitoring_thresholds",
+      "name": "ck_monitoring_thresholds_version",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
       "table": "monitoring_windows",
       "name": "ck_monitoring_windows_counts",
       "definition": "CHECK (((revision >= 1) AND (n_rows >= 0) AND (n_batch_predictions >= 1)))"
@@ -1269,6 +1279,11 @@
       "table": "monitoring_windows",
       "name": "ck_monitoring_windows_summary_code",
       "definition": "CHECK (((summary_code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text))"
+    },
+    {
+      "table": "monitoring_windows",
+      "name": "ck_monitoring_windows_thresholds_used",
+      "definition": "CHECK (((thresholds_used IS NULL) OR ((jsonb_typeof(thresholds_used) = 'object'::text) AND (octet_length((thresholds_used)::text) <= 1024))))"
     },
     {
       "table": "monitoring_windows",
@@ -2321,6 +2336,11 @@
       "table": "monitoring_outcome_sets",
       "name": "monitoring_outcome_sets_append_only",
       "definition": "CREATE TRIGGER monitoring_outcome_sets_append_only BEFORE DELETE OR UPDATE ON public.monitoring_outcome_sets FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "monitoring_thresholds",
+      "name": "monitoring_thresholds_append_only",
+      "definition": "CREATE TRIGGER monitoring_thresholds_append_only BEFORE DELETE OR UPDATE ON public.monitoring_thresholds FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "monitoring_windows",

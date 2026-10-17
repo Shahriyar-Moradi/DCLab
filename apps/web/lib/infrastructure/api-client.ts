@@ -125,6 +125,15 @@ async function request<T>(
   init?: RequestInit,
   params?: Record<string, string | number | boolean | undefined>,
 ): Promise<T> {
+  return (await send(path, schema, init, params)).data;
+}
+
+async function send<T>(
+  path: string,
+  schema: ZodType<T>,
+  init?: RequestInit,
+  params?: Record<string, string | number | boolean | undefined>,
+): Promise<{ data: T; etag: string | null }> {
   const method = (init?.method || "GET").toUpperCase();
   const context = requestWorkspace(path);
   const headers = await mergeRequestHeaders(path, method, context, init);
@@ -145,7 +154,7 @@ async function request<T>(
   if (!parsed.success) {
     throw new ApiError(response.status, parsed.error.flatten(), "The API returned a response this app could not read.");
   }
-  return parsed.data;
+  return { data: parsed.data, etag: response.headers.get("ETag") };
 }
 
 export function apiGet<T>(
@@ -155,6 +164,16 @@ export function apiGet<T>(
   options?: { signal?: AbortSignal },
 ): Promise<T> {
   return request(path, schema, { method: "GET", signal: options?.signal }, params);
+}
+
+/** A GET that also returns the response's `ETag` (the `If-Match` of a later command), or null when none was sent. */
+export function apiGetTagged<T>(
+  path: string,
+  schema: ZodType<T>,
+  params?: Record<string, string | number | boolean | undefined>,
+  options?: { signal?: AbortSignal },
+): Promise<{ data: T; etag: string | null }> {
+  return send(path, schema, { method: "GET", signal: options?.signal }, params);
 }
 
 export async function apiDownload(

@@ -77,6 +77,9 @@ MONITORING_NOTE = ("Read-only and deterministic: drift means the inputs look dif
                    "model is wrong; outcome metrics are real results of scored rows (never the final test set) and "
                    "appear only after a person links them in DCLab Studio. Monitoring never retrains or switches a "
                    "model.")
+IMPROVE_NOTE = ("Each try is a sealed branch on the same folds, judged per fold against noise on cross-validation; "
+                "the final test set is scored once, only after a person accepts a try in DCLab Studio (an agent "
+                "never accepts).")
 AGENT_DECISION_TYPES = ("experiment_accepted", "experiment_rejected")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 
@@ -271,7 +274,27 @@ def _experiment(e: Experiment) -> dict[str, Any]:
         "failure_reason": untrusted(e.failure_reason, 500), "lineage": e.lineage.model_dump(mode="json"),
         "change_set": untrusted(e.change_set, 2000), "metrics": _metrics(e.metrics),
         "diff_vs_parent": bound(cv_only(e.diff_vs_parent), max_items=20),
+        "evidence_mode": e.evidence_mode,  # sealed: an improve try, the final test set not used
     }
+
+
+def _improve_run(r: Any) -> dict[str, Any]:
+    """Codes, ids and CV numbers only (as ``app.agents.tools`` ``improve_run_summary``)."""
+
+    tries = [{"seq": it.seq, "kind": it.kind, "status": it.status, "reason": it.reason, "action": bound(it.action),
+              "experiment_id": _sid(it.experiment_id), "incumbent_experiment_id": _sid(it.incumbent_experiment_id),
+              "planned_candidate_ids": list(it.planned_candidate_ids[:LIST_LIMIT]),
+              "comparison": bound(cv_only(it.comparison)), "training_seconds": it.training_seconds}
+             for it in r.iterations[:LIST_LIMIT]]
+    return {"id": str(r.id), "project_id": str(r.project_id), "split_plan_id": str(r.split_plan_id),
+            "start_experiment_id": str(r.start_experiment_id), "incumbent_experiment_id": str(r.incumbent_experiment_id),
+            "final_experiment_id": _sid(r.final_experiment_id), "status": r.status, "outcome": r.outcome,
+            "stop_reason": r.stop_reason, "stop_detail": r.stop_detail, "goal": bound(r.goal), "budget": bound(r.budget),
+            "planned_comparisons": r.planned_comparisons, "validation_folds": r.validation_folds,
+            "sealed_set_label": r.sealed_set_label, "final_attempts": r.final_attempts,
+            "accepted_iteration_seq": r.accepted_iteration_seq, "started_by": r.started_by, "ai": r.ai,
+            "training_seconds_spent": r.training_seconds_spent, "created_at": _iso(r.created_at),
+            "finished_at": _iso(r.finished_at), "iterations": tries}
 
 
 def _decision(r: DecisionRecord) -> dict[str, Any]:
@@ -354,7 +377,9 @@ def _monitoring(view: Any) -> dict[str, Any]:
     thresholds = {"psi_watch": t.psi_watch, "psi_alert": t.psi_alert, "significance_level": t.significance_level,
                   "flagged_share_relative_watch": t.flagged_share_relative_watch,
                   "flagged_share_absolute_watch": t.flagged_share_absolute_watch, "min_rows": t.min_rows,
-                  "min_labels": t.min_labels, "min_per_class": t.min_per_class}
+                  "min_labels": t.min_labels, "min_per_class": t.min_per_class,
+                  # D5b: the project's floors (null = off) and the thresholds' version (0 = defaults).
+                  "precision_floor": t.precision_floor, "recall_floor": t.recall_floor, "version": t.version}
     return {"project_id": str(view.project_id), "enabled": view.enabled, "status": view.status,
             "model_version_id": _sid(view.model_version_id), "model_version": view.model_version,
             "model_release_id": _sid(view.model_release_id),
@@ -723,6 +748,13 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
             }}
         return run(call)
 
+    def get_improve_run(improve_run_id: Id) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            run_ = api.improve_runs.get(uuid_arg(improve_run_id, "improve_run_id"))
+            api.experiments.get(run_.start_experiment_id)  # as the catalog's fetch (one dataset, authorized)
+            return {"improve_run": _improve_run(run_), "note": IMPROVE_NOTE}
+        return run(call)
+
     def get_prediction(prediction_id: Id) -> CallToolResult:
         return run(lambda: {"prediction": _prediction(api.predictions.get(uuid_arg(prediction_id, "prediction_id")))})
 
@@ -808,9 +840,12 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
         tool(get_monitoring, read, "Monitoring of a project's model in use, read-only and deterministic: the latest "
              "weekly status (ok / watch / alert / not_enough_data) and the last 12 weeks (Monday 00:00 UTC) with the "
              "largest input drift (PSI vs the training rows), score drift, rows scored and, once a person linked real "
-             "outcomes, labelled rows, coverage and the primary metric on them; code-owned thresholds and the alert "
-             "finding code. Drift means the inputs look different from training, not that the model is wrong; it "
+             "outcomes, labelled rows, coverage and the primary metric on them; the project's thresholds in force "
+             "(version, precision / recall floors) and the alert finding code. Drift means the inputs look different from training, not that the model is wrong; it "
              "never retrains or switches a model.")
+        tool(get_improve_run, read, "One improve loop: status, outcome and stop reason, goal and budget, and every "
+             "try (a sealed branch on the same folds) with its per-fold cross-validation verdict. Never a final-test "
+             "value; only a person accepts a try, in DCLab Studio.")
         tool(get_prediction, read, "Batch prediction: status, row counts, feature-contract check (required / "
              "missing / ignored columns), error code; never predicted rows or storage locations.")
         tool(get_impact, read, "Downstream closure of one graph node: which specs, datasets, split plans, recipes, "
@@ -926,6 +961,19 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
             return {"experiment": _experiment(child), "replayed": child.idempotent_replay}
         return run(call)
 
+    def improve(experiment_id: Annotated[str, Field(description="The completed, locked run to improve (its split plan and folds are reused).")],  # noqa: E501
+                goal: Annotated[dict[str, Any], Field(description="{\"plain\": {\"metric\": <the run's primary metric>}} or {\"objective\": {\"maximize\": \"precision\", \"constraints\": [{\"metric\": \"recall\", \"op\": \">=\", \"value\": 0.6}]}}, optionally with a target.")],  # noqa: E501
+                budget: Annotated[dict[str, Any] | None, Field(description="Optional lower limits: max_iterations (<= 6), max_wall_seconds (<= 7200), patience, comparison_bound.")] = None,  # noqa: E501
+                idempotency_key: Salt = None) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            eid = uuid_arg(experiment_id, "experiment_id")
+            key = command_key("improve", {"experiment_id": eid, "goal": goal, "budget": budget}, idempotency_key)
+            started = api.improve_runs.start(from_experiment_id=eid, goal=goal, budget=budget, idempotency_key=key)
+            return {"improve_run": _improve_run(started), "replayed": started.idempotent_replay,
+                    "note": "Queued; poll get_improve_run. Only a person accepts a try (in DCLab Studio); this "
+                            "token can never accept."}
+        return run(call)
+
     def predict(model_version_id: Id,
                 dataset_id: Annotated[str, Field(description="Dataset UUID of the model's project (uploaded with purpose=scoring).")],  # noqa: E501
                 output_format: Annotated[Literal["csv", "parquet"], Field()] = "csv",
@@ -997,6 +1045,9 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
          "proposal a human accepts in DCLab Studio." + _WRITE_NOTE)
     tool(branch_experiment, write, "Branch a completed experiment with typed changes; it reuses the parent's "
          "split plan and holdout." + _WRITE_NOTE)
+    tool(improve, write, "Start an improve loop on a completed run: a goal and a budget; each try is a sealed branch "
+         "on the same folds (the final test set is not used), judged per fold against noise. It never accepts a "
+         "try: only a person does, in DCLab Studio, and only then is the final test set scored once." + _WRITE_NOTE)
     tool(predict, write, "Score a dataset with a model version (the worker scores with the locked pipeline and "
          "threshold). Writes a predictions file only; no refs or decisions change." + _WRITE_NOTE)
     tool(request_agent_review, write, "Queue a specialist review: experiment_critic (a completed experiment) or "

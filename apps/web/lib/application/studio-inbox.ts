@@ -4,6 +4,7 @@
  */
 import { safeInternalHref } from "../../components/studio/safe-href.ts";
 import { isUuid, plainText } from "./command-search.ts";
+import { improveNoticeHref } from "./studio-improve-loop.ts";
 import { weekKey, weekLabel } from "./studio-monitoring.ts";
 import { statusWords } from "./studio-runs.ts";
 import { envelope, mapWizardError, type PlainError } from "./studio-wizard.ts";
@@ -45,6 +46,9 @@ const ROUTES: Record<string, Array<[string, ActionRoute]>> = {
   "decision_proposal|accept": [["POST /v1/decisions/{decision_id}/accept", "decision_accept"], ["POST /v1/projects/{project_id}/refs/{ref_kind}", "ref_move_accept"]],
   "decision_proposal|reject": [["POST /v1/decisions/{decision_id}/reject", "decision_reject"]],
   "decision_proposal|supersede": [["POST /v1/decisions/{decision_id}/supersede", "decision_supersede"]],
+  // D5c: Switch = the existing ref-move approval of the retrain rule's proposal; Keep = reject it.
+  "challenger_ready|accept": [["POST /v1/projects/{project_id}/refs/{ref_kind}", "ref_move_accept"]],
+  "challenger_ready|reject": [["POST /v1/decisions/{decision_id}/reject", "decision_reject"]],
   "agent_proposal|accept": [["POST /v1/proposals/{proposal_id}/accept", "proposal_accept"]],
   "agent_proposal|reject": [["POST /v1/proposals/{proposal_id}/reject", "proposal_reject"]],
   "agent_proposal|revert": [["POST /v1/proposals/{proposal_id}/revert", "proposal_revert"]],
@@ -186,7 +190,11 @@ const RUN_WORDS: Record<string, string> = { completed: "finished", failed: "fail
 
 /** The card's plain title. Run names come from the caller ("Run 3"); the server's fixed summaries are only matched, never shown. */
 export function inboxTitle(item: Pick<InboxItemLike, "kind" | "subject"> & { summary: string; decision_type?: string | null; proposal_type?: string | null; status: string; tab?: string | null }, runName?: string | null): string {
-  if (item.kind === "drift_alert") return item.tab === "done" ? "Drift alert on an earlier week or model" : "Drift alert on the model in use";
+  // The item does not say whether drift or a floor on real outcomes raised the alert, so the title names neither.
+  if (item.kind === "drift_alert") return item.tab === "done" ? "Alert on an earlier week or model" : "Alert on the model in use";
+  if (item.kind === "retrain_ask") return item.tab === "done" || item.status === "closed" ? "Retrain on newest data? (answered or no longer current)" : "Retrain on newest data?";
+  if (item.kind === "challenger_ready") return lookup(CHALLENGER_TITLE, item.status, "Retrained model: decided");
+  if (item.kind === "improve_run") return lookup(IMPROVE_TITLE, item.status, "Improvement loop stopped");
   if (item.kind === "decision_proposal") {
     return inboxQuestion(item.decision_type ?? "");
   }
@@ -202,9 +210,15 @@ export function inboxTitle(item: Pick<InboxItemLike, "kind" | "subject"> & { sum
   return plainText(item.summary, 100);
 }
 
+const IMPROVE_TITLE: Record<string, string> = {
+  waiting_user: "Improvement loop waiting for you", blocked: "Improvement loop stopped: a trust check blocks it", failed: "Improvement loop failed",
+};
+const CHALLENGER_TITLE: Record<string, string> = { proposed: "Retrained model ready to compare", accepted: "Switched to the retrained model", rejected: "Kept the model in use" };
+
 const OUTCOME_WORDS: Record<string, string> = {
   proposed: "waiting for your decision", accepted: "approved", rejected: "rejected", superseded: "corrected", applied: "applied", reverted: "undone",
-  expired: "expired", needs_input: "needs your answer", alert: "alert",
+  expired: "expired", needs_input: "needs your answer", alert: "alert", asked: "waiting for your answer", closed: "closed",
+  waiting_user: "waiting for your decision", blocked: "blocked",
 };
 /** The state of an item in words (run states use the run words). */
 export function outcomeWords(status: string): string {
@@ -222,8 +236,11 @@ const PROPOSAL_APPROVE: Record<string, string> = {
 };
 
 /** What approving or rejecting does, from the route the server named and the suggestion's type. Nothing here claims more than that. */
-export function approvalNote(item: { proposal_type?: string | null }, route: ActionRoute | null, name: string): string | null {
+export function approvalNote(item: { proposal_type?: string | null; kind?: string }, route: ActionRoute | null, name: string): string | null {
   if (route === null) return null;
+  if (item.kind === "challenger_ready") {
+    return name === "reject" ? "Keep records that you said no: the model in use stays, and nothing is deleted." : "Switch makes the retrained model the model in use, with its data, test design and features. It is recorded in History.";
+  }
   if (name === "reject") return "Rejecting records that you said no. Nothing else changes.";
   if (route === "ref_move_accept") return "Approving changes which version the project uses (for example the model in use). It is recorded in History.";
   if (route === "decision_accept") return "Approving records your decision in History.";
@@ -279,11 +296,36 @@ export function driftStats(m: InboxMonitoringLike | null | undefined): Array<{ l
 /** What a drift alert means, in fixed words; the newest week of the model in use waits for a person, earlier ones are done. */
 export function driftSentence(item: { tab: string; monitoring?: InboxMonitoringLike | null }): string {
   const week = weekKey(item.monitoring?.window_start) ? `the ${weekLabel(item.monitoring?.window_start)}` : "a week";
-  const lead = `Weekly monitoring marked ${week} as alert: the inputs or the scores of this model look different from training.`;
-  const meaning = "That does not mean the model is wrong, and DCLab did not retrain or switch it.";
+  const lead = `Weekly monitoring marked ${week} as alert: the inputs or the scores of this model look different from training (drift), or its real outcomes fell below a floor set for this project.`;
+  const meaning = "Monitoring says which. It does not mean the model is wrong, and nothing switched the model in use.";
   return item.tab === "done"
     ? `${lead} ${meaning} This is an earlier week, or a model that is no longer in use; Monitoring has the latest status.`
     : `${lead} ${meaning} Open Monitoring to see which columns moved, then decide what to do; going back to an earlier model is your choice.`;
+}
+
+/** D5c: what the retrain rule's question and the retrained model's card mean, in fixed words. */
+export function retrainItemSentence(item: { kind: string; tab: string; status: string }): string | null {
+  if (item.kind === "retrain_ask") {
+    return item.tab === "done" || item.status === "closed"
+      ? "The retrain rule asked whether to retrain on a newer labelled file. It was answered, or the model in use changed since."
+      : "The newest week of the model in use is an alert and a person uploaded a newer labelled file. The retrain policy is Ask me, so nothing started. Open Monitoring to retrain on that file; switching stays your choice.";
+  }
+  if (item.kind === "challenger_ready") {
+    if (item.status === "proposed") return "A retrained model finished. Monitoring shows it beside the model in use (same kind of test, latest months) or why they could not be compared. Switch to it or keep the model in use.";
+    return "This retrained model was decided. Monitoring shows the comparison.";
+  }
+  return null;
+}
+
+/** D4e: what an improvement-loop notice means, and the loop view it opens (UUIDs only; null for any other kind). */
+export function improveItemSentence(item: { kind: string; status: string }): string | null {
+  if (item.kind !== "improve_run") return null;
+  if (item.status === "waiting_user") return "A try beat the noise on cross-validation. Open the loop to accept it (one final run, one final-test number) or keep the current model.";
+  if (item.status === "blocked") return "A trust check of the starting run blocks the loop. Nothing was changed.";
+  return "The loop stopped without a change. Open it to see why.";
+}
+export function improveItemHref(item: { kind?: unknown; project_id?: unknown; source?: { kind?: unknown; id?: unknown } | null }): string | null {
+  return improveNoticeHref(item);
 }
 
 /** Under the stats: the numbers are the week's largest changes; whether each column counts is decided on Monitoring. */

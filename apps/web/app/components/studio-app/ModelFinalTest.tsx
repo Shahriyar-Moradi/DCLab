@@ -38,7 +38,7 @@ export function ModelFinalTest({ projectId, modelVersionId }: { projectId: strin
         purpose="See how this model did on rows it never saw while it was built: the final test, scored once."
         howTo="Compare the final test with cross-validation: similar numbers mean the model holds up on new rows. Read the table of right and wrong answers for a yes/no model."
         youGet="The final test scores beside cross-validation, how many rows were tested, and how many were caught, missed or flagged by mistake."
-        attention={<>This model&apos;s run scored the <Term definition={GLOSSARY.finalTest.definition}>final test</Term> once, for this model only; each Improve try scores it again for its own model, so never pick a model by its final-test number.</>}
+        attention={<>This model&apos;s run scored the <Term definition={GLOSSARY.finalTest.definition}>final test</Term> once, for this model only; each try started by hand scores it again for its own model (improvement-loop tries never do), so never pick a model by its final-test number.</>}
       />
       <Card title="Final test (used once per run)" aside={<Pill tone="det">scored once by this run</Pill>}>
         <p className="muted">{FINAL_EVAL_SUBHEADING}</p>

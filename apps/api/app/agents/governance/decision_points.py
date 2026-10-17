@@ -85,6 +85,7 @@ _LEAD_TOOLS = (
     "run_experiment",
     "branch_experiment",
     "predict",
+    "improve",  # P5.4-A3 (ADR 0007 §10): an L1 ToolCallProposal; a person accepts
 )
 
 _POINTS = (

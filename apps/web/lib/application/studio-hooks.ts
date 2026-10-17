@@ -75,6 +75,8 @@ const ExperimentItemSchema = z.object({
   split_plan_id: nullableString,
   has_change_set: z.boolean().optional(),
   ended_at: nullableString,
+  /** `sealed`: an improvement-loop try, judged on cross-validation only (the final test set was not used). */
+  evidence_mode: z.enum(["scored", "sealed"]).optional(),
 });
 export type StudioExperimentItem = z.infer<typeof ExperimentItemSchema>;
 const ExperimentPageSchema = z.object({ items: z.array(ExperimentItemSchema), limit: z.number(), next_cursor: nullableString });

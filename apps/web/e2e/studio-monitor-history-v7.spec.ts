@@ -127,7 +127,7 @@ test("UI-E: monitoring trends and steps, history events and lineage tab, inbox d
   await expect(psi.locator(".v7-mon-dot.hollow")).toHaveCount(2);
   await expect(psi).toContainText("A hollow dot is above a line but within what chance allows");
   await expect(psi).toContainText("A week with too little data is not judged and is left off the lines");
-  await expect(psi.getByRole("list", { name: "Lines in the chart" })).toContainText("watch 0.10 (set by DCLab)");
+  await expect(psi.getByRole("list", { name: "Lines in the chart" })).toContainText("watch 0.10 (in force now)");
   await page.getByLabel("Column", { exact: true }).selectOption({ label: "monthly_spend" });
   await expect(psi.getByRole("img")).toHaveAttribute("aria-label", /monthly_spend: 14 Sep 0\.02, 21 Sep —, 28 Sep —, 5 Oct 0\.12/);
   await psi.getByText("The numbers as a table").click();
@@ -136,13 +136,16 @@ test("UI-E: monitoring trends and steps, history events and lineage tab, inbox d
   await expect(real.getByRole("img")).toHaveAttribute("aria-label", /Precision: 14 Sep 0\.63, 21 Sep 0\.61, 28 Sep —, 5 Oct —\. Recall: 14 Sep 0\.81, 21 Sep 0\.82, 28 Sep —, 5 Oct —\./);
   await expect(real).toContainText("2 of 4 weeks have no result yet");
   const steps = page.getByTestId("own-steps");
-  await expect(steps.locator("li")).toHaveCount(5);
+  // D5c: the retrain steps come from the real retrain status read (policy Off by default); nothing is "Planned".
+  await expect(steps.locator("li")).toHaveCount(6);
   await expect(steps.locator("li").nth(0)).toContainText("On. The latest check was the week of Mon, 5 Oct 2026 (UTC).");
   await expect(steps.locator("li").nth(1)).toContainText("Alert in the week of Mon, 5 Oct 2026 (UTC)");
   await expect(steps.locator("li").nth(1).locator(".pill.crit")).toHaveText("Alert");
-  await expect(steps.locator("li").nth(2)).toContainText("Planned");
-  await expect(steps.locator("li").nth(3)).toContainText("Planned");
-  await expect(steps.locator("li").nth(4)).toContainText("There is no earlier approved model to go back to.");
+  await expect(steps.locator("li").nth(2)).toContainText("Retraining on its own is off for this project.");
+  await expect(steps.locator("li").nth(3)).toContainText("Nothing to compare until a retrain finishes.");
+  await expect(steps.locator("li").nth(4)).toContainText("Automatic never switches.");
+  await expect(steps.locator("li").nth(5)).toContainText("There is no earlier approved model to go back to.");
+  await expect(steps).not.toContainText("Planned");
   await expect(page.locator("main")).not.toContainText("SERVER");
   expect(await page.locator("main").innerText()).not.toMatch(BANNED);
   await checkPage(page, "monitoring", async () => { await expect(page.getByTestId("own-steps")).toBeVisible(); });
@@ -207,8 +210,8 @@ test("UI-E: monitoring trends and steps, history events and lineage tab, inbox d
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ tab, items: lists[tab] ?? [], next_cursor: null, limit: 20, viewer: { is_agent: false, can_decide: true, can_approve_ai_policy: true } }) });
   });
   await page.goto("/inbox");
-  const card = page.getByRole("article", { name: "Drift alert on the model in use" });
-  await expect(card.getByTestId("drift-sentence")).toHaveText("Weekly monitoring marked the week of Mon, 5 Oct 2026 (UTC) as alert: the inputs or the scores of this model look different from training. That does not mean the model is wrong, and DCLab did not retrain or switch it. Open Monitoring to see which columns moved, then decide what to do; going back to an earlier model is your choice.");
+  const card = page.getByRole("article", { name: "Alert on the model in use" });
+  await expect(card.getByTestId("drift-sentence")).toHaveText("Weekly monitoring marked the week of Mon, 5 Oct 2026 (UTC) as alert: the inputs or the scores of this model look different from training (drift), or its real outcomes fell below a floor set for this project. Monitoring says which. It does not mean the model is wrong, and nothing switched the model in use. Open Monitoring to see which columns moved, then decide what to do; going back to an earlier model is your choice.");
   const stats = card.getByRole("definition");
   await expect(stats).toHaveText(["Mon, 5 Oct 2026", "0.31", "0.12"]);
   await expect(card.getByRole("link", { name: /Open Monitoring/ })).toHaveAttribute("href", `/projects/${projectId}/monitoring`);
@@ -218,7 +221,7 @@ test("UI-E: monitoring trends and steps, history events and lineage tab, inbox d
   // AI is switched off on this server: the agreement pill is hidden.
   await expect(page.getByTestId("inbox-agreement")).toHaveCount(0);
   await expect(page.locator("main")).not.toContainText("SERVER");
-  await checkPage(page, "inbox", async () => { await expect(page.getByRole("article", { name: "Drift alert on the model in use" })).toBeVisible(); });
+  await checkPage(page, "inbox", async () => { await expect(page.getByRole("article", { name: "Alert on the model in use" })).toBeVisible(); });
   await page.getByRole("tab", { name: /Done/ }).click();
   await expect(page.getByTestId("inbox-resolver")).toHaveText("Decided by you");
   await shot(page, "ui-e-inbox-done-light");
@@ -233,6 +236,6 @@ test("UI-E: monitoring trends and steps, history events and lineage tab, inbox d
 
   // Home lists the drift alert with its plain title.
   await page.goto("/home");
-  await expect(page.locator("main")).toContainText("Drift alert on the model in use");
+  await expect(page.locator("main")).toContainText("Alert on the model in use");
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });

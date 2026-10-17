@@ -716,7 +716,9 @@ def test_monitoring_end_to_end_with_planted_drift_and_outcomes(client, db_sessio
     assert "signup_date" not in body["finding"]["title"]
     assert body["thresholds"] == {"psi_watch": 0.1, "psi_alert": 0.2, "significance_level": 0.01,
                                   "flagged_share_relative_watch": 0.3, "flagged_share_absolute_watch": 0.02,
-                                  "min_rows": 500, "min_labels": 100, "min_per_class": 10}
+                                  "min_rows": 500, "min_labels": 100, "min_per_class": 10,
+                                  "precision_floor": None, "recall_floor": None, "version": 0, "changed_at": None,
+                                  "changed_by_user_id": None}  # D5b: the defaults, never changed
     # V7 B7: PSI by week per counted feature (never the date) and no outcome rates before a link.
     assert (body["latest"]["outcome_precision"], body["latest"]["outcome_recall"]) == (None, None)
     counted = sorted((row for row in names.values() if row["kind"] != "date"), key=lambda r: (-r["psi"], r["name"]))

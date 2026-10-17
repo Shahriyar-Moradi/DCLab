@@ -32,6 +32,8 @@ from app.db.models import (
     AgentProposal,
     ExecutionRequest,
     Experiment,
+    ImproveRun,
+    MlJob,
     MonitoringWindow,
     ProjectDecisionRecord,
     ProjectRef,
@@ -40,6 +42,7 @@ from app.db.models import (
     User,
 )
 from app.domain.agent_records import AGENT_SUBJECT_COLUMNS, SEMANTIC_AGREEMENTS
+from app.domain.improve import RUN_WAITING_USER
 from app.domain.decision_records import (
     ACTOR_AGENT,
     ACTOR_RULE,
@@ -221,6 +224,22 @@ def _retrain_asks(ctx: _Ctx, current: bool) -> tuple[Any, Any, Any, Any]:
     return _scoped(stmt, rr.workspace_id, rr.project_id, ctx), rr.created_at, rr.id, rr.project_id
 
 
+def _improve_runs(ctx: _Ctx, waiting: bool) -> tuple[Any, Any, Any, Any]:
+    """P5.4-A3 (ADR 0007 §7): the notices a loop leaves -- waiting for a person (accept a try or keep the
+    current model; since its 14-day continuation was armed) and stopped ``blocked`` / ``failed``.
+    Status and outcome only: nothing here reads a final-test value."""
+
+    ir = ImproveRun
+    if waiting:
+        armed = select(MlJob.queued_at).where(MlJob.id == ir.continuation_job_id,
+                                              MlJob.workspace_id == ir.workspace_id).scalar_subquery()
+        at, where = func.coalesce(armed, ir.created_at), ir.status == RUN_WAITING_USER
+    else:
+        at, where = ir.finished_at, ir.outcome.in_(("blocked", "failed"))
+    stmt = select(ir.id, ir.project_id, at, ir.status, ir.outcome, ir.incumbent_experiment_id).where(where)
+    return _scoped(stmt, ir.workspace_id, ir.project_id, ctx), at, ir.id, ir.project_id
+
+
 _SOURCES: dict[str, tuple[tuple[str, Any], ...]] = {
     "needs_decision": (
         ("decision_proposal", _decisions_open),
@@ -228,6 +247,7 @@ _SOURCES: dict[str, tuple[tuple[str, Any], ...]] = {
         ("question", _questions),
         ("drift_alert", lambda c: _drift_alerts(c, True)),
         ("retrain_ask", lambda c: _retrain_asks(c, True)),
+        ("improve_run", lambda c: _improve_runs(c, True)),
     ),
     "applied_automatically": (("agent_proposal", lambda c: _proposals(c, "applied_automatically")),),
     "done": (
@@ -236,6 +256,7 @@ _SOURCES: dict[str, tuple[tuple[str, Any], ...]] = {
         ("run_finished", _runs_finished),
         ("drift_alert", lambda c: _drift_alerts(c, False)),
         ("retrain_ask", lambda c: _retrain_asks(c, False)),
+        ("improve_run", lambda c: _improve_runs(c, False)),
     ),
 }
 
@@ -452,6 +473,22 @@ def _ask_item(ctx: _Ctx, tab: str, request_id: UUID, project_id: UUID, at: datet
     )
 
 
+_IMPROVE_STOPPED = {"blocked": "Improve loop stopped: a trust check blocks it", "failed": "Improve loop failed"}
+
+
+def _improve_item(tab: str, run_id: UUID, project_id: UUID, at: datetime, status: str, outcome: str | None,
+                  incumbent_id: UUID) -> InboxItemRead:
+    waiting = tab == "needs_decision"
+    return _item(
+        id=f"improve_run:{run_id}", kind="improve_run", tab=tab, occurred_at=at, project_id=project_id,
+        summary=("Improve loop waiting for you: accept a try or keep the current model" if waiting
+                 else _IMPROVE_STOPPED.get(str(outcome), "Improve loop stopped")),
+        status=str(outcome or status), source=InboxRefRead(kind="improve_run", id=run_id),
+        subject=_subject("experiment", incumbent_id), proposed_by="rule",
+        evidence_refs=_refs(_ref("experiment", incumbent_id)), actions=[],
+    )
+
+
 def _items(ctx: _Ctx, tab: str, kind: str, source: Any, after: _Key | None, n: int) -> list[InboxItemRead]:
     stmt, at_column, id_column, _project = source(ctx)
     cut = keyset_before(after, kind, at_column, id_column, INBOX_KIND_RANK)
@@ -470,6 +507,8 @@ def _items(ctx: _Ctx, tab: str, kind: str, source: Any, after: _Key | None, n: i
         return [_drift_item(tab, *r) for r in rows]
     if kind == "retrain_ask":
         return [_ask_item(ctx, tab, *r) for r in rows]
+    if kind == "improve_run":
+        return [_improve_item(tab, *r) for r in rows]
     return [_run_item(*r) for r in rows]
 
 

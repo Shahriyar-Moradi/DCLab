@@ -103,6 +103,9 @@ def _call(client, method: str, path: str, **kwargs):
             body = {"dataset_id": UUID_ZERO}
         elif path.endswith("/retrain-policy"):
             body = {"policy": "off", "rationale": "x"}
+        elif path.endswith("/monitoring-thresholds"):
+            body = {"psi_watch": 0.1, "psi_alert": 0.2, "precision_floor": None, "recall_floor": None,
+                    "rationale": "x"}
         elif path.endswith("/monitoring/outcomes"):
             body = {"dataset_id": UUID_ZERO, "key_column": "id", "outcome_column": "y"}
         kwargs.setdefault("json", body)
@@ -247,6 +250,15 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/projects/{project_id}/retrain-policy",
         "PUT /v1/projects/{project_id}/retrain-policy",
         "GET /v1/projects/{project_id}/retrain-status",
+        # P5.4-A3: improve loops.
+        "POST /v1/improve-runs",
+        "GET /v1/improve-runs/{improve_run_id}",
+        "GET /v1/projects/{project_id}/improve-runs",
+        "POST /v1/improve-runs/{improve_run_id}/cancel",
+        "POST /v1/improve-runs/{improve_run_id}/accept",
+        # D5b: editable monitoring thresholds.
+        "GET /v1/projects/{project_id}/monitoring-thresholds",
+        "PUT /v1/projects/{project_id}/monitoring-thresholds",
     }
 
 

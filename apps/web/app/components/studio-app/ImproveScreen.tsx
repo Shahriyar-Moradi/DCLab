@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * Guided Improve (V7-B4, option B of ADR 0007). A guided flow over existing pieces, in plain words: goal and model in use,
- * the threshold card, "try another model family" (an ordinary new run that adds one family), and the verdict of each try.
- * Nothing runs unattended and there is no automatic loop: each try starts when a person presses the button, and it spends one
- * look at the final test set. The server enforces who may start a try; hiding the form for viewers is only a convenience.
+ * Guided Improve (V7-B4, option B of ADR 0007), the "Try one change yourself" tab since D4e. A guided flow over existing pieces, in
+ * plain words: goal and model in use, the threshold card, "try another model family" (an ordinary new run that adds one family), and
+ * the verdict of each try. Nothing on this tab runs unattended: each try starts when a person presses the button, and it spends one
+ * look at the final test set. Sealed improvement-loop tries (which never score the final test set) are left out here; they are shown
+ * on the Improvement loop tab. The server enforces who may start a try; hiding the form for viewers is only a convenience.
  * Names, reasons and change texts are untrusted and rendered as text. No final test set value is read on this page.
  */
 import Link from "next/link";
@@ -31,7 +32,7 @@ import { useVerdicts } from "@/lib/application/studio-improve-hooks";
 import {
   KEEP_CURRENT_NOTE, LOOK_EXPLAINED, NOISE_NOTE, NOTHING_UNATTENDED, SAME_FOLDS_NOTE, SPEND_NOTE, STANDING_BANNER, VERDICT_CAP, VIEWER_NOTE,
   comparisonsText, countsSentence, defaultIntent, differenceText, familyChoices, foldViews, type FoldView, intentText, lookText, marginText, maxLooks, maxPlanRuns, triesCaveat,
-  triesOf, tryBody, newModelsText, shownVerdict, verdictBadge, verdictCounts, verdictKey, verdictSentence, type VerdictLike,
+  triesOf, sealedTriesOf, LOOP_TRIES_NOTE, tryBody, newModelsText, shownVerdict, verdictBadge, verdictCounts, verdictKey, verdictSentence, type VerdictLike,
 } from "@/lib/application/studio-improve";
 import { modelName, runName, runOrdinals } from "@/lib/application/studio-names";
 import { runRef } from "@/lib/application/studio-model";
@@ -114,7 +115,8 @@ function Folds({ v, metric, name }: { v: VerdictLike; metric: string; name: stri
   return <DataTable caption={`Fold by fold scores of ${name}`} columns={columns} rows={foldViews(v)} rowKey={(r) => String(r.fold)} />;
 }
 
-export function ImproveScreen({ projectId }: { projectId: string }) {
+/** `embedded`: shown as the "Try one change yourself" tab under the Improve page heading, so it draws no heading of its own. */
+export function ImproveScreen({ projectId, embedded = false }: { projectId: string; embedded?: boolean }) {
   const { user } = useSession();
   const canRun = hasCapability(user, CAPABILITIES.workspaceExecuteMl);
   const refs = useProjectRefs(projectId);
@@ -129,6 +131,7 @@ export function ImproveScreen({ projectId }: { projectId: string }) {
   const partial = !!runs.data?.next_cursor;
   const ordinals = runOrdinals(allRuns);
   const tries = triesOf(allRuns, runInUseId);
+  const sealedTries = sealedTriesOf(allRuns, runInUseId);
   const finished = tries.filter((t) => t.status === "completed").slice(0, VERDICT_CAP);
   const finishedIds = finished.map((t) => t.id);
   const verdicts = useVerdicts(finishedIds);
@@ -140,7 +143,7 @@ export function ImproveScreen({ projectId }: { projectId: string }) {
 
   const head = (
     <>
-      <PageHead title="Improve" subtitle="Try another model family, see whether the gain is bigger than the noise, and keep the current model when it is not." />
+      {embedded ? null : <PageHead title="Improve" subtitle="Try another model family, see whether the gain is bigger than the noise, and keep the current model when it is not." />}
       <PageGuide
         purpose="A guided way to ask: can this project's model be made better, and is the gain bigger than the noise on cross-validation?"
         howTo={<>Check the goal, optionally pick a different <GlossaryTerm term="threshold" /> (step 1), start a try with one more model family (step 2), then read whether it beat the noise (step 3). {NOTHING_UNATTENDED}</>}
@@ -244,6 +247,7 @@ export function ImproveScreen({ projectId }: { projectId: string }) {
           {looks !== null ? <p className="muted">The final test set of this test design has been looked at {looks} {looks === 1 ? "time" : "times"} so far. {LOOK_EXPLAINED}</p> : null}
           {runs.isError ? <QueryNotice error={runs.error} what="experiment list" /> : null}
           {runs.isPending ? <p role="status">Loading the tries…</p> : null}
+          {sealedTries > 0 ? <p className="muted" role="note">{LOOP_TRIES_NOTE}</p> : null}
           {runs.data && tries.length === 0 ? <div className="empty" role="note"><p>No tries yet. Start one in step 2; its verdict appears here when it finishes.</p></div> : null}
           {partial ? <p className="muted">Only the newest 100 runs of the project were read, so older tries may be missing here.</p> : null}
           {tries.length > finished.length + tries.filter((t) => t.status !== "completed").length ? <p className="muted">Verdicts are read for the newest {VERDICT_CAP} finished tries only.</p> : null}

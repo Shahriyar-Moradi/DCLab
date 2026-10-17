@@ -3,7 +3,7 @@
 **Status:** **Option A chosen by the founder on 2026-10-16** (Revision 3; supersedes the
 2026-10-12 choice of option B). The option-A design below is being built (P5.4-A1a first);
 the guided screen of option B stays as "Try one change yourself".  
-**Date:** 2026-10-08 (Revision 1: 2026-10-09; Revision 2: 2026-10-09; Revision 3: 2026-10-16; Revision 4: 2026-10-17)  
+**Date:** 2026-10-08 (Revision 1: 2026-10-09; Revision 2: 2026-10-09; Revision 3: 2026-10-16; Revision 4: 2026-10-17; Revision 5: 2026-10-17)  
 **Prompt:** P5.3-A (design only; under option A: P5.4-A1a/A1b/A2/A3 implement,
 P6.5-A the optional agent proposer, P5.5-A / A5-A the UX and chat, R2-A the
 benchmark; under option B: P5.5-B only)  
@@ -118,6 +118,26 @@ The "Option B wording rule" below applies only to the guided screen.
   `nothing_comparable`; loops start only from open-ingest runs. `fresh_split`, the `/v1` routes, token
   clamps, the rate limit and the generic experiment cancel refusing tokens on loop runs come with
   P5.4-A3; Inbox notices with P5.5-A; pinning the curve digest in `expected_selection` is open.
+
+### Revision 5 (2026-10-17): P5.4-A3 as built; `fresh_split` deferred
+
+- **`fresh_split` is deferred out of P5.4-A3** (founder to confirm). A loop on a fresh SplitPlan (§6.5)
+  needs engine work (a server-derived split seed and `validation_folds` carried through auto-train, the
+  runner and the split planner, a sealed default-config root, and the loop starting once that root is
+  locked) and its own ML-correctness review. Until then it fails closed: `POST /v1/improve-runs` with
+  `start.fresh_split` is 403 `fresh_split_human_only` for service tokens and 409 `fresh_split_unavailable`
+  for people; `validation_folds` without a fresh split is 422. The 2-per-(DatasetVersion, target) cap and
+  the server seed come with it.
+- **As built.** Routes: `POST /v1/improve-runs`, `GET /v1/improve-runs/{improve_run_id}`,
+  `GET /v1/projects/{project_id}/improve-runs`, `POST …/cancel` (`If-Match` required), `POST …/accept`
+  (`HUMAN_ONLY_ROUTES`, `Idempotency-Key` and `If-Match` required; re-checks the workspace live-loop cap).
+  A token (and an agent proposal a person accepts) only lowers the defaults (6 tries, 2 h, patience 3, bound
+  30, $2 AI; training seconds at most the computed default); token starts are counted per token in the DB
+  (5 per hour, under the workspace lock); a token cancels only a queued / running loop it started, and the
+  generic experiment cancel applies the same rule to a loop's probes and always refuses its final run.
+  Inbox notices: `waiting_user` (needs a decision), `blocked` and `failed` (done). The assistant's
+  `improve` is an L1 `ToolCallProposal` whose card carries cost 0 (the loop uses no AI), the wall budget as
+  duration and the full clamped budget in its arguments.
 
 ### Revision 2 (round-2 review fixes, 2026-10-09)
 

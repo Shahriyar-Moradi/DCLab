@@ -357,7 +357,8 @@ def _claim_finished(db: Session, seen: set[UUID]) -> tuple[RetrainRequest, Exper
 
 
 def _alert_window(db: Session, workspace_id: UUID, project_id: UUID, version_id: UUID) -> MonitoringWindow | None:
-    """The newest week of the model in use (its highest revision), when that week is an alert."""
+    """The newest week of the model in use (its highest revision), when that week is an alert: drift,
+    or (D5b, summary code ``below_floor``) real outcomes below a precision / recall floor."""
 
     row = db.scalar(select(MonitoringWindow).where(
         MonitoringWindow.workspace_id == workspace_id, MonitoringWindow.project_id == project_id,
@@ -556,11 +557,12 @@ def retrain_status(db: Session, *, actor: User, workspace_id: UUID, project_id: 
         resolved = db.scalar(select(successor.state).where(successor.workspace_id == workspace_id,
                                                            successor.supersedes_id == proposal.id))
         proposal_state = resolved or proposal.state
-    state = "drift_found" if alert else "idle"
+    found_state = "below_floor" if alert and newest.summary_code == "below_floor" else "drift_found"
+    state = found_state if alert else "idle"
     if request is not None and (request.incumbent_model_version_id == version_id or proposal_state == STATE_ACCEPTED):
         if proposal_state is not None:
             state = {"accepted": "switched", "rejected": "kept"}.get(proposal_state, "waiting_for_you")
-            state = "drift_found" if state == "switched" and alert else state
+            state = found_state if state == "switched" and alert else state
         elif run_status in UNFINISHED:
             state = "retraining"
         elif run_status == "completed":

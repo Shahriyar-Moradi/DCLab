@@ -41,6 +41,9 @@ export function actorLabel(actor: { kind: string; rule?: string | null; agent_ke
   return { text: "Someone else", tone: "gray" };
 }
 
+const RETRAIN_REQUESTED: Record<string, string> = {
+  person: "Started a retrain on newest data", auto: "Started a retrain on newest data automatically (the retrain policy is Automatic)", ask: "Asked in the Inbox: retrain on newest data?",
+};
 const RUN_END: Record<string, string> = { completed: "finished", failed: "failed", cancelled: "was cancelled", skipped: "was skipped", ended: "ended" };
 const withoutQuestionMark = (text: string): string => text.replace(/\?$/, "");
 
@@ -65,6 +68,9 @@ export function activitySentence(item: ActivityText, runName: string | null): st
   if (item.kind === "final_test_run") return `${name} was checked once on its final test set`;
   if (item.kind === "agent_run_started") return "An AI agent run started";
   if (item.kind === "agent_run_finished") return `An AI agent run ${item.status ? statusWords(item.status).toLowerCase() : "ended"}`;
+  // D5c: retrain events (the status is the origin, or the comparison's outcome); no figures.
+  if (item.kind === "retrain_requested") return lookup(RETRAIN_REQUESTED, item.status ?? "", "Retrain on newest data");
+  if (item.kind === "retrain_compared") return item.status === "compared" ? "The retrained model was put beside the model in use (same kind of test, latest months)" : "The retrained model could not be compared with the model in use";
   return plainText(item.summary, 120);
 }
 
@@ -170,9 +176,14 @@ export function needsYouRow(item: NeedsYouItem, context: { projectName: string |
   if (item.kind === "question") {
     return { title, sentence: `A run${where} is waiting for your answer before it can go on.`, action: { label: "Answer", href: questionHref(item) ?? "/inbox" } };
   }
-  if (item.kind === "drift_alert") {
+  if (item.kind === "drift_alert" || item.kind === "retrain_ask" || item.kind === "challenger_ready") {
     const href = project ? safeInternalHref(`/projects/${project}/monitoring`) : null;
-    return { title, sentence: `The weekly check${where} found inputs that look different from the rows it was trained on.`, action: { label: "Open Monitoring", href: href ?? "/inbox" } };
+    const sentence = item.kind === "drift_alert"
+      ? `The weekly check${where} marked the newest week as alert: drift, or real outcomes below a floor. Monitoring says which.`
+      : item.kind === "retrain_ask"
+        ? `A newer labelled file exists${where} and the newest week is an alert. Retrain on it from Monitoring, or leave it.`
+        : `A retrained model${where} is beside the model in use. Switch to it or keep the model in use.`;
+    return { title, sentence, action: { label: "Open Monitoring", href: href ?? "/inbox" } };
   }
   if (item.kind === "run_finished") {
     const run = item.subject.kind === "experiment" && project && isUuid(item.subject.id) ? safeInternalHref(`/projects/${project}/experiments/${item.subject.id}`) : null;

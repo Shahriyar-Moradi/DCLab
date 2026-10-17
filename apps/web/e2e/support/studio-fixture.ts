@@ -64,6 +64,12 @@ export async function trainedProject(page: Page, label: string): Promise<{ proje
     const run = await page.request.get(`/api/backend/v1/experiments/${experimentId}`);
     return ((await run.json()) as { status: string }).status;
   }, { timeout: 170_000, intervals: [2_000] }).toBe("completed");
+  // The run reads "completed" a few seconds before its evidence lock commits together with the first model put in use; wait for
+  // that commit so a page opened next sees the model in use.
+  await expect.poll(async () => {
+    const refs = (await page.request.get(`/api/backend/v1/projects/${projectId}/refs`).then((r) => r.json())) as { items?: Array<{ ref_kind: string }> };
+    return (refs.items ?? []).some((r) => r.ref_kind === "champion_model");
+  }, { timeout: 60_000, intervals: [1_000] }).toBe(true);
   return { projectId: projectId!, experimentId, name };
 }
 

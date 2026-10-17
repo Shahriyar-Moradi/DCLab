@@ -856,7 +856,10 @@ class _Execution:
                          payload_digest: str, arguments: dict[str, Any], code: str | None,
                          reason: str) -> AgentProposal:
         key = definition.decision_point_key
+        cost, duration = (definition.estimate(arguments) if definition.estimate is not None
+                          and status == "proposed" else (None, None))
         row = AgentProposal(
+            estimated_cost_micros=cost, estimated_duration_s=duration,
             workspace_id=self.workspace_id, project_id=self.project_id, run_id=self.run_id, decision_point_key=key,
             level_at_proposal=1, answer_ceiling=max(1, answer_ceiling(key)), proposal_type="ToolCallProposal",
             schema_version=1, payload=payload, payload_digest=payload_digest, citations=[],

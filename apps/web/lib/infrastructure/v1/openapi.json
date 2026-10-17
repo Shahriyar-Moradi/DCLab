@@ -89,7 +89,8 @@
                   "test_design_confirmed",
                   "goal_metric_confirmed",
                   "goal_rule_confirmed",
-                  "retrain_policy_changed"
+                  "retrain_policy_changed",
+                  "monitoring_thresholds_changed"
                 ],
                 "type": "string"
               },
@@ -3110,7 +3111,8 @@
               "test_design_confirmed",
               "goal_metric_confirmed",
               "goal_rule_confirmed",
-              "retrain_policy_changed"
+              "retrain_policy_changed",
+              "monitoring_thresholds_changed"
             ],
             "title": "Decision Type",
             "type": "string"
@@ -6188,6 +6190,36 @@
         "title": "FlowPredictionsStep",
         "type": "object"
       },
+      "GoalConstraint": {
+        "additionalProperties": false,
+        "properties": {
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              ">=",
+              "<="
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "value": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric",
+          "op",
+          "value"
+        ],
+        "title": "GoalConstraint",
+        "type": "object"
+      },
       "GoalConstraintRead": {
         "properties": {
           "metric": {
@@ -6383,6 +6415,61 @@
           "difference"
         ],
         "title": "GoalFoldRead",
+        "type": "object"
+      },
+      "GoalObjective": {
+        "additionalProperties": false,
+        "properties": {
+          "constraints": {
+            "items": {
+              "$ref": "#/components/schemas/GoalConstraint"
+            },
+            "maxItems": 6,
+            "title": "Constraints",
+            "type": "array"
+          },
+          "maximize": {
+            "title": "Maximize",
+            "type": "string"
+          }
+        },
+        "required": [
+          "maximize"
+        ],
+        "title": "GoalObjective",
+        "type": "object"
+      },
+      "GoalPlain": {
+        "additionalProperties": false,
+        "properties": {
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric"
+        ],
+        "title": "GoalPlain",
+        "type": "object"
+      },
+      "GoalTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric",
+          "value"
+        ],
+        "title": "GoalTarget",
         "type": "object"
       },
       "GoalVerdictRead": {
@@ -7080,6 +7167,627 @@
         "title": "GraphRef",
         "type": "object"
       },
+      "ImproveAcceptRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "iteration": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The try (seq) to accept: only one that beat the noise.",
+            "title": "Iteration"
+          },
+          "keep_current": {
+            "default": false,
+            "description": "Keep the current model instead (the final test set stays unused).",
+            "title": "Keep Current",
+            "type": "boolean"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your reason, recorded with the acceptance.",
+            "title": "Rationale"
+          }
+        },
+        "title": "ImproveAcceptRequest",
+        "type": "object"
+      },
+      "ImproveActionsRead": {
+        "properties": {
+          "accept": {
+            "default": false,
+            "title": "Accept",
+            "type": "boolean"
+          },
+          "cancel": {
+            "default": false,
+            "title": "Cancel",
+            "type": "boolean"
+          },
+          "keep_current": {
+            "default": false,
+            "title": "Keep Current",
+            "type": "boolean"
+          }
+        },
+        "title": "ImproveActionsRead",
+        "type": "object"
+      },
+      "ImproveBudget": {
+        "additionalProperties": false,
+        "description": "§3 budgets a caller may set (each clamped to its hard maximum; tokens may only lower them, A3).",
+        "properties": {
+          "comparison_bound": {
+            "default": 30,
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Comparison Bound",
+            "type": "integer"
+          },
+          "max_iterations": {
+            "default": 6,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Max Iterations",
+            "type": "integer"
+          },
+          "max_llm_micros": {
+            "default": 2000000,
+            "minimum": 0.0,
+            "title": "Max Llm Micros",
+            "type": "integer"
+          },
+          "max_training_seconds_total": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 28800.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Training Seconds Total"
+          },
+          "max_wall_seconds": {
+            "default": 7200,
+            "maximum": 43200.0,
+            "minimum": 60.0,
+            "title": "Max Wall Seconds",
+            "type": "integer"
+          },
+          "patience": {
+            "default": 3,
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Patience",
+            "type": "integer"
+          }
+        },
+        "title": "ImproveBudget",
+        "type": "object"
+      },
+      "ImproveGoal": {
+        "additionalProperties": false,
+        "description": "Exactly one of ``plain`` / ``objective`` (§1b), plus an optional ``target`` for ``goal_met``.",
+        "properties": {
+          "objective": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalObjective"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalPlain"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ImproveGoal",
+        "type": "object"
+      },
+      "ImproveIterationRead": {
+        "properties": {
+          "action": {
+            "additionalProperties": true,
+            "title": "Action",
+            "type": "object"
+          },
+          "agent": {
+            "title": "Agent",
+            "type": "string"
+          },
+          "comparison": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cross-validation evidence only (§5).",
+            "title": "Comparison"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "experiment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Id"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "incumbent_experiment_id": {
+            "format": "uuid",
+            "title": "Incumbent Experiment Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "planned_candidate_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Planned Candidate Ids",
+            "type": "array"
+          },
+          "planned_new_candidates": {
+            "title": "Planned New Candidates",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "training_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Training Seconds"
+          }
+        },
+        "required": [
+          "seq",
+          "kind",
+          "status",
+          "action",
+          "incumbent_experiment_id",
+          "planned_new_candidates",
+          "planned_candidate_ids",
+          "agent",
+          "created_at"
+        ],
+        "title": "ImproveIterationRead",
+        "type": "object"
+      },
+      "ImproveRunPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ImproveRunRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "items"
+        ],
+        "title": "ImproveRunPage",
+        "type": "object"
+      },
+      "ImproveRunRead": {
+        "description": "One loop. Service tokens get no person ids and every action false except cancelling a\nqueued / running loop; no field ever carries a final-test value (§6.6).",
+        "properties": {
+          "accepted_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted By User Id"
+          },
+          "accepted_iteration_seq": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Iteration Seq"
+          },
+          "actions": {
+            "$ref": "#/components/schemas/ImproveActionsRead"
+          },
+          "ai": {
+            "const": "off",
+            "default": "off",
+            "title": "Ai",
+            "type": "string"
+          },
+          "budget": {
+            "additionalProperties": true,
+            "title": "Budget",
+            "type": "object"
+          },
+          "cancel_requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Requested At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "final_attempts": {
+            "title": "Final Attempts",
+            "type": "integer"
+          },
+          "final_experiment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Experiment Id"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "goal": {
+            "additionalProperties": true,
+            "title": "Goal",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "incumbent_experiment_id": {
+            "format": "uuid",
+            "title": "Incumbent Experiment Id",
+            "type": "string"
+          },
+          "iterations": {
+            "items": {
+              "$ref": "#/components/schemas/ImproveIterationRead"
+            },
+            "title": "Iterations",
+            "type": "array"
+          },
+          "llm_micros_spent": {
+            "title": "Llm Micros Spent",
+            "type": "integer"
+          },
+          "looks_before": {
+            "title": "Looks Before",
+            "type": "integer"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "plan": {
+            "items": {},
+            "title": "Plan",
+            "type": "array"
+          },
+          "planned_comparisons": {
+            "title": "Planned Comparisons",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "sealed_set_consulted": {
+            "title": "Sealed Set Consulted",
+            "type": "boolean"
+          },
+          "sealed_set_label": {
+            "title": "Sealed Set Label",
+            "type": "string"
+          },
+          "split_plan_id": {
+            "format": "uuid",
+            "title": "Split Plan Id",
+            "type": "string"
+          },
+          "start_experiment_id": {
+            "format": "uuid",
+            "title": "Start Experiment Id",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "started_by": {
+            "enum": [
+              "person",
+              "service_token"
+            ],
+            "title": "Started By",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "stop_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Detail"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "training_seconds_spent": {
+            "title": "Training Seconds Spent",
+            "type": "number"
+          },
+          "validation_folds": {
+            "title": "Validation Folds",
+            "type": "integer"
+          },
+          "waiting_user_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting User Expires At"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "split_plan_id",
+          "start_experiment_id",
+          "incumbent_experiment_id",
+          "status",
+          "goal",
+          "budget",
+          "plan",
+          "planned_comparisons",
+          "validation_folds",
+          "looks_before",
+          "sealed_set_label",
+          "sealed_set_consulted",
+          "final_attempts",
+          "started_by",
+          "training_seconds_spent",
+          "llm_micros_spent",
+          "created_at",
+          "iterations",
+          "actions"
+        ],
+        "title": "ImproveRunRead",
+        "type": "object"
+      },
+      "ImproveStart": {
+        "additionalProperties": false,
+        "properties": {
+          "fresh_split": {
+            "default": false,
+            "description": "A new split plan for the loop. Not available yet: requests that set it are refused (people 409 fresh_split_unavailable, service tokens 403).",
+            "title": "Fresh Split",
+            "type": "boolean"
+          },
+          "from_experiment_id": {
+            "description": "A completed, locked open-ingest run of the project.",
+            "format": "uuid",
+            "title": "From Experiment Id",
+            "type": "string"
+          },
+          "validation_folds": {
+            "anyOf": [
+              {
+                "enum": [
+                  5,
+                  10
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Folds of a fresh split (5 or 10). Not available yet: requests that set it are refused.",
+            "title": "Validation Folds"
+          }
+        },
+        "required": [
+          "from_experiment_id"
+        ],
+        "title": "ImproveStart",
+        "type": "object"
+      },
+      "ImproveStartRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImproveBudget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "goal": {
+            "$ref": "#/components/schemas/ImproveGoal"
+          },
+          "start": {
+            "$ref": "#/components/schemas/ImproveStart"
+          }
+        },
+        "required": [
+          "start",
+          "goal"
+        ],
+        "title": "ImproveStartRequest",
+        "type": "object"
+      },
       "InboxActionRead": {
         "properties": {
           "allowed": {
@@ -7258,7 +7966,8 @@
               "run_finished",
               "drift_alert",
               "retrain_ask",
-              "challenger_ready"
+              "challenger_ready",
+              "improve_run"
             ],
             "title": "Kind",
             "type": "string"
@@ -10113,7 +10822,8 @@
           "code": {
             "enum": [
               "inputs_look_different",
-              "scores_look_different"
+              "scores_look_different",
+              "performance_below_floor"
             ],
             "title": "Code",
             "type": "string"
@@ -10297,9 +11007,108 @@
         "title": "MonitoringPsiPoint",
         "type": "object"
       },
-      "MonitoringThresholds": {
-        "description": "Code-owned; shown read-only.",
+      "MonitoringThresholdBounds": {
         "properties": {
+          "floor_max": {
+            "default": 0.99,
+            "title": "Floor Max",
+            "type": "number"
+          },
+          "floor_min": {
+            "default": 0.01,
+            "title": "Floor Min",
+            "type": "number"
+          },
+          "psi_alert_max": {
+            "default": 1.0,
+            "description": "And above psi_watch.",
+            "title": "Psi Alert Max",
+            "type": "number"
+          },
+          "psi_watch_max": {
+            "default": 0.5,
+            "title": "Psi Watch Max",
+            "type": "number"
+          },
+          "psi_watch_min": {
+            "default": 0.05,
+            "title": "Psi Watch Min",
+            "type": "number"
+          }
+        },
+        "title": "MonitoringThresholdBounds",
+        "type": "object"
+      },
+      "MonitoringThresholdValues": {
+        "properties": {
+          "precision_floor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision Floor"
+          },
+          "psi_alert": {
+            "title": "Psi Alert",
+            "type": "number"
+          },
+          "psi_watch": {
+            "title": "Psi Watch",
+            "type": "number"
+          },
+          "recall_floor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall Floor"
+          }
+        },
+        "required": [
+          "psi_watch",
+          "psi_alert",
+          "precision_floor",
+          "recall_floor"
+        ],
+        "title": "MonitoringThresholdValues",
+        "type": "object"
+      },
+      "MonitoringThresholds": {
+        "description": "The values in force: PSI watch / alert and the precision / recall floors are the project's\n(D5b; ``version`` 0 = the defaults, never changed); the rest is code-owned.",
+        "properties": {
+          "changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed At"
+          },
+          "changed_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Never shown to service tokens.",
+            "title": "Changed By User Id"
+          },
           "flagged_share_absolute_watch": {
             "title": "Flagged Share Absolute Watch",
             "type": "number"
@@ -10320,6 +11129,18 @@
             "title": "Min Rows",
             "type": "integer"
           },
+          "precision_floor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: off. Binary models, real outcomes.",
+            "title": "Precision Floor"
+          },
           "psi_alert": {
             "title": "Psi Alert",
             "type": "number"
@@ -10328,10 +11149,28 @@
             "title": "Psi Watch",
             "type": "number"
           },
+          "recall_floor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null: off. Binary models, real outcomes.",
+            "title": "Recall Floor"
+          },
           "significance_level": {
             "description": "A feature counts only when a G-test on its bucket counts has p below this level divided by the features compared.",
             "title": "Significance Level",
             "type": "number"
+          },
+          "version": {
+            "default": 0,
+            "description": "0: the defaults (never changed for this project).",
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -10345,6 +11184,219 @@
           "min_per_class"
         ],
         "title": "MonitoringThresholds",
+        "type": "object"
+      },
+      "MonitoringThresholdsRead": {
+        "properties": {
+          "bounds": {
+            "$ref": "#/components/schemas/MonitoringThresholdBounds"
+          },
+          "can_edit": {
+            "description": "You are a workspace owner or administrator (never platform staff or a token).",
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed At"
+          },
+          "changed_by_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Never shown to service tokens.",
+            "title": "Changed By User Id"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/MonitoringThresholdValues"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "precision_floor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision Floor"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "psi_alert": {
+            "title": "Psi Alert",
+            "type": "number"
+          },
+          "psi_watch": {
+            "title": "Psi Watch",
+            "type": "number"
+          },
+          "recall_floor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall Floor"
+          },
+          "version": {
+            "description": "0 when never changed (the defaults); send `If-Match: \"<version>\"`.",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "psi_watch",
+          "psi_alert",
+          "precision_floor",
+          "recall_floor",
+          "project_id",
+          "version",
+          "etag",
+          "defaults",
+          "bounds",
+          "can_edit",
+          "notes"
+        ],
+        "title": "MonitoringThresholdsRead",
+        "type": "object"
+      },
+      "MonitoringThresholdsUsed": {
+        "description": "The values one window was computed with (stored on it; later changes never alter it).",
+        "properties": {
+          "precision_floor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision Floor"
+          },
+          "psi_alert": {
+            "title": "Psi Alert",
+            "type": "number"
+          },
+          "psi_watch": {
+            "title": "Psi Watch",
+            "type": "number"
+          },
+          "recall_floor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall Floor"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "psi_watch",
+          "psi_alert"
+        ],
+        "title": "MonitoringThresholdsUsed",
+        "type": "object"
+      },
+      "MonitoringThresholdsWrite": {
+        "additionalProperties": false,
+        "description": "All four values are required (a floor is ``null`` to switch it off).",
+        "properties": {
+          "precision_floor": {
+            "anyOf": [
+              {
+                "maximum": 0.99,
+                "minimum": 0.01,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision Floor"
+          },
+          "psi_alert": {
+            "description": "Above psi_watch.",
+            "exclusiveMinimum": 0.05,
+            "maximum": 1.0,
+            "title": "Psi Alert",
+            "type": "number"
+          },
+          "psi_watch": {
+            "maximum": 0.5,
+            "minimum": 0.05,
+            "title": "Psi Watch",
+            "type": "number"
+          },
+          "rationale": {
+            "description": "Your reason (History).",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          },
+          "recall_floor": {
+            "anyOf": [
+              {
+                "maximum": 0.99,
+                "minimum": 0.01,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall Floor"
+          }
+        },
+        "required": [
+          "psi_watch",
+          "psi_alert",
+          "precision_floor",
+          "recall_floor",
+          "rationale"
+        ],
+        "title": "MonitoringThresholdsWrite",
         "type": "object"
       },
       "MonitoringWindowRead": {
@@ -10383,6 +11435,23 @@
                 "type": "null"
               }
             ]
+          },
+          "floor_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "below",
+                  "not_judged",
+                  "ok"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Precision / recall floors on real outcomes: `below` (an alert), `not_judged` (outcomes not linked or measured, or too few rows to say), `ok`; null: no floor.",
+            "title": "Floor Status"
           },
           "input_drift": {
             "additionalProperties": true,
@@ -10549,6 +11618,17 @@
           "thresholds": {
             "$ref": "#/components/schemas/MonitoringThresholds"
           },
+          "thresholds_used": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringThresholdsUsed"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The values this week was computed with; null: computed before they were recorded (the defaults, no floors)."
+          },
           "window_end": {
             "format": "date-time",
             "title": "Window End",
@@ -10608,6 +11688,23 @@
             ],
             "description": "Labelled rows / scored customers with a key in this week.",
             "title": "Coverage"
+          },
+          "floor_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "below",
+                  "not_judged",
+                  "ok"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Precision / recall floors on real outcomes: `below` (an alert), `not_judged` (outcomes not linked or measured, or too few rows to say), `ok`; null: no floor.",
+            "title": "Floor Status"
           },
           "max_psi": {
             "anyOf": [
@@ -10739,6 +11836,17 @@
           "summary_code": {
             "title": "Summary Code",
             "type": "string"
+          },
+          "thresholds_used": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MonitoringThresholdsUsed"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The values this week was computed with; null: computed before they were recorded (the defaults, no floors)."
           },
           "window_end": {
             "format": "date-time",
@@ -15945,6 +17053,7 @@
             "enum": [
               "idle",
               "drift_found",
+              "below_floor",
               "retraining",
               "ready_to_compare",
               "waiting_for_you",
@@ -22707,7 +23816,7 @@
     },
     "/v1/experiments/{experiment_id}/cancel": {
       "post": {
-        "description": "Cancel a queued run (``200``, at once) or ask a running run to stop (``202``\n``cancelling``; the worker stops between stages/candidates). Replay-safe by\nstate: repeating it returns the same result. Terminal runs: ``409\nnot_cancellable``. ``If-Match`` (optional) must match before a transition.",
+        "description": "Cancel a queued run (``200``, at once) or ask a running run to stop (``202``\n``cancelling``; the worker stops between stages/candidates). Replay-safe by\nstate: repeating it returns the same result. Terminal runs: ``409\nnot_cancellable``. ``If-Match`` (optional) must match before a transition. A service token\nmay not cancel an improve loop's final run, nor a try of a loop it may not cancel itself\n(``403 improve_run_owns_experiment``).",
         "operationId": "cancel_experiment_v1_v1_experiments__experiment_id__cancel_post",
         "parameters": [
           {
@@ -23958,6 +25067,655 @@
           }
         },
         "summary": "Change Governance Switch",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/improve-runs": {
+      "post": {
+        "description": "Start an improve loop on a completed run: a goal (``plain`` primary metric, or ``objective``\nwith constraints) and a budget; each try is a sealed branch on the same folds (the final test set\nis not used), judged per fold against noise. ``409`` with the reason when the run cannot start a\nloop (``nothing_to_try``, ``start_truncated``, ``improve_run_live``, ``split_plan_exhausted``,\n``fresh_split_unavailable`` ...), ``422`` for a goal the loop cannot judge, ``429`` for the\nworkspace's live loops or a service token's starts per hour. Service tokens: the budget is only\nlowered, never raised; ``fresh_split`` is ``403``. Requires ``Idempotency-Key``.",
+        "operationId": "start_improve_run_v1_v1_improve_runs_post",
+        "parameters": [
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImproveStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImproveRunRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotent-Replayed": {
+                "description": "`true` when this response replays an earlier request with the same Idempotency-Key.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Location": {
+                "description": "URL of the improve loop.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too many requests (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Start Improve Run V1",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/improve-runs/{improve_run_id}": {
+      "get": {
+        "description": "One loop: status, outcome and stop reason, goal and budget, spend, every try with its\nper-fold cross-validation verdict, and what you may do now (``actions``). Never a final-test\nvalue. ``ETag`` is the ``If-Match`` of cancel and accept. Service tokens get no person ids.",
+        "operationId": "read_improve_run_v1_improve_runs__improve_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "improve_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Improve Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImproveRunRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Improve Run",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/improve-runs/{improve_run_id}/accept": {
+      "post": {
+        "description": "A person accepts one try that beat the noise (``iteration``): it is re-run once with its\nselection pinned and that final run scores the final test set once (``202``); or keeps the\ncurrent model (``keep_current``: nothing is scored, ``200``). Decided on cross-validation only.\nPeople with ML-write only (service tokens and agents ``403``). Requires ``Idempotency-Key`` and\n``If-Match`` (the loop's ``ETag``); ``429`` while the workspace already runs its live loops.",
+        "operationId": "accept_improve_run_v1_v1_improve_runs__improve_run_id__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "improve_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Improve Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "description": "Strong ETag from a previous read; a mismatch is 412 precondition_failed.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Strong ETag from a previous read; a mismatch is 412 precondition_failed.",
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImproveAcceptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImproveRunRead"
+                }
+              }
+            },
+            "description": "Kept the current model.",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotent-Replayed": {
+                "description": "`true` when this response replays an earlier request with the same Idempotency-Key.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted: the one final run is queued.",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotent-Replayed": {
+                "description": "`true` when this response replays an earlier request with the same Idempotency-Key.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition failed (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition required (error envelope)"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too many requests (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Accept Improve Run V1",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/improve-runs/{improve_run_id}/cancel": {
+      "post": {
+        "description": "Stop a loop: its live try is cancelled and the best so far is kept. People may cancel any\nlive loop; a service token only a queued or running loop it started (``403 token_cannot_cancel``). During\nfinalizing the final run is asked to stop (``202``): after its final test the look still counts.\nReplay-safe by state (a finished loop answers ``200`` without a precondition). Requires\n``If-Match`` (the loop's ``ETag``).",
+        "operationId": "cancel_improve_run_v1_v1_improve_runs__improve_run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "improve_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Improve Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "description": "Strong ETag from a previous read; a mismatch is 412 precondition_failed.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Strong ETag from a previous read; a mismatch is 412 precondition_failed.",
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImproveRunRead"
+                }
+              }
+            },
+            "description": "Cancelled (now or earlier).",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Finalizing: the final run is asked to stop.",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition failed (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition required (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Cancel Improve Run V1",
         "tags": [
           "v1"
         ]
@@ -26815,7 +28573,8 @@
                     "test_design_confirmed",
                     "goal_metric_confirmed",
                     "goal_rule_confirmed",
-                    "retrain_policy_changed"
+                    "retrain_policy_changed",
+                    "monitoring_thresholds_changed"
                   ],
                   "type": "string"
                 },
@@ -27520,6 +29279,112 @@
         ]
       }
     },
+    "/v1/projects/{project_id}/improve-runs": {
+      "get": {
+        "description": "The project's improve loops, newest first.",
+        "operationId": "list_project_improve_runs_v1_projects__project_id__improve_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImproveRunPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "List Project Improve Runs",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
     "/v1/projects/{project_id}/model-versions": {
       "get": {
         "description": "V7 B2: the project's model versions, newest first, each with its locked winner's\ncross-validation metrics (``cv``; binary fold means at the locked threshold in\n``cv_at_locked_threshold``; never a final-test value, for people and service tokens alike)\nand its standing: ``in_use`` (the model in use), ``waiting_for_approval`` (an open proposal to\nput it in use), ``approved_earlier`` or ``not_in_use``, plus whether a person approved the\nmodel in use for scoring. Another workspace's project: 404.",
@@ -27655,7 +29520,7 @@
     },
     "/v1/projects/{project_id}/monitoring": {
       "get": {
-        "description": "The model in use: latest window status (``ok`` / ``watch`` / ``alert`` / ``not_enough_data``)\nand the last 12 weekly windows (Monday 00:00 UTC), newest first, with the code-owned\nthresholds. An ``alert`` window carries one plain finding. Drift means the inputs look\ndifferent from training, not that the model is wrong; performance appears only when outcomes\nare linked (binary: ``outcome_precision`` / ``outcome_recall`` per week at the locked threshold).\n``feature_psi_series``: PSI by week, oldest first, for the 8 counted features that moved most.\n``no_model_in_use`` / ``no_windows`` before there is anything to show.",
+        "description": "The model in use: latest window status (``ok`` / ``watch`` / ``alert`` / ``not_enough_data``)\nand the last 12 weekly windows (Monday 00:00 UTC), newest first, with the thresholds in force\n(the project's PSI lines and floors, when and by whom they changed; each window carries the\nvalues it was computed with in ``thresholds_used``). An ``alert`` window carries one plain finding. Drift means the inputs look\ndifferent from training, not that the model is wrong; performance appears only when outcomes\nare linked (binary: ``outcome_precision`` / ``outcome_recall`` per week at the locked threshold).\n``feature_psi_series``: PSI by week, oldest first, for the 8 counted features that moved most.\n``no_model_in_use`` / ``no_windows`` before there is anything to show.",
         "operationId": "read_monitoring_v1_projects__project_id__monitoring_get",
         "parameters": [
           {
@@ -27761,6 +29626,292 @@
           }
         },
         "summary": "Read Monitoring",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/projects/{project_id}/monitoring-thresholds": {
+      "get": {
+        "description": "The project's monitoring thresholds in force: PSI watch / alert lines and the precision /\nrecall floors (``null`` = off), with the defaults, the fixed bounds and when and by whom they\nlast changed (``version`` 0 = never changed; ``ETag`` is the version). Service tokens may read\nthem (no user ids).",
+        "operationId": "read_monitoring_thresholds_v1_projects__project_id__monitoring_thresholds_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringThresholdsRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Read Monitoring Thresholds",
+        "tags": [
+          "v1"
+        ]
+      },
+      "put": {
+        "description": "Change the monitoring thresholds with your reason (``rationale``) within the fixed bounds\n(PSI watch 0.05-0.5, alert above watch up to 1.0, floors 0.01-0.99 or ``null`` = off; else\n``422``); writes an accepted ``monitoring_thresholds_changed`` History entry. Weeks computed\nafter the change use the new values; past weeks keep theirs. Workspace owners and administrators\nonly (others, platform staff, service tokens and agents ``403``). Requires ``Idempotency-Key`` and\n``If-Match`` (the thresholds' ETag; ``\"0\"`` when never changed): a stale one is ``412``, none\n``428``; the values in force again ``409 thresholds_unchanged``.",
+        "operationId": "set_monitoring_thresholds_v1_projects__project_id__monitoring_thresholds_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "description": "Strong ETag from a previous read; a mismatch is 412 precondition_failed.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Strong ETag from a previous read; a mismatch is 412 precondition_failed.",
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonitoringThresholdsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitoringThresholdsRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong entity tag of this representation; send it as If-Match on mutations.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotent-Replayed": {
+                "description": "`true` when this response replays an earlier request with the same Idempotency-Key.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition failed (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition required (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Set Monitoring Thresholds",
         "tags": [
           "v1"
         ]
@@ -29589,7 +31740,7 @@
     },
     "/v1/projects/{project_id}/retrain-status": {
       "get": {
-        "description": "What the system does on its own, for the Monitoring card: the policy, the state (``idle``,\n``drift_found``, ``retraining``, ``ready_to_compare``, ``waiting_for_you``, ``switched``,\n``kept``), the newest retrain, its comparison with the model in use (same kind of test, latest\nmonths; or why it is not comparable), the switch proposal and the real outcomes of the model in\nuse beside it (not the same data). Service tokens get the state without the comparison figures.",
+        "description": "What the system does on its own, for the Monitoring card: the policy, the state (``idle``,\n``drift_found``, ``below_floor`` (real outcomes below a floor), ``retraining``, ``ready_to_compare``,\n``waiting_for_you``, ``switched``,\n``kept``), the newest retrain, its comparison with the model in use (same kind of test, latest\nmonths; or why it is not comparable), the switch proposal and the real outcomes of the model in\nuse beside it (not the same data). Service tokens get the state without the comparison figures.",
         "operationId": "read_retrain_status_v1_projects__project_id__retrain_status_get",
         "parameters": [
           {

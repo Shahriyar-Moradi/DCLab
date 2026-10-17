@@ -5,7 +5,7 @@ import {
   DATES_LATER, DATES_NOT_JUDGED, MAY_DIFFER, NOTHING_AUTOMATIC, NOT_THE_MODEL, PAUSED_NOTE, REAL_NOT_TEST, REFUSED_SET, TABLE_NOTE, THRESHOLDS_READ_ONLY,
   THRESHOLDS_UNAVAILABLE, UNCONFIRMED, WEEK_DEFINITION, canAct, dateNote, dateSentence, driftBars, featureList, featureSentence, featureStatusWord, goBackOffer,
   headline, idCaveat, isLinkConflict, linkConfirmWords, linkedRows, looksLikeId, mapLinkError, mapUploadError, metricLabel, numberPair, outcomeCell, outcomeView,
-  REAL_TREND_NOTE, ownSteps, trendCell, psiTrend, realTrend, realTrendEmpty, seriesColumns, shortWeek, weekTicks,
+  REAL_TREND_NOTE, floorWords, ownSteps, trendCell, weekLines, psiTrend, realTrend, realTrendEmpty, seriesColumns, shortWeek, weekTicks,
   plainNumber, psiDefinition, scopeText, scoreSentences, statusWords, thresholdLines, weekKey, weekLabel, weekRows, weekSentence,
   type FeatureLike, type OverviewLike, type Thresholds, type WeekSummaryLike,
 } from "./studio-monitoring.ts";
@@ -97,7 +97,7 @@ test("every headline state is distinct; paused keeps the last status and tone wi
     [overview({ enabled: false, status: "no_windows", latest: null, windows: [] }), "paused", /monitoring is switched off on this server/],
     [overview(), "ok", /the columns compared look like training/],
     [overview({ status: "watch", latest: week({ status: "watch", max_psi: 0.14 }) }), "watch", /^Model v3: Watch: .*moved somewhat\..*0\.14/],
-    [overview({ status: "alert", latest: week({ status: "alert", max_psi: 0.31 }) }), "alert", /Alert: .*moved a lot\..*0\.31.*It does not mean the model is wrong.*never does that on its own/],
+    [overview({ status: "alert", latest: week({ status: "alert", max_psi: 0.31 }) }), "alert", /Alert: .*moved a lot\..*0\.31.*It does not mean the model is wrong.*Nothing switches the model in use on its own/],
     [overview({ status: "not_enough_data", latest: week({ status: "not_enough_data", summary_code: "too_few_rows", n_rows: 12 }) }), "not_enough_data", /Fewer than 200 rows could be compared with training .* \(12 scored\)/],
     [overview({ status: "brand_new", latest: week({ status: "brand_new" }) }), "unknown", /does not recognise/],
     [overview({ status: "__proto__", latest: week({ status: "__proto__" }) }), "unknown", /does not recognise/],
@@ -309,7 +309,7 @@ test("S6: link confirm says exactly what happens, what is rechecked, and that a 
   assert.match(words.lines[1], /joins the outcomes in churned to the rows the model in use scored, by matching customer_code/);
   assert.ok(words.lines.includes("The recent weeks of the model in use are checked again in the background; reload in a few minutes to see the result."));
   assert.ok(words.lines.includes("A link cannot be removed; the newest linked file that shares IDs with a week is the one used."));
-  assert.ok(words.lines.some((l) => /never used to train or to choose a model, and nothing is retrained or switched/.test(l)));
+  assert.ok(words.lines.some((l) => /never used to train or to choose a model, and linking them never switches the model in use/.test(l)));
   [words.title, words.button, ...words.lines].forEach(keep);
   const noWeeks = linkConfirmWords({ datasetId: "d", file: "f", key: "k", outcome: "o" }, T, "no_windows");
   assert.ok(noWeeks.lines.some((l) => /nothing is checked again now/.test(l)));
@@ -436,28 +436,34 @@ test("UI-E real precision and recall: values only in 0..1, gaps for missing week
   assert.doesNotMatch(REAL_TREND_NOTE, /final test/i);
 });
 
-test("UI-E steps: weekly checks and the drift rule show their real state; retraining is Planned; going back is a person's", () => {
+test("UI-E + D5c steps: weekly checks and the alert rule show their real state; the retrain steps are passed in; going back is a person's", () => {
   const offer = { kind: "offer" as const, modelVersionId: M_USE, model: "Model v2", text: "", viewerText: "" };
-  const alert = ownSteps(overview({ status: "alert", latest: week({ status: "alert" }) }), offer);
-  assert.deepEqual(alert.map((s) => s.state), ["on", "on", "planned", "planned", "yours"]);
+  const extra = [{ key: "retrain", title: "Retrain on newest data", who: "Off for this project", state: "off" as const, pill: "Off", tone: "gray" as const, text: "x" }];
+  const alert = ownSteps(overview({ status: "alert", latest: week({ status: "alert" }) }), offer, extra);
+  assert.deepEqual(alert.map((s) => s.key), ["check", "flag", "retrain", "back"]);
+  assert.deepEqual(alert.map((s) => s.state), ["on", "on", "off", "yours"]);
+  assert.ok(!alert.some((s) => s.state === "planned"), "nothing is Planned: every step is built");
   assert.match(alert[0].text, /latest check was the week of Mon, 5 Oct 2026 \(UTC\)\. A week is checked only after the model in use scores a file in it\./);
   assert.equal(alert[0].title, "Check each week the model in use scores a file");
-  // S1: the drift rule's pill follows the status tone (never green on alert / watch / not enough data).
+  // S1: the alert rule's pill follows the status tone (never green on alert / watch / not enough data).
   assert.equal(alert[1].tone, "crit");
   assert.equal(ownSteps(overview({ status: "watch", latest: week({ status: "watch" }) }), { kind: "hidden" })[1].tone, "warn");
   assert.equal(ownSteps(overview({ status: "not_enough_data", latest: week({ status: "not_enough_data" }) }), { kind: "hidden" })[1].tone, "gray");
   assert.equal(ownSteps(overview(), { kind: "hidden" })[1].tone, "ok");
-  assert.match(ownSteps(overview(), { kind: "hidden" })[4].text, /When an earlier approved model exists/);
-  assert.match(alert[1].text, /^Alert in the week of .*listed in the Inbox\.$/);
-  assert.equal(alert[2].pill, "Planned");
-  assert.match(alert[2].text, /never trains a model again on its own/);
-  assert.match(alert[4].text, /Model v2/);
+  assert.match(ownSteps(overview(), { kind: "hidden" })[2].text, /When an earlier approved model exists/);
+  assert.match(alert[1].text, /^Alert in the week of .*look different from training\. It is also listed in the Inbox\.$/);
+  assert.match(alert[3].text, /Model v2/);
+  // D5c: a week that alerts because real outcomes fell below a floor is never called drift.
+  const floor = ownSteps(overview({ status: "alert", latest: week({ status: "alert", summary_code: "below_floor" }) }), { kind: "hidden" });
+  assert.equal(floor[1].pill, "Alert: below a floor");
+  assert.match(floor[1].text, /real outcomes fell below a floor set for this project\. This is not drift\./);
+  assert.doesNotMatch(floor[1].text.replace("This is not drift.", ""), /drift/i);
   const paused = ownSteps(overview({ enabled: false }), { kind: "hidden" });
   assert.equal(paused[0].pill, "Paused");
   const none = ownSteps(overview({ status: "no_model_in_use", latest: null, windows: [] }), { kind: "none", text: "" });
   assert.equal(none[0].pill, "Waiting");
   assert.equal(none[1].state, "off");
-  assert.match(none[4].text, /no earlier approved model/);
+  assert.match(none[2].text, /no earlier approved model/);
   const fresh = ownSteps(overview({ status: "no_windows", latest: null, windows: [] }), { kind: "hidden" });
   assert.match(fresh[0].text, /first week is checked/);
   assert.equal(ownSteps(undefined, { kind: "hidden" })[0].pill, "Unknown");
@@ -468,8 +474,35 @@ test("UI-E steps: weekly checks and the drift rule show their real state; retrai
     assert.notEqual(steps[1].text, alert[1].text);
     steps.forEach((s) => { keep(s.text); keep(s.title); keep(s.pill); keep(s.who); });
   }
-  [...alert, ...paused, ...none, ...fresh, ...odd].forEach((s) => { keep(s.text); keep(s.title); keep(s.pill); keep(s.who); });
+  [...alert, ...floor, ...paused, ...none, ...fresh, ...odd].forEach((s) => { keep(s.text); keep(s.title); keep(s.pill); keep(s.who); });
   for (const s of [...alert, ...none]) assert.doesNotMatch(s.text, /\bautomatic(ally)? (retrain|switch)/i);
+});
+
+test("D5c: the trend judges each week with its own lines and says when the drawn lines differ", () => {
+  const used = { version: 2, psi_watch: 0.3, psi_alert: 0.6 };
+  const ws = [week({ window_start: "2026-09-28T00:00:00Z", status: "ok", max_psi: 0.25, thresholds_used: used }), week({ window_start: "2026-10-05T00:00:00Z", status: "ok", max_psi: 0.25 })];
+  const chart = psiTrend(ws, [], null, T, { psi_watch: 0.1, psi_alert: 0.2 });
+  assert.deepEqual(chart.lines[0].marks, ["judged", "chance"]); // 0.25 is below its own watch line 0.3, above the default 0.1
+  assert.match(keep(chart.note ?? ""), /some weeks were judged with other lines \(the weekly table shows the values each week used\)/);
+  assert.doesNotMatch(psiTrend([week({ max_psi: 0.25 })], [], null, T).note ?? "", /other lines/);
+});
+
+test("D5c: a floor alert week reads as real outcomes below a floor, never as drift; rows use the week's own lines and floor verdict", () => {
+  const s = weekSentence(week({ status: "alert", summary_code: "below_floor", max_psi: 0.04 }), T);
+  assert.match(keep(s), /real outcomes of the model in use fell below a precision or recall floor/);
+  assert.doesNotMatch(s.replace("This is not drift", ""), /drift|look different/i);
+  const used = { version: 2, psi_watch: 0.3, psi_alert: 0.6, precision_floor: 0.5, recall_floor: null };
+  const [row] = weekRows([week({ status: "ok", max_psi: 0.25, thresholds_used: used, floor_status: "not_judged" })], T);
+  assert.equal(row.inputs, "0.25"); // below this week's own watch line 0.3, so not "within chance"
+  assert.deepEqual([row.floor, row.floorTone], ["Not judged", "gray"]);
+  const [legacy] = weekRows([week({ status: "ok", max_psi: 0.25, thresholds_used: null })], T, { psi_watch: 0.1, psi_alert: 0.2 });
+  assert.equal(legacy.inputs, "0.25 (within chance)");
+  assert.equal(legacy.floor, "No floor");
+  assert.equal(weekRows([week({ status: "alert", summary_code: "below_floor", floor_status: "below" })], T)[0].label, "Alert: below a floor");
+  assert.deepEqual(floorWords("below"), { label: "Below a floor", tone: "crit" });
+  assert.deepEqual(floorWords("__proto__"), { label: "Unknown", tone: "gray" });
+  assert.deepEqual(weekLines({ thresholds_used: used }, T), { ...T, psi_watch: 0.3, psi_alert: 0.6 });
+  assert.equal(weekLines({ thresholds_used: null }, T), T);
 });
 
 test("UI-E B1: the trend follows the statistical gate: an ok week or point above a line is within chance; a not-enough-data week is not judged", () => {

@@ -24,7 +24,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import numpy as np
 import pandas as pd
@@ -41,13 +41,20 @@ from app.db.models import (
     MlJob,
     ModelVersion,
     MonitoringOutcomeSet,
+    MonitoringThresholdSet,
     MonitoringWindow,
+    ProjectDecisionRecord,
     ProjectRef,
     User,
 )
 from app.domain import monitoring as dm
 from app.domain.batch_predictions import PREDICTION_COMPLETED
-from app.domain.decision_records import DECISION_MONITORING_OUTCOMES_LINKED, STATE_ACCEPTED, DecisionActor
+from app.domain.decision_records import (
+    DECISION_MONITORING_OUTCOMES_LINKED,
+    DECISION_MONITORING_THRESHOLDS_CHANGED,
+    STATE_ACCEPTED,
+    DecisionActor,
+)
 from app.domain.errors import IdentityError, MonitoringError
 from app.domain.ml_jobs import (
     HANDLER_MONITORING_COMPUTE_WINDOW,
@@ -73,6 +80,10 @@ def _settings() -> Any:
     from app.config import get_settings
 
     return get_settings()
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def week_start(moment: datetime) -> datetime:
@@ -386,8 +397,9 @@ def _cv_reference(manifest: dict[str, Any] | None, metric: str | None, task_type
 def _outcomes(db: Session, *, workspace_id: UUID, project_id: UUID, frames: list[pd.DataFrame],
               entity: str | None, task_type: str, manifest: dict[str, Any] | None, class_labels: Any,
               reference: dict[str, Any] | None) -> dict[str, Any]:
-    """Join the newest linked outcome file that shares keys with this window's scored rows (a
-    file whose joining keys repeat is skipped for the next). Real production outcomes only (never
+    """Join the newest linked outcome file whose joined rows are measured (D5b: a small newer file
+    never replaces a measured older one; without any measured file, the newest file that shares keys
+    with this window's scored rows; a file whose joining keys repeat is skipped for the next). Real production outcomes only (never
     the final test set); metrics on joined rows only; ``coverage`` is labelled rows / scored
     customers with a key. Binary outcomes count only in the training target's own spellings."""
 
@@ -416,6 +428,7 @@ def _outcomes(db: Session, *, workspace_id: UUID, project_id: UUID, frames: list
     threshold = (manifest or {}).get("decision_threshold")
     target = (reference or {}).get("target") if task_type == "binary" else None
     refused: list[dict[str, str]] = []
+    fallback: dict[str, Any] | None = None
     for outcome_set in sets:
         columns = [outcome_set.key_column, outcome_set.outcome_column]
         try:
@@ -453,7 +466,11 @@ def _outcomes(db: Session, *, workspace_id: UUID, project_id: UUID, frames: list
                                         and target.get("negative") else "yes_no_tokens")
         if target and target.get("positive_rate") is not None:
             out["positive_rate_reference"] = target["positive_rate"]
-        return out
+        if out.get("status") == "measured":
+            return out
+        fallback = fallback or out  # the newest non-empty file, used when none is measured
+    if fallback is not None:
+        return {**fallback, "refused_sets": refused}
     if refused:
         return {"status": "key_not_unique", "side": "outcomes", "n_scored": n_scored, "n_keyed": n_keyed,
                 "refused_sets": refused}
@@ -495,6 +512,8 @@ def _compute_window(db: Session, job: MlJob, on_heartbeat: Callable[[], None] | 
     from app.engine.serving.monitoring import (
         compare_inputs,
         compare_predictions,
+        floor_checks,
+        floors_below,
         manifest_contract,
         usable_reference,
         window_verdict,
@@ -520,6 +539,9 @@ def _compute_window(db: Session, job: MlJob, on_heartbeat: Callable[[], None] | 
     entity = str(task["entity_id"]) if task.get("entity_id") else None
     manifest = _manifest(db, model_version)
     reference = usable_reference(manifest)
+    limits = _window_limits(db, workspace_id, project_id, version_id, start, end,
+                            newest_scoring=max(row.completed_at for row in chosen), moment=_job_time(job))
+    lines = {"psi_watch": limits["psi_watch"], "psi_alert": limits["psi_alert"]}
     frames, scorings = _scored_rows(db, chosen, entity)
     scored = pd.concat(frames, ignore_index=True)
     n_rows = sum(int(row.rows_out or 0) for row in scorings)
@@ -538,20 +560,32 @@ def _compute_window(db: Session, job: MlJob, on_heartbeat: Callable[[], None] | 
         dates = sorted(set(spec.date_formats) | set(spec.legacy_date_columns)
                        | _time_columns(experiment.result if experiment is not None else None))
         input_drift = ({"available": False, "reason_code": "inputs_unavailable"} if rows is None
-                       else {**compare_inputs(rows, reference, date_columns=dates), "files_unavailable": unavailable})
-        prediction_drift = compare_predictions(scored, reference.get("prediction"), min_rows=min_rows)
+                       else {**compare_inputs(rows, reference, date_columns=dates, **lines),
+                             "files_unavailable": unavailable})
+        prediction_drift = compare_predictions(scored, reference.get("prediction"), min_rows=min_rows, **lines)
+    task_type = str(task.get("task_type") or "")
     outcomes = _outcomes(db, workspace_id=workspace_id, project_id=project_id, frames=frames, entity=entity,
-                         task_type=str(task.get("task_type") or ""), manifest=manifest,
+                         task_type=task_type, manifest=manifest,
                          class_labels=spec_input["class_labels"], reference=reference)
+    checks = floor_checks(outcomes, task_type, {"precision": limits["precision_floor"],
+                                                "recall": limits["recall_floor"]},
+                          min_trials=int(settings.monitoring_min_per_class))
+    if checks is not None:  # only when a floor is set (D5b): real outcomes, measured and judged
+        outcomes = {**outcomes, "floors": checks}
     status, code = window_verdict(min_rows, input_drift, prediction_drift)
     summary = dm.summary_text(code, n_rows=n_rows, min_rows=min_rows, input_drift=input_drift,
                               prediction_drift=prediction_drift, sampled_rows=sampled,
                               scorings_total=max(scorings_total, len(scorings)))
+    if floors_below(checks):  # a floor judged below is an alert; it is not drift unless drift alerted too
+        summary = f"{summary} {dm.floor_summary(checks)}"[:dm.SUMMARY_MAX_CHARS]
+        code = code if status == "alert" else dm.BELOW_FLOOR
+        status = "alert"
     release_id = next((row.model_release_id for row in scorings if row.model_release_id is not None), None)
     content = _bounded({"model_release_id": release_id, "window_end": end, "n_rows": n_rows,
                         "n_batch_predictions": len(scorings), "input_drift": input_drift,
                         "prediction_drift": prediction_drift, "outcomes": outcomes, "status": status,
-                        "summary_code": code, "summary": summary}) | {"model_release_id": release_id, "window_end": end}
+                        "summary_code": code, "summary": summary, "thresholds_used": limits}
+                       ) | {"model_release_id": release_id, "window_end": end}
     db.execute(select(func.pg_advisory_xact_lock(
         func.hashtextextended(f"monitoring-window:{project_id}:{version_id}:{start.isoformat()}", 0))))
     current, _total = _window_scorings(db, workspace_id, project_id, version_id, start)
@@ -564,7 +598,9 @@ def _compute_window(db: Session, job: MlJob, on_heartbeat: Callable[[], None] | 
         MonitoringWindow.workspace_id == workspace_id, MonitoringWindow.project_id == project_id,
         MonitoringWindow.model_version_id == version_id, MonitoringWindow.window_start == start)
         .order_by(MonitoringWindow.revision.desc()).limit(1))
-    if latest is not None and all(getattr(latest, key) == value for key, value in content.items()):
+    if latest is not None and all(getattr(latest, key) == value for key, value in content.items()
+                                  if key != "thresholds_used") and (
+            (latest.thresholds_used or default_limits()) == content["thresholds_used"]):
         db.commit()
         return  # same inputs, same result: no new revision (deterministic rerun)
     db.add(MonitoringWindow(workspace_id=workspace_id, project_id=project_id, model_version_id=version_id,
@@ -684,24 +720,163 @@ def _recent_weeks(db: Session, workspace_id: UUID, project_id: UUID, version_id:
     return sorted(weeks, reverse=True)[:dm.WINDOWS_LISTED]
 
 
+# --- thresholds (D5b, ADR 0012 D4) ------------------------------------------------------------
+
+_THRESHOLD_VALUES = ("psi_watch", "psi_alert", "precision_floor", "recall_floor")
+_THRESHOLDS_NOTES = (
+    "A change applies to weeks computed with new scored data after it; past weeks, and a week without new "
+    "scorings, keep the values they were computed with (also when outcomes linked later recompute them).",
+    "Precision and recall floors apply to yes/no models with linked real outcomes; a week is below a floor only "
+    "when its labelled rows say so clearly (a one-sided binomial test), otherwise it is not judged.",
+)
+
+
+def default_limits() -> dict[str, Any]:
+    """Version 0: the engine's PSI lines and no floors (what every window used before D5b)."""
+
+    from app.engine.serving.monitoring import PSI_ALERT, PSI_WATCH
+
+    return {"version": 0, "psi_watch": PSI_WATCH, "psi_alert": PSI_ALERT, "precision_floor": None,
+            "recall_floor": None}
+
+
+def _threshold_row(db: Session, workspace_id: UUID, project_id: UUID) -> MonitoringThresholdSet | None:
+    return db.scalar(select(MonitoringThresholdSet).where(
+        MonitoringThresholdSet.workspace_id == workspace_id, MonitoringThresholdSet.project_id == project_id)
+        .order_by(MonitoringThresholdSet.version.desc()).limit(1))
+
+
+def _limits(row: MonitoringThresholdSet | None) -> dict[str, Any]:
+    if row is None:
+        return default_limits()
+    return {"version": row.version, **{key: getattr(row, key) for key in _THRESHOLD_VALUES}}
+
+
+def _job_time(job: MlJob) -> datetime:
+    return job.created_at or _now()
+
+
+def _window_limits(db: Session, workspace_id: UUID, project_id: UUID, version_id: UUID, start: datetime,
+                   end: datetime, *, newest_scoring: datetime, moment: datetime) -> dict[str, Any]:
+    """The values a computation of this window uses. A window that already has a revision keeps the
+    values stored on its newest one (the defaults when computed before they were stored) when the
+    week had ended when the job was queued (``moment``) or no scoring of it completed since that
+    revision: a later change never alters a past week, nor an open week's result without new scored
+    data (also when linked outcomes recompute it). Otherwise (new scored data, or a first
+    computation) the project's values in force now."""
+
+    stored = db.execute(select(MonitoringWindow.thresholds_used, MonitoringWindow.computed_at).where(
+        MonitoringWindow.workspace_id == workspace_id, MonitoringWindow.project_id == project_id,
+        MonitoringWindow.model_version_id == version_id, MonitoringWindow.window_start == start)
+        .order_by(MonitoringWindow.revision.desc()).limit(1)).first()
+    if stored is not None and (end <= moment or newest_scoring <= stored.computed_at):
+        used = _parsed_used(stored.thresholds_used)  # only the five known keys, validated
+        return used.model_dump() if used is not None else default_limits()
+    return _limits(_threshold_row(db, workspace_id, project_id))
+
+
+def can_edit_thresholds(db: Session, user: User, workspace_id: UUID) -> bool:
+    """A workspace owner or administrator, never platform staff (the retrain policy's rule)."""
+
+    from app.services.retrain_service import can_set_policy
+
+    return can_set_policy(db, user, workspace_id)
+
+
+def thresholds_read(db: Session, *, actor: User, workspace_id: UUID, project_id: UUID,
+                    agent: bool) -> dm.MonitoringThresholdsRead:
+    from app.services.project_service import get_project
+
+    get_project(db, actor=actor, workspace_id=workspace_id, project_id=project_id)
+    row = _threshold_row(db, workspace_id, project_id)
+    limits, defaults = _limits(row), default_limits()
+    return dm.MonitoringThresholdsRead(
+        project_id=project_id, version=limits["version"], etag=f'"{limits["version"]}"',
+        **{key: limits[key] for key in _THRESHOLD_VALUES},
+        defaults=dm.MonitoringThresholdValues(**{key: defaults[key] for key in _THRESHOLD_VALUES}),
+        bounds=dm.MonitoringThresholdBounds(),
+        changed_at=row.created_at if row is not None else None,
+        changed_by_user_id=None if agent or row is None else row.created_by_user_id,
+        can_edit=not agent and can_edit_thresholds(db, actor, workspace_id), notes=list(_THRESHOLDS_NOTES))
+
+
+def set_thresholds(
+    db: Session, *, actor: User, workspace_id: UUID, project_id: UUID, request: dm.MonitoringThresholdsWrite,
+    precondition: Callable[[int], None],
+) -> ProjectDecisionRecord:
+    """A workspace owner or administrator saves the next version with a reason
+    (``precondition(version)`` checks If-Match under the project lock) and its accepted
+    ``monitoring_thresholds_changed`` record. Weeks computed after it use it; nothing is recomputed.
+    The same values again are ``409 thresholds_unchanged``. Does not commit."""
+
+    from app.services import decision_record_service as drs
+
+    human = DecisionActor.human(actor)
+    drs.authorize_writer(db, human, workspace_id=workspace_id, allow_rule=False)
+    if not can_edit_thresholds(db, actor, workspace_id):
+        raise IdentityError("only a workspace owner or administrator can change the monitoring thresholds",
+                            status_code=403)
+    drs.load_project(db, workspace_id=workspace_id, project_id=project_id)
+    db.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(f"monitoring-thresholds:{project_id}", 0))))
+    current = _limits(_threshold_row(db, workspace_id, project_id))
+    precondition(current["version"])
+    values = {key: getattr(request, key) for key in _THRESHOLD_VALUES}
+    previous = {key: current[key] for key in _THRESHOLD_VALUES}
+    if values == previous:
+        raise MonitoringError(dm.THRESHOLDS_UNCHANGED, "these are already the thresholds in force", status_code=409)
+    row_id, version = uuid4(), current["version"] + 1
+    facts = {"version": version, "values": values, "previous": previous}
+    record = drs.insert_record(db, drs.build_record(
+        workspace_id=workspace_id, project_id=project_id, actor=human,
+        decision_type=DECISION_MONITORING_THRESHOLDS_CHANGED, state=STATE_ACCEPTED, subject_kind="project",
+        subject_id=None, rationale=drs.clean_rationale(request.rationale),
+        facts=drs.clean_json_object(facts, label="facts"), evidence_refs=[],
+        details=drs.clean_json_object({"monitoring_thresholds_id": str(row_id)}, label="details")))
+    db.add(MonitoringThresholdSet(id=row_id, workspace_id=workspace_id, project_id=project_id, version=version,
+                                  decision_record_id=record.id, created_by_user_id=actor.id, **values))
+    db.flush()
+    return record
+
+
 # --- reads (API) ------------------------------------------------------------------------------
 
 
-def thresholds() -> dm.MonitoringThresholds:
-    from app.engine.serving.monitoring import FLAGGED_ABS_WATCH, FLAGGED_SHIFT_WATCH, PSI_ALERT, PSI_WATCH, SIGNIFICANCE
+def thresholds(row: MonitoringThresholdSet | None = None, *, agent: bool = True) -> dm.MonitoringThresholds:
+    """The values in force (``row``: the project's newest version; None = the defaults) and the
+    code-owned rest. ``agent=True`` drops who changed them."""
+
+    from app.engine.serving.monitoring import FLAGGED_ABS_WATCH, FLAGGED_SHIFT_WATCH, SIGNIFICANCE
 
     settings = _settings()
+    limits = _limits(row)
     return dm.MonitoringThresholds(
-        psi_watch=PSI_WATCH, psi_alert=PSI_ALERT, significance_level=SIGNIFICANCE,
+        psi_watch=limits["psi_watch"], psi_alert=limits["psi_alert"], precision_floor=limits["precision_floor"],
+        recall_floor=limits["recall_floor"], version=limits["version"],
+        changed_at=row.created_at if row is not None else None,
+        changed_by_user_id=None if agent or row is None else row.created_by_user_id,
+        significance_level=SIGNIFICANCE,
         flagged_share_relative_watch=FLAGGED_SHIFT_WATCH, flagged_share_absolute_watch=FLAGGED_ABS_WATCH,
         min_rows=int(settings.monitoring_min_rows), min_labels=int(settings.monitoring_min_labels),
         min_per_class=int(settings.monitoring_min_per_class))
+
+
+def _parsed_used(value: Any) -> dm.MonitoringThresholdsUsed | None:
+    stored = value if isinstance(value, dict) else None
+    try:
+        return dm.MonitoringThresholdsUsed(**stored) if stored else None
+    except ValueError:  # never fail on a stored value
+        return None
+
+
+def _used(row: MonitoringWindow) -> dm.MonitoringThresholdsUsed | None:
+    return _parsed_used(row.thresholds_used)
 
 
 def _summary(row: MonitoringWindow) -> dm.MonitoringWindowSummary:
     outcomes = row.outcomes or {}
     precision, recall = dm.outcome_rates(outcomes)  # V7 B7: stored at compute time, read here
     return dm.MonitoringWindowSummary(
+        thresholds_used=_used(row), floor_status=dm.floor_status(outcomes),
         window_start=row.window_start, window_end=row.window_end, revision=row.revision,
         model_version_id=row.model_version_id, model_release_id=row.model_release_id, status=row.status,
         summary_code=row.summary_code, summary=row.summary, n_rows=row.n_rows,
@@ -739,15 +914,15 @@ def _windows(db: Session, workspace_id: UUID, project_id: UUID, version_id: UUID
 
 
 def monitoring_overview(db: Session, *, actor: User, workspace_id: UUID, project_id: UUID,
-                        model_version_id: UUID | None = None) -> dm.MonitoringOverviewRead:
+                        model_version_id: UUID | None = None, agent: bool = True) -> dm.MonitoringOverviewRead:
     from app.services.model_release_service import current_release
 
     model = _version(db, actor, workspace_id, project_id, model_version_id)
     rows = _windows(db, workspace_id, project_id, model.id) if model is not None else []
     latest = rows[0] if rows else None
     release = current_release(db, workspace_id=workspace_id, project_id=project_id)
-    finding = (dm.finding_for(latest.status, latest.summary, latest.input_drift, latest.prediction_drift)
-               if latest is not None else None)
+    finding = (dm.finding_for(latest.status, latest.summary, latest.input_drift, latest.prediction_drift,
+                              latest.outcomes) if latest is not None else None)
     status = latest.status if latest is not None else "no_windows" if model is not None else "no_model_in_use"
     return dm.MonitoringOverviewRead(
         project_id=project_id, enabled=bool(_settings().monitoring_enabled),
@@ -758,7 +933,8 @@ def monitoring_overview(db: Session, *, actor: User, workspace_id: UUID, project
         status=status, latest=_summary(latest) if latest is not None else None,
         windows=[_summary(row) for row in rows],
         feature_psi_series=dm.feature_psi_series([(row.window_start, row.input_drift or {}) for row in rows]),
-        finding=finding, thresholds=thresholds(), notes=list(dm.NOTES))
+        finding=finding, thresholds=thresholds(_threshold_row(db, workspace_id, project_id), agent=agent),
+        notes=list(dm.NOTES))
 
 
 def parse_window_start(value: str) -> datetime | None:
@@ -774,7 +950,7 @@ def parse_window_start(value: str) -> datetime | None:
 
 
 def monitoring_window(db: Session, *, actor: User, workspace_id: UUID, project_id: UUID, window_start: str,
-                      model_version_id: UUID | None = None) -> dm.MonitoringWindowRead | None:
+                      model_version_id: UUID | None = None, agent: bool = True) -> dm.MonitoringWindowRead | None:
     from app.engine.serving.monitoring import category_label
 
     model = _version(db, actor, workspace_id, project_id, model_version_id)
@@ -787,12 +963,14 @@ def monitoring_window(db: Session, *, actor: User, workspace_id: UUID, project_i
     outcomes = copy.deepcopy(row.outcomes or {})  # never edit the loaded row's value
     if (outcomes.get("cv_reference") or {}).get("metric"):
         outcomes["cv_reference"]["metric"] = category_label(outcomes["cv_reference"]["metric"])
-    limits = thresholds()
+    limits = thresholds(_threshold_row(db, workspace_id, project_id), agent=agent)  # in force now
+    used = _used(row)  # this week's own values: its sentences use them
+    watch = used.psi_watch if used is not None else default_limits()["psi_watch"]
     return dm.MonitoringWindowRead(
         **_summary(row).model_dump(), input_drift=row.input_drift, prediction_drift=row.prediction_drift,
-        outcomes=outcomes, feature_sentences=[dm.feature_sentence(feature) for feature in features],
+        outcomes=outcomes, feature_sentences=[dm.feature_sentence(feature, watch) for feature in features],
         outcome_sentences=dm.outcome_sentences(outcomes, limits),
-        finding=dm.finding_for(row.status, row.summary, row.input_drift, row.prediction_drift),
+        finding=dm.finding_for(row.status, row.summary, row.input_drift, row.prediction_drift, row.outcomes),
         thresholds=limits, notes=list(dm.NOTES))
 
 

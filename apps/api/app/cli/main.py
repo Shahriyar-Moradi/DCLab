@@ -217,6 +217,67 @@ def cmd_improve_start(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _improve_person(db, email: str):
+    from sqlalchemy import func, select
+
+    from app.db.models import User
+
+    return db.scalar(select(User).where(func.lower(User.email) == email.strip().lower()))
+
+
+def cmd_improve_status(args: argparse.Namespace) -> int:
+    """P5.4-A3: a loop as the named person reads it (the /v1 read model; never a final-test value)."""
+
+    from uuid import UUID
+
+    from app.domain.errors import ImproveRunError
+    from app.services.improve.service import improve_run_read
+
+    db = _session()
+    try:
+        user = _improve_person(db, args.user)
+        if user is None:
+            print(json.dumps({"error": "unknown user"}))
+            return 2
+        try:
+            body = improve_run_read(db, actor=user, workspace_id=UUID(args.workspace), run_id=UUID(args.run),
+                                    agent=False)
+        except ImproveRunError as exc:
+            print(json.dumps({"error": exc.code, "message": exc.detail_message}))
+            return 2
+        print(body.model_dump_json())
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_improve_cancel(args: argparse.Namespace) -> int:
+    """P5.4-A3: stop a loop as the named person (their ML-write authority is checked); its live try
+    is cancelled and the best so far is kept. Accepting a try stays with the API (a person)."""
+
+    from uuid import UUID
+
+    from app.domain.errors import ImproveRunError
+    from app.services.improve.service import cancel_improve_run
+
+    db = _session()
+    try:
+        user = _improve_person(db, args.user)
+        if user is None:
+            print(json.dumps({"error": "unknown user"}))
+            return 2
+        try:
+            run = cancel_improve_run(db, actor=user, workspace_id=UUID(args.workspace), run_id=UUID(args.run))
+        except ImproveRunError as exc:
+            db.rollback()
+            print(json.dumps({"error": exc.code, "message": exc.detail_message}))
+            return 2
+        print(json.dumps({"improve_run_id": str(run.id), "status": run.status, "outcome": run.outcome}))
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_agents_sync_prompts(args: argparse.Namespace) -> int:
     """Create prompt_releases rows from app/agents/prompts (ADR 0009 §2.8); --check only verifies."""
 
@@ -751,6 +812,13 @@ def build_parser() -> argparse.ArgumentParser:
     improve_start.add_argument("--goal", required=True, help='JSON, e.g. {"plain": {"metric": "pr_auc"}}')
     improve_start.add_argument("--budget", default=None, help='JSON, e.g. {"max_iterations": 3}')
     improve_start.set_defaults(func=cmd_improve_start)
+    for name, func, help_text in (("status", cmd_improve_status, "show a loop (as a named person)"),
+                                  ("cancel", cmd_improve_cancel, "stop a loop (as a named person)")):
+        command = improve_sub.add_parser(name, help=help_text)
+        command.add_argument("--user", required=True, help="email of the person")
+        command.add_argument("--workspace", required=True, help="workspace id")
+        command.add_argument("--run", required=True, help="the improve run id")
+        command.set_defaults(func=func)
 
     agents = sub.add_parser("agents")
     agents_sub = agents.add_subparsers(dest="agents_cmd", required=True)

@@ -12,8 +12,8 @@ into a large term): ``sum((a - e) * ln(a / e))``. Numeric columns use up to 10 q
 the training values (empty bins merged; a constant column keeps one edge at its value);
 categorical columns use the top training categories seen at least 5 times and in 1% of rows,
 plus an ``other`` bucket (unseen values land there); missing values are always their own bucket.
-A feature counts as ``watch`` / ``alert`` only when its PSI passes the code-owned threshold AND
-a G-test on its bucket counts has p below 0.01 / features compared (Bonferroni): noise from small
+A feature counts as ``watch`` / ``alert`` only when its PSI passes the project's line (default
+0.10 / 0.20; editable within fixed bounds, D5b) AND a G-test on its bucket counts has p below 0.01 / features compared (Bonferroni): noise from small
 windows or many features never raises an alarm. Date inputs (epoch seconds) always move later
 over time; they are shown with their date ranges but never counted.
 """
@@ -135,14 +135,15 @@ def p_value(expected: Sequence[float], actual: Sequence[float]) -> float:
     return float(chi2_contingency(table, correction=False, lambda_="log-likelihood")[1])
 
 
-def psi_status(value: float) -> str:
-    return "alert" if value >= PSI_ALERT else "watch" if value >= PSI_WATCH else "ok"
+def psi_status(value: float, watch: float = PSI_WATCH, alert: float = PSI_ALERT) -> str:
+    return "alert" if value >= alert else "watch" if value >= watch else "ok"
 
 
-def gated_status(value: float, p: float, alpha: float) -> str:
-    """The PSI level only when the shift is also statistically clear, else ``ok``."""
+def gated_status(value: float, p: float, alpha: float, watch: float = PSI_WATCH, alert: float = PSI_ALERT) -> str:
+    """The PSI level (the project's watch / alert lines, D5b) only when the shift is also
+    statistically clear, else ``ok``."""
 
-    return psi_status(value) if p < alpha else "ok"
+    return psi_status(value, watch, alert) if p < alpha else "ok"
 
 
 # --- buckets --------------------------------------------------------------------------------
@@ -371,7 +372,8 @@ def _compare_feature(entry: Mapping[str, Any], series: pd.Series, kind: str) -> 
     return row, psi(entry["counts"], counts), p_value(entry["counts"], counts)
 
 
-def compare_inputs(frame: pd.DataFrame, reference: Mapping[str, Any], *, date_columns: Sequence[str] = ()) -> dict[str, Any]:
+def compare_inputs(frame: pd.DataFrame, reference: Mapping[str, Any], *, date_columns: Sequence[str] = (),
+                   psi_watch: float = PSI_WATCH, psi_alert: float = PSI_ALERT) -> dict[str, Any]:
     """Per original feature: PSI, G-test p, gated status, missing-share change and a numeric
     mean change, the categorical bucket that moved most or (dates) the date ranges. Top
     ``SHOWN_FEATURES`` by PSI plus counts of the rest; dates are shown but never counted."""
@@ -395,7 +397,7 @@ def compare_inputs(frame: pd.DataFrame, reference: Mapping[str, Any], *, date_co
             row.update(status="ok", counted=False)
             date_rows.append(row)
         else:
-            row.update(status=gated_status(value, p, alpha), counted=True)
+            row.update(status=gated_status(value, p, alpha, psi_watch, psi_alert), counted=True)
             rows.append(row)
     rows.sort(key=lambda row: (-(row["psi"] or 0.0), row["name"]))
     date_rows.sort(key=lambda row: row["name"])
@@ -433,7 +435,8 @@ def _flagged_change(present: np.ndarray, reference: Mapping[str, Any]) -> dict[s
             "flagged_status": "watch" if moved else "ok"}
 
 
-def compare_predictions(scored: pd.DataFrame, reference: Mapping[str, Any] | None, *, min_rows: int) -> dict[str, Any]:
+def compare_predictions(scored: pd.DataFrame, reference: Mapping[str, Any] | None, *, min_rows: int,
+                        psi_watch: float = PSI_WATCH, psi_alert: float = PSI_ALERT) -> dict[str, Any]:
     """PSI of the stored scores vs the out-of-fold CV scores (gated by a G-test at p < 0.01);
     binary: flagged share vs the share the locked threshold flagged in cross-validation."""
 
@@ -453,7 +456,7 @@ def compare_predictions(scored: pd.DataFrame, reference: Mapping[str, Any] | Non
     value, p = psi(reference["counts"], counts), p_value(reference["counts"], counts)
     out: dict[str, Any] = {"available": True, "column": column, "kind": reference.get("kind"), "n_scores": n,
                            "psi": _round(value), "p_value": _round(p, 6),
-                           "status": gated_status(value, p, SIGNIFICANCE)}
+                           "status": gated_status(value, p, SIGNIFICANCE, psi_watch, psi_alert)}
     if reference.get("flagged_share") is not None and present is not None:
         out.update(_flagged_change(present, reference))
     return out
@@ -463,7 +466,7 @@ _SEVERITY = {"ok": 0, "watch": 1, "alert": 2}
 
 
 def window_verdict(min_rows: int, input_drift: Mapping[str, Any], prediction_drift: Mapping[str, Any]) -> tuple[str, str]:
-    """(status, summary_code) from code-owned thresholds. Never an alert from a model without a
+    """(status, summary_code) from the features' and scores' gated statuses (the window's PSI lines). Never an alert from a model without a
     training reference or from fewer than ``min_rows`` compared input rows (``not_enough_data``)."""
 
     if not input_drift.get("available"):
@@ -630,3 +633,71 @@ def outcome_metrics(
             primary = None
     return {"status": "measured", "n_labelled": int(len(truth)), "metric": metric, "metric_value": primary,
             "metrics": metrics, **extra}
+
+
+# --- performance floors (D5b): real outcomes, binary, at the locked threshold -----------------
+
+
+FLOOR_NAMES = ("precision", "recall")
+
+
+def floor_checks(outcomes: Mapping[str, Any], task_type: str, floors: Mapping[str, float | None],
+                 alpha: float = SIGNIFICANCE, *, min_trials: int = 1) -> dict[str, Any] | None:
+    """The project's precision / recall floors on a window's real outcomes; None when no floor is
+    set. A floor is ``below`` only when the outcomes are measured (the minimum labelled rows and
+    rows per class are met), the floor's own rows number at least ``min_trials`` (flagged labelled
+    rows for precision, labelled positives for recall) AND a one-sided exact binomial test says the
+    true rate is below the floor: p = P(X <= successes | trials, rate = floor) < alpha / floors set
+    (Bonferroni, like the drift gate; strictly below). At or above the floor (with ``min_trials``)
+    is ``ok``; anything else is ``not_judged`` with a reason (never an alarm from too few rows). Precision counts true positives among flagged labelled rows,
+    recall among labelled positives (the stored confusion at the locked threshold)."""
+
+    from scipy.stats import binom
+
+    active = [name for name in FLOOR_NAMES if floors.get(name) is not None]
+    if not active:
+        return None
+    per_floor = alpha / len(active)
+    confusion = outcomes.get("confusion") if outcomes.get("status") == "measured" else None
+    counts = ({key: confusion.get(key) for key in ("tp", "fp", "fn")} if isinstance(confusion, Mapping) else {})
+    readable = len(counts) == 3 and all(isinstance(v, int) and not isinstance(v, bool) and v >= 0
+                                        for v in counts.values())
+    out: dict[str, Any] = {"test": "binomial_one_sided", "alpha": alpha, "per_floor_alpha": _round(per_floor, 8)}
+    for name in active:
+        floor = float(floors[name])
+        check: dict[str, Any] = {"floor": floor, "status": "not_judged", "reason_code": None, "value": None,
+                                 "successes": None, "trials": None, "p_value": None}
+        if outcomes.get("status") != "measured":
+            check["reason_code"] = "outcomes_not_measured"
+        elif task_type != "binary":
+            check["reason_code"] = "not_binary"
+        elif not readable:
+            check["reason_code"] = "confusion_unavailable"
+        else:
+            successes = int(counts["tp"])
+            trials = successes + int(counts["fp"] if name == "precision" else counts["fn"])
+            if trials == 0:
+                check["reason_code"] = "no_flagged_rows" if name == "precision" else "no_positive_outcomes"
+            elif trials < min_trials:
+                check.update(successes=successes, trials=trials)
+                check["reason_code"] = "too_few_flagged_rows" if name == "precision" else "too_few_positive_outcomes"
+            else:
+                value = successes / trials
+                check.update(value=_round(value), successes=successes, trials=trials)
+                if value >= floor:
+                    check.update(status="ok")
+                else:
+                    p = float(binom.cdf(successes, trials, floor))
+                    check["p_value"] = _round(p, 6)
+                    if p < per_floor:
+                        check.update(status="below")
+                    else:
+                        check["reason_code"] = "within_chance"
+        out[name] = check
+    return out
+
+
+def floors_below(checks: Mapping[str, Any] | None) -> list[str]:
+    """Names of the floors a window is judged below (empty when none or not judged)."""
+
+    return [name for name in FLOOR_NAMES if ((checks or {}).get(name) or {}).get("status") == "below"]

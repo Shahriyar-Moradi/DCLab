@@ -54,6 +54,7 @@ from app.domain.errors import (
     ExperimentNotFoundError,
     ExperimentRequestError,
     IdentityError,
+    ImproveRunError,
     InvalidChangeSetError,
     InvalidCursorError,
     PlanRefusedError,
@@ -89,7 +90,8 @@ _DECIDE_RESPONSES: dict[int | str, dict[str, Any]] = {
     200: {"headers": REPLAY_HEADER_DOC}, **error_responses(409, 428)}
 _DOMAIN_ERRORS = (
     DecisionRecordError, ExperimentNotBranchableError, ExperimentRequestError, InvalidChangeSetError,
-    PlanRefusedError, RunQuotaExceededError, TargetIntentConflictError, TargetNotInDatasetError, IdentityError)
+    PlanRefusedError, RunQuotaExceededError, TargetIntentConflictError, TargetNotInDatasetError, IdentityError,
+    ImproveRunError)  # P5.4-A3: accepting the assistant's ``improve``
 
 
 def require_human_session(request: Request, db: Session = Depends(get_db)) -> User:

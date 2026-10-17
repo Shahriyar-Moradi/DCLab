@@ -1213,6 +1213,13 @@ RETRAIN_APPEND_ONLY_TRIGGER_SQL = tuple(
 )
 
 
+# 0089 (D5b): a project's monitoring threshold versions are append-only (identical literal in 0089).
+MONITORING_THRESHOLDS_APPEND_ONLY_TRIGGER_SQL = (
+    "CREATE TRIGGER monitoring_thresholds_append_only BEFORE UPDATE OR DELETE ON monitoring_thresholds "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+)
+
+
 # 0087 (P5.4-A2, ADR 0007 §9): improve loops. Goal, budget, plan and T frozen at INSERT; acceptance
 # write-once; status moves only along the loop's transitions; a finished loop is final. A try's
 # experiment and frozen comparison are set once (null -> value); a finished try is final.
@@ -1299,7 +1306,7 @@ IMPROVE_TRIGGER_SQL = (
 
 
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081, 0083-0087
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081, 0083-0089
     install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
@@ -1333,6 +1340,7 @@ def install_immutability_triggers(connection) -> None:
     connection.execute(text(ML_JOB_ATTEMPTS_FINAL_TRIGGER_SQL))
     for statement in RETRAIN_APPEND_ONLY_TRIGGER_SQL:
         connection.execute(text(statement))
+    connection.execute(text(MONITORING_THRESHOLDS_APPEND_ONLY_TRIGGER_SQL))
     for statement in provenance_immutability_upgrade_statements():
         connection.execute(text(statement))
     for statement in evidence_lock_upgrade_statements():

@@ -4,13 +4,16 @@
  * Monitoring (P7.5-A): whether the inputs the model in use sees look different from training (per column, weekly), whether
  * its scores moved, and — once a person links a file of real outcomes — how it actually did. Drift means "the inputs look
  * different from training", never "the model is wrong"; a column is marked only when PSI passes the line AND a statistical
- * test says it is not chance. Date columns are shown but not judged. DCLab never retrains or switches the model on its own;
- * going back to the previous approved model is the Model screen's own confirm step (same component, same write). Every
- * value comes from the monitoring reads; names are untrusted plain text; no final test value is shown.
+ * test says it is not chance. Date columns are shown but not judged. Nothing switches the model on its own; a retrain on newer
+ * data starts by itself only under the Automatic retrain policy, and the retrained model is shown beside the model in use for a
+ * person to switch or keep (D5c, MonitoringRetrain). Going back to the previous approved model is the Model screen's own confirm
+ * step (same component, same write). Every value comes from the monitoring reads; names are untrusted plain text; the only final
+ * test values shown are the labelled retrain comparison (same kind of test, latest months).
  */
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ConfirmApproval } from "@/app/components/studio-app/ApprovedForScoring";
+import { ChallengerCard, RetrainAction, RetrainPolicyCard, RetrainReadFailed, ThresholdsCard } from "@/app/components/studio-app/MonitoringRetrain";
 import { OwnStepsCard, TrendsSection } from "@/app/components/studio-app/MonitoringTrends";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
@@ -27,9 +30,11 @@ import { useProjectRefs } from "@/lib/application/studio-hooks";
 import {
   REAL_NOT_TEST, TABLE_NOTE, THRESHOLDS_READ_ONLY, THRESHOLDS_UNAVAILABLE, WEEK_DEFINITION, canAct, dateNote, driftBars, featureList, featureSentence, goBackOffer,
   headline, idCaveat, isCounted, isDate, isLinkConflict, linkConfirmWords, linkedRows, mapLinkError, mapUploadError, outcomeView, psiDefinition, scopeText,
-  scoreSentences, statusWords, thresholdLines, weekLabel, weekRows, weekSentence, type FeatureLike, type FileInfo, type InputScope, type LinkIntent, type Thresholds,
-  type WeekRow,
+  scoreSentences, statusWords, thresholdLines, weekKey, weekLabel, weekLines, weekRows, weekSentence, type FeatureLike, type FileInfo, type InputScope, type LinkIntent,
+  type Thresholds, type WeekRow,
 } from "@/lib/application/studio-monitoring";
+import { floorLines, retrainSteps, usedText, type ThresholdValues } from "@/lib/application/studio-retrain";
+import { useMonitoringThresholds, useRetrainStatus } from "@/lib/application/studio-retrain-hooks";
 import { linkOutcomes, useDatasetColumns, useMonitoring, useMonitoringInvalidation, useMonitoringWeek, useOutcomeSets } from "@/lib/application/studio-monitoring-hooks";
 import { modelLabel, releaseRows } from "@/lib/application/studio-releases";
 import { useProjectReleases } from "@/lib/application/studio-releases-hooks";
@@ -74,18 +79,21 @@ function DriftChart({ features, thresholds }: { features: readonly FeatureLike[]
         </div>
       ))}
       <figcaption className="muted" style={{ fontSize: 13, marginTop: 6 }}>
-        Bars: input change (PSI) of the judged columns, largest first; each row names its status (Alert, Watch, Within chance, Little change). Red and amber bars are marked columns; grey bars are not. Dashed lines: watch and alert, set by DCLab. A bar longer than the axis ends in an arrow and says “off scale”. Date columns are not in the chart.
+        Bars: input change (PSI) of the judged columns, largest first; each row names its status (Alert, Watch, Within chance, Little change). Red and amber bars are marked columns; grey bars are not. Dashed lines: the watch and alert lines this week was judged with. A bar longer than the axis ends in an arrow and says “off scale”. Date columns are not in the chart.
       </figcaption>
     </figure>
   );
 }
 
-function WeekDetail({ projectId, week, thresholds }: { projectId: string; week: string; thresholds: Thresholds }) {
+function WeekDetail({ projectId, week, thresholds, defaults }: { projectId: string; week: string; thresholds: Thresholds; defaults: ThresholdValues | null }) {
   const read = useMonitoringWeek(projectId, week);
   if (read.isPending) return <Card title="Week"><p role="status">Loading the week…</p></Card>;
   if (read.isError || !read.data) return <Card title="Week"><ReadFailed what="week" error={read.error} onRetry={() => void read.refetch()} /></Card>;
   const w = read.data;
-  const t = w.thresholds ?? thresholds;
+  // The week is judged with the lines it was computed with (before they were recorded: the defaults), not the ones in force now.
+  const base = w.thresholds ?? thresholds;
+  const t = weekLines(w, defaults ? { ...base, psi_watch: defaults.psi_watch, psi_alert: defaults.psi_alert } : base);
+  const floors = floorLines((w.outcomes as { floors?: unknown } | undefined)?.floors);
   const inputs = (w.input_drift ?? {}) as InputScope & { available?: unknown; files_unavailable?: unknown };
   const features = featureList(w.input_drift);
   const judged = features.filter(isCounted);
@@ -134,10 +142,12 @@ function WeekDetail({ projectId, week, thresholds }: { projectId: string; week: 
           </>
         ) : <p>{outcome.lead}</p>}
         {outcome.notes.map((note) => <p key={note} className="muted">{note}</p>)}
+        {floors.length ? <ul aria-label="Floors on real outcomes" data-testid="week-floors">{floors.map((line) => <li key={line}>{line}</li>)}</ul> : null}
         <p className="muted">{REAL_NOT_TEST}</p>
       </section>
       <details>
-        <summary>Watch and alert lines (read-only)</summary>
+        <summary>Lines this week was judged with</summary>
+        <p data-testid="week-used">Computed with: {usedText(w.thresholds_used, defaults)}.</p>
         <ul>{thresholdLines(t).map((line) => <li key={line}>{line}</li>)}</ul>
         <p className="muted">{THRESHOLDS_READ_ONLY}</p>
       </details>
@@ -332,6 +342,9 @@ export function MonitoringScreen({ projectId }: { projectId: string }) {
   const refs = useProjectRefs(projectId);
   const releases = useProjectReleases(projectId);
   const invalidate = useMonitoringInvalidation();
+  const retrain = useRetrainStatus(projectId);
+  const limits = useMonitoringThresholds(projectId);
+  const defaults = limits.data?.defaults ?? null;
   const [picked, setPicked] = useState<string | null>(null);
   const [target, setTarget] = useState<{ modelVersionId: string; model: string } | null>(null);
   const [done, setDone] = useState<string | null>(null);
@@ -340,7 +353,8 @@ export function MonitoringScreen({ projectId }: { projectId: string }) {
   const model = o?.model_version ? modelLabel(o.model_version) : "The model in use";
   const head = headline({ pending: validId && read.isPending, failed: !validId || (read.isError && !o), overview: o, model });
   const thresholds = o?.thresholds ?? null;
-  const weeks = o && thresholds ? weekRows(o.windows, thresholds) : [];
+  const weeks = o && thresholds ? weekRows(o.windows, thresholds, defaults ?? thresholds) : [];
+  const byKey = new Map((o?.windows ?? []).map((w) => [weekKey(w.window_start), w]));
   const week = picked && weeks.some((w) => w.key === picked) ? picked : weeks[0]?.key ?? null;
   const championId = refs.data?.items.find((r) => r.ref_kind === "champion_model")?.target.id ?? null;
   const approvals = releaseRows(releases.data?.items ?? [], { myUserId: user?.id ?? null, inUseModelId: isUuid(championId) ? championId : null, when: utcWhen });
@@ -365,6 +379,8 @@ export function MonitoringScreen({ projectId }: { projectId: string }) {
     { key: "inputs", header: "Largest input change (PSI)", numeric: true },
     { key: "scores", header: "Score change (PSI)", numeric: true },
     { key: "outcomes", header: "Real-world results" },
+    { key: "floor", header: "Floors (real outcomes)", render: (r) => <Pill tone={TONE[r.floorTone]}>{r.floor}</Pill> },
+    { key: "used", header: "Values used", render: (r) => <span className="muted">{usedText(byKey.get(r.key)?.thresholds_used, defaults)}</span> },
     {
       key: "open", header: "Details",
       // Every row keeps a focusable button (the shown week is pressed), so a table that scrolls sideways stays reachable by keyboard.
@@ -381,7 +397,7 @@ export function MonitoringScreen({ projectId }: { projectId: string }) {
         purpose={<>Each <Term definition={WEEK_DEFINITION}>week</Term>, DCLab compares the rows the model in use scored with its training data, column by column, and compares its scores with the scores it gave during training. Once you link real outcomes, it also shows how the model really did on those rows.</>}
         howTo="Read the status first, then open a week to see which columns moved. When real results are known, link the file that holds them below."
         youGet={<>A status per week (the compared columns look like training, watch, alert, or not enough data), the columns that moved most with their <Term definition={psiDefinition(thresholds)}>change score (PSI)</Term>, how the scores moved, and real-world results when outcomes are linked.</>}
-        attention="A change in the inputs means the data looks different from training, not that the model is wrong, and the page never names a cause. A column is marked only when its change passes the line and a statistical test says it is not chance. Date columns are shown but not judged; ID-like columns can look different when new customers appear. DCLab never retrains or switches the model on its own: a person decides. The watch and alert lines are set by DCLab and cannot be changed here."
+        attention="A change in the inputs means the data looks different from training, not that the model is wrong, and the page never names a cause. A column is marked only when its change passes the line and a statistical test says it is not chance. Date columns are shown but not judged; ID-like columns can look different when new customers appear. Real outcomes below a floor make a week an alert, but that is not drift. Nothing switches the model in use on its own: a person decides. Owners and administrators can change the lines and floors under Thresholds; each week keeps the values it was computed with."
       />
       <Card title="Model in use" aside={head.kind !== "loading" && head.kind !== "error" ? <Pill tone={TONE[head.tone]}>{head.label}</Pill> : undefined}>
         {!validId ? <Banner tone="warn">This project link is not valid. Open the project from the list of projects.</Banner>
@@ -416,18 +432,26 @@ export function MonitoringScreen({ projectId }: { projectId: string }) {
           <p className="muted">Which model is in use, and every earlier approval, is on <Link href={`${approved}?tab=approved`}>Model → Approved for scoring</Link>.</p>
         ) : null}
       </Card>
+      {validId ? <ChallengerCard projectId={projectId} status={retrain.data} canDecide={canWrite} /> : null}
       {o && weeks.length ? (
         <>
           <h2>Weekly checks</h2>
-          {thresholds ? <TrendsSection windows={o.windows} series={o.feature_psi_series} thresholds={thresholds} /> : null}
+          {thresholds ? <TrendsSection windows={o.windows} series={o.feature_psi_series} thresholds={thresholds} fallback={defaults ?? thresholds} /> : null}
           <p className="muted">The last {weeks.length} {weeks.length === 1 ? "week" : "weeks"} of the model in use, newest first. Times are UTC. {TABLE_NOTE}</p>
           <DataTable caption="Weekly checks of the model in use, newest first" columns={columns} rows={weeks} rowKey={(r) => r.key} highlightRow={(r) => r.key === week} />
           <div id="week-detail" tabIndex={-1}>
-            {week && thresholds ? <WeekDetail projectId={projectId} week={week} thresholds={thresholds} /> : null}
+            {week && thresholds ? <WeekDetail projectId={projectId} week={week} thresholds={thresholds} defaults={defaults} /> : null}
           </div>
         </>
       ) : null}
-      {o ? <OwnStepsCard overview={o} offer={offer} /> : null}
+      {o ? (
+        <OwnStepsCard overview={o} offer={offer} retrain={retrainSteps(retrain.data, retrain.isError)}>
+          {retrain.isError ? <RetrainReadFailed what="retrain status" error={retrain.error} onRetry={() => void retrain.refetch()} /> : null}
+          <RetrainAction projectId={projectId} status={retrain.data} canStartRuns={canWrite} />
+        </OwnStepsCard>
+      ) : null}
+      {validId ? <RetrainPolicyCard projectId={projectId} thresholds={limits} /> : null}
+      {validId ? <ThresholdsCard projectId={projectId} /> : null}
       {o && thresholds ? <LinkOutcomes projectId={projectId} canWrite={canWrite} enabled={o.enabled} status={o.status} thresholds={thresholds} /> : null}
     </>
   );

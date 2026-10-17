@@ -51,6 +51,7 @@ from app.api.v1_outcomes import router as v1_outcomes_router
 from app.api.v1_predictions import router as v1_predictions_router
 from app.api.v1_scoring_schedules import router as v1_scoring_schedules_router
 from app.api.v1_retrain import router as v1_retrain_router
+from app.api.v1_improve import router as v1_improve_router
 from app.api.v1_service_tokens import router as v1_service_tokens_router
 from app.api.v1_operator import router as v1_operator_router
 from app.api.v1_notifications import router as v1_notifications_router
@@ -144,6 +145,7 @@ app.include_router(v1_predictions_router)
 app.include_router(v1_scoring_schedules_router)
 app.include_router(v1_monitoring_router)
 app.include_router(v1_retrain_router)  # D5a retrain on newest data
+app.include_router(v1_improve_router)  # P5.4-A3 improve loops
 app.include_router(v1_outcomes_router)  # P7.6-A Business view
 app.include_router(v1_service_tokens_router)
 app.include_router(v1_assistant_router)

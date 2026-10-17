@@ -46,6 +46,9 @@ const WeekSummarySchema = z.object({
   outcome_metric_value: nullableNumber,
   outcome_precision: nullableNumber,
   outcome_recall: nullableNumber,
+  // D5b: the values this week was computed with (null: before they were recorded) and its floor verdict.
+  thresholds_used: z.object({ version: z.number(), psi_watch: z.number(), psi_alert: z.number(), precision_floor: nullableNumber, recall_floor: nullableNumber }).nullable().optional(),
+  floor_status: nullableString,
   computed_at: z.string(),
 });
 const PsiPointSchema = z.object({ window_start: z.string(), psi: z.number().nullable(), status: nullableString });

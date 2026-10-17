@@ -222,8 +222,8 @@ test("monitoring: weekly checks and a week's detail, link outcomes, go back from
   await expect(real).toContainText("2 outcome values did not match the training outcome labels and were left out.");
   await expect(real).toContainText("Precision");
   await expect(real).toContainText("not the final test");
-  await page.getByText("Watch and alert lines (read-only)").click();
-  await expect(page.getByText("These lines are set by DCLab and cannot be changed here.")).toBeVisible();
+  await page.getByText("Lines this week was judged with").click();
+  await expect(page.getByText(/^Workspace owners and administrators can change the watch and alert lines and the floors under Thresholds/)).toBeVisible();
   expect(await page.locator("main").innerText()).not.toMatch(BANNED);
   await checkA11y(page, "0-alert");
 
@@ -313,7 +313,7 @@ test("monitoring: weekly checks and a week's detail, link outcomes, go back from
   await expect(link.getByRole("heading")).toBeFocused();
   await expect(link).toContainText("DCLab joins the outcomes in churned to the rows the model in use scored, by matching customer_code with the scored rows' ID column.");
   await expect(link).toContainText("Once at least 100 scored rows have a real outcome");
-  await expect(link).toContainText("Outcomes are never used to train or to choose a model, and nothing is retrained or switched.");
+  await expect(link).toContainText("Outcomes are never used to train or to choose a model, and linking them never switches the model in use.");
   await expect(link).toContainText("The link is saved in History.");
   await expect(link).toContainText("A link cannot be removed; the newest linked file that shares IDs with a week is the one used.");
   await expect(link).toContainText("reload in a few minutes to see the result.");

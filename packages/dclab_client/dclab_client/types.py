@@ -1670,9 +1670,9 @@ class ScoringScheduleRunPage(BaseModel):
 
 
 class MonitoringThresholds(BaseModel):
-    """Code-owned monitoring thresholds (read-only): PSI watch / alert, the significance level a
-    shift must also pass, the flagged-share change that counts as a watch, and the minimum rows /
-    labelled rows / rows per class."""
+    """Monitoring thresholds in force: the project's PSI watch / alert and precision / recall floors
+    (D5b; ``version`` 0 = the defaults), the significance level a shift must also pass, the
+    flagged-share change that counts as a watch, and the minimum rows / labelled rows / rows per class."""
 
     psi_watch: float
     psi_alert: float
@@ -1682,6 +1682,27 @@ class MonitoringThresholds(BaseModel):
     min_rows: int
     min_labels: int
     min_per_class: int
+    precision_floor: float | None = None
+    recall_floor: float | None = None
+    version: int = 0
+    changed_at: datetime | None = None
+    changed_by_user_id: UUID | None = None  # never shown to service tokens
+
+
+class MonitoringThresholdSettings(_Versioned):
+    """D5b: a project's editable thresholds; ``etag`` (the version) is ``set_thresholds``' If-Match."""
+
+    project_id: UUID
+    version: int
+    psi_watch: float
+    psi_alert: float
+    precision_floor: float | None = None
+    recall_floor: float | None = None
+    defaults: dict[str, Any] = Field(default_factory=dict)
+    bounds: dict[str, float] = Field(default_factory=dict)
+    changed_at: datetime | None = None
+    changed_by_user_id: UUID | None = None  # never shown to service tokens
+    can_edit: bool = False
 
 
 class MonitoringFinding(BaseModel):
@@ -1959,3 +1980,73 @@ class GoalDecisionRow(BaseModel):
 class GoalDecisions(BaseModel):
     project_id: UUID
     items: list[GoalDecisionRow] = Field(default_factory=list)
+
+
+class ImproveIteration(BaseModel):
+    """P5.4-A3: one try of an improve loop (iteration 0 of a constrained goal is the operating point;
+    the others are sealed branches). ``comparison`` is cross-validation evidence only."""
+
+    seq: int
+    kind: str
+    status: str
+    reason: str | None = None
+    action: dict[str, Any] = Field(default_factory=dict)
+    experiment_id: UUID | None = None
+    incumbent_experiment_id: UUID
+    planned_new_candidates: int
+    planned_candidate_ids: list[str] = Field(default_factory=list)
+    comparison: dict[str, Any] | None = None
+    agent: str
+    training_seconds: float | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
+
+
+class ImproveActions(BaseModel):
+    accept: bool = False
+    keep_current: bool = False
+    cancel: bool = False
+
+
+class ImproveRun(_Versioned):
+    """P5.4-A3: an improve loop. ``etag`` is the If-Match of ``cancel`` / ``accept``. Service tokens
+    get no person ids; no field carries a final-test value."""
+
+    id: UUID
+    project_id: UUID
+    split_plan_id: UUID
+    start_experiment_id: UUID
+    incumbent_experiment_id: UUID
+    final_experiment_id: UUID | None = None
+    status: str
+    outcome: str | None = None
+    stop_reason: str | None = None
+    stop_detail: str | None = None
+    goal: dict[str, Any] = Field(default_factory=dict)
+    budget: dict[str, Any] = Field(default_factory=dict)
+    plan: list[Any] = Field(default_factory=list)
+    planned_comparisons: int
+    validation_folds: int
+    looks_before: int
+    sealed_set_label: str
+    sealed_set_consulted: bool = False
+    final_attempts: int = 0
+    accepted_iteration_seq: int | None = None
+    accepted_by_user_id: UUID | None = None
+    created_by_user_id: UUID | None = None
+    started_by: str
+    ai: str = "off"
+    training_seconds_spent: float = 0.0
+    llm_micros_spent: int = 0
+    cancel_requested_at: datetime | None = None
+    waiting_user_expires_at: datetime | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    iterations: list[ImproveIteration] = Field(default_factory=list)
+    actions: ImproveActions = Field(default_factory=ImproveActions)
+
+
+class ImproveRunPage(BaseModel):
+    project_id: UUID
+    items: list[ImproveRun] = Field(default_factory=list)

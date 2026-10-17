@@ -357,11 +357,14 @@ from app.domain.retrain import (
 )
 from app.domain.monitoring import (
     CK_MONITORING_OUTCOME_SETS_COLUMNS,
+    CK_MONITORING_THRESHOLDS_BOUNDS,
+    CK_MONITORING_THRESHOLDS_VERSION,
     CK_MONITORING_WINDOWS_COUNTS,
     CK_MONITORING_WINDOWS_JSON,
     CK_MONITORING_WINDOWS_STATUS,
     CK_MONITORING_WINDOWS_SUMMARY,
     CK_MONITORING_WINDOWS_SUMMARY_CODE,
+    CK_MONITORING_WINDOWS_THRESHOLDS_USED,
     CK_MONITORING_WINDOWS_WEEK,
 )
 from app.domain.usage import (
@@ -6745,6 +6748,7 @@ class MonitoringWindow(Base):
         CheckConstraint(CK_MONITORING_WINDOWS_COUNTS, name="ck_monitoring_windows_counts"),
         CheckConstraint(CK_MONITORING_WINDOWS_WEEK, name="ck_monitoring_windows_week"),
         CheckConstraint(CK_MONITORING_WINDOWS_JSON, name="ck_monitoring_windows_json"),
+        CheckConstraint(CK_MONITORING_WINDOWS_THRESHOLDS_USED, name="ck_monitoring_windows_thresholds_used"),
         Index(
             "ix_monitoring_windows_latest",
             "workspace_id", "project_id", "model_version_id", desc("window_start"), desc("revision"),
@@ -6775,6 +6779,8 @@ class MonitoringWindow(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     summary_code: Mapped[str] = mapped_column(String(64), nullable=False)
     summary: Mapped[str] = mapped_column(String(1000), nullable=False)
+    # D5b: the thresholds this revision was computed with (version, PSI lines, floors); null before 0089.
+    thresholds_used: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
     )
@@ -6813,6 +6819,46 @@ class MonitoringOutcomeSet(Base):
     key_column: Mapped[str] = mapped_column(String(256), nullable=False)
     outcome_column: Mapped[str] = mapped_column(String(256), nullable=False)
     linked_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class MonitoringThresholdSet(Base):
+    """D5b (ADR 0012 D4): one version of a project's monitoring thresholds (PSI watch / alert,
+    precision / recall floors; null floor = off). Append-only (DB trigger): a change inserts the next
+    ``version`` with its ``monitoring_thresholds_changed`` History entry; the newest is in force and no
+    row means the defaults. Written only by ``monitoring_service.set_thresholds``."""
+
+    __tablename__ = "monitoring_thresholds"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_monitoring_thresholds_workspace_id"),
+        UniqueConstraint("workspace_id", "project_id", "version", name="uq_monitoring_thresholds_version"),
+        ForeignKeyConstraint(["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+                             name="fk_monitoring_thresholds_workspace_project"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "decision_record_id"],
+            ["project_decision_records.workspace_id", "project_decision_records.project_id",
+             "project_decision_records.id"],
+            name="fk_monitoring_thresholds_workspace_project_record"),
+        CheckConstraint(CK_MONITORING_THRESHOLDS_BOUNDS, name="ck_monitoring_thresholds_bounds"),
+        CheckConstraint(CK_MONITORING_THRESHOLDS_VERSION, name="ck_monitoring_thresholds_version"),
+        Index("ix_monitoring_thresholds_created_by_user_id", "created_by_user_id"),
+        Index("ix_monitoring_thresholds_workspace_record", "workspace_id", "decision_record_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    psi_watch: Mapped[float] = mapped_column(Float, nullable=False)
+    psi_alert: Mapped[float] = mapped_column(Float, nullable=False)
+    precision_floor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recall_floor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    decision_record_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
     )

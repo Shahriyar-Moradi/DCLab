@@ -58,6 +58,7 @@
   "model_selection_decisions",
   "model_versions",
   "monitoring_outcome_sets",
+  "monitoring_thresholds",
   "monitoring_windows",
   "notification_outbox",
   "notification_preferences",

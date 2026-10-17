@@ -70,8 +70,9 @@ NOT_COMPARABLE_MESSAGES: dict[str, str] = {
     "task_differs": "not comparable: the two models predict different kinds of target",
 }
 COMPARISON_REASONS = tuple(NOT_COMPARABLE_MESSAGES)  # the CK_COMPARISON_REASON_CODE vocabulary
-RetrainState = Literal["idle", "drift_found", "retraining", "ready_to_compare", "waiting_for_you", "switched",
-                       "kept"]
+# D5b: ``below_floor`` when the newest week's alert was raised by a precision / recall floor, not by drift.
+RetrainState = Literal["idle", "drift_found", "below_floor", "retraining", "ready_to_compare", "waiting_for_you",
+                       "switched", "kept"]
 NOTES = (
     "Automatic only starts the retrain; switching the model in use is always a person's decision.",
     "The comparison is the same kind of test, latest months, never the same test: each model has its own "

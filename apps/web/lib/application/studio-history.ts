@@ -29,6 +29,8 @@ const WHAT: Record<string, string> = {
   scoring_schedule_changed: "Changed weekly scoring",
   monitoring_outcomes_linked: "Linked real outcomes",
   operating_point_chosen: "Recorded a preferred threshold",
+  retrain_policy_changed: "Changed the retrain policy",
+  monitoring_thresholds_changed: "Changed the monitoring thresholds",
 };
 
 /** What happened, in a sentence. An unknown type keeps its own words (cleaned) instead of a guess. */
@@ -93,6 +95,7 @@ export function correctionFor(type: string, state: string): Correction {
   if (type === "champion_promoted") return { ...APPROVALS_SHORTCUT };
   if (REF_MOVES.has(type)) return { kind: "note", text: "Change the version in use again; that adds a new entry." };
   if (type === "operating_point_chosen") return { kind: "note", text: "Change it from the model's Threshold tab." };
+  if (type === "retrain_policy_changed" || type === "monitoring_thresholds_changed") return { kind: "note", text: "An owner or administrator changes it again on Monitoring; that adds a new entry." };
   if (type === "problem_spec_locked") return { kind: "note", text: "Change the goal by locking a new version of it." };
   if (SUGGESTION_OUTCOMES.has(type)) return { kind: "note", text: "Undo it from the suggestion in the Inbox (Revert)." };
   if (ENGINE_OWNED_TYPES.has(type)) return { kind: "note", text: "Recorded by the rules; only the rules change it." };
@@ -126,7 +129,7 @@ export function evidenceHref(projectId: string, ref: Subject): string | null {
 /* ---------- events from the activity read (V7 UI-E) ---------- */
 
 /** The activity kinds History adds to its log, beside the decision entries (decisions themselves come from the decision list). */
-export const LOG_EVENT_KINDS: ReadonlySet<string> = new Set(["dataset_uploaded", "final_test_run", "drift_alert", "scheduled_scoring"]);
+export const LOG_EVENT_KINDS: ReadonlySet<string> = new Set(["dataset_uploaded", "final_test_run", "drift_alert", "scheduled_scoring", "retrain_requested", "retrain_compared"]);
 
 export type ActivityEventLike = {
   id: string; kind: string; occurred_at: string; status?: string | null;
@@ -143,6 +146,9 @@ const SCHEDULE_WORDS: Record<string, string> = {
   skipped_owner_not_allowed: "Weekly scoring skipped: the person who set it up can no longer run it", skipped_missed: "Weekly scoring skipped: the time was missed",
 };
 const UPLOAD_WORDS: Record<string, string> = { training: "Uploaded a training file", scoring: "Uploaded a file to score" };
+const RETRAIN_WORDS: Record<string, string> = {
+  person: "Started a retrain on newest data", auto: "Started a retrain on newest data automatically (the retrain policy is Automatic)", ask: "Asked in the Inbox: retrain on newest data?",
+};
 
 function eventWho(actor: ActivityEventLike["actor"]): Pick<EventRow, "who" | "whoKind"> {
   if (actor.kind === "person") return { who: actor.is_you === true ? "You" : "A person", whoKind: "human" };
@@ -171,10 +177,20 @@ export function eventRow(e: ActivityEventLike, projectId: string, names: Readonl
         href: evidenceHref(projectId, { kind: "experiment", id: e.link.id }), linkLabel: run ? `Open ${run}` : "Open the run", undo: "Cannot be repeated for this run." };
     }
     case "drift_alert": {
+      // The event does not say whether drift or a floor on real outcomes raised it, so it names both.
       const model = names.get(`model_version:${subjectId}`) ?? "the model";
-      return { ...base, what: `Weekly monitoring marked a week as alert for ${model}: the inputs or scores look different from training`, about: model,
+      return { ...base, what: `Weekly monitoring marked a week as alert for ${model}: drift, or real outcomes below a floor`, about: model,
         href: projectHref(projectId, "monitoring"), linkLabel: "Open Monitoring", undo: "Nothing to undo: it is a check. What to do about it is a person's choice." };
     }
+    case "retrain_requested": {
+      const run = e.subject.kind === "experiment" && subjectId ? names.get(`experiment:${subjectId}`) ?? null : null;
+      return { ...base, what: own(RETRAIN_WORDS, e.status ?? "") ?? "Retrain on newest data", about: run,
+        href: e.subject.kind === "experiment" && subjectId ? evidenceHref(projectId, { kind: "experiment", id: subjectId }) : projectHref(projectId, "monitoring"),
+        linkLabel: e.subject.kind === "experiment" && subjectId ? (run ? `Open ${run}` : "Open the retrained run") : "Open Monitoring", undo: "Switching is a separate decision; nothing changed the model in use." };
+    }
+    case "retrain_compared":
+      return { ...base, what: e.status === "compared" ? "Put the retrained model beside the model in use (same kind of test, latest months)" : "Could not compare the retrained model with the model in use", about: null,
+        href: projectHref(projectId, "monitoring"), linkLabel: "Open Monitoring", undo: "Nothing to undo: it is evidence for a person's decision." };
     default:
       return { ...base, what: own(SCHEDULE_WORDS, e.status ?? "") ?? "Weekly scoring ran", about: null,
         href: projectHref(projectId, "predictions"), linkLabel: "Open Predictions", undo: "—" };
@@ -197,7 +213,7 @@ export function mergeLog<D extends { id: string; recorded_at: string }>(
     ...shown.map((e) => ({ type: "event" as const, at: e.at, key: `event:${e.id}`, event: e })),
   ].sort((a, b) => (Date.parse(b.at) || 0) - (Date.parse(a.at) || 0));
   const note = activityOldest && utcWhen(activityOldest) !== "—"
-    ? `Uploads, final tests, drift alerts and weekly scorings are listed from ${utcWhen(activityOldest)}; older ones are not shown here.`
+    ? `Uploads, final tests, alerts, weekly scorings and retrains are listed from ${utcWhen(activityOldest)}; older ones are not shown here.`
     : null;
   return { rows, note };
 }

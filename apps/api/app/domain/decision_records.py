@@ -44,6 +44,7 @@ DECISION_TYPES = (
     "goal_metric_confirmed",
     "goal_rule_confirmed",
     "retrain_policy_changed",
+    "monitoring_thresholds_changed",
 )
 DECISION_WINNER_LOCKED = "winner_locked"
 DECISION_SPLIT_PLAN_CREATED = "split_plan_created"
@@ -80,10 +81,13 @@ GOAL_CONFIRMATION_DECISION_TYPES = {
 # D5a (ADR 0012): an owner or administrator changing the project's retrain policy: written only by
 # ``retrain_service.set_policy``, never recorded or corrected generically.
 DECISION_RETRAIN_POLICY_CHANGED = "retrain_policy_changed"
+# D5b (ADR 0012 D4): an owner or administrator changing the project's monitoring thresholds: written
+# only by ``monitoring_service.set_thresholds``, never recorded or corrected generically.
+DECISION_MONITORING_THRESHOLDS_CHANGED = "monitoring_thresholds_changed"
 RESERVED_DECISION_TYPES = frozenset(
     {"proposal_accepted", "proposal_rejected", "decision_point_resolved", "proposal_reverted",
      DECISION_SCORING_SCHEDULE_CHANGED, DECISION_MONITORING_OUTCOMES_LINKED, DECISION_RETRAIN_POLICY_CHANGED,
-     *GOAL_CONFIRMATION_DECISION_TYPES.values()}
+     DECISION_MONITORING_THRESHOLDS_CHANGED, *GOAL_CONFIRMATION_DECISION_TYPES.values()}
 )
 # Accepted rows of these types exist only together with their ref move
 # (``project_ref_service.move_ref``); they are never corrected in place.
@@ -366,6 +370,7 @@ DecisionType = Literal[
     "goal_metric_confirmed",
     "goal_rule_confirmed",
     "retrain_policy_changed",
+    "monitoring_thresholds_changed",
 ]
 
 _UNTRUSTED = (

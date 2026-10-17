@@ -287,7 +287,8 @@ def test_every_read_tool_result_is_holdout_free_on_the_seeded_graph(ac):
             "get_model": {"model_version_id": model}, "get_model_card": {"model_version_id": model},
             "get_impact": {"kind": "experiment", "node_id": g.exp[1]},
             "accept_proposal": {"proposal_id": proposed.id},
-            "get_prediction": {"prediction_id": uuid4()}}  # no prediction in the graph: refused, typed
+            "get_prediction": {"prediction_id": uuid4()},  # no prediction in the graph: refused, typed
+            "get_improve_run": {"improve_run_id": _seed_improve_run(db, g)}}
     ctx = ToolContext(db=db, actor=g.actor, workspace_id=g.ws)
     checked, refused = [], {}
     for name, tool in catalog_module.catalog().items():
@@ -318,6 +319,30 @@ def test_every_read_tool_result_is_holdout_free_on_the_seeded_graph(ac):
     # The seeded graph has no prediction; every other read tool returned a shaped result.
     assert refused == {"get_prediction": "not_found"}, refused
     assert len(checked) == len([t for t in catalog_module.catalog().values() if t.effect == "read"]) - 1
+
+
+def _seed_improve_run(db, g):
+    """P5.4-A3: a finished improve loop on exp[1] with one compared try (CV numbers only)."""
+
+    from app.db.models import Experiment, ImproveIteration, ImproveRun
+
+    start = db.get(Experiment, g.exp[1])
+    run = ImproveRun(workspace_id=g.ws, project_id=g.project.id, split_plan_id=start.split_plan_id,
+                     start_experiment_id=start.id, incumbent_experiment_id=start.id, status="queued",
+                     goal={"plain": {"metric": "roc_auc"}}, budget={"max_iterations": 1}, plan=[],
+                     planned_comparisons=3, validation_folds=5, looks_before=1, sealed_set_label="reported_before",
+                     created_by_user_id=g.actor.id)
+    db.add(run)
+    db.flush()
+    db.add(ImproveIteration(
+        workspace_id=g.ws, project_id=g.project.id, improve_run_id=run.id, seq=0, plan_index=1,
+        kind="family_include", action={"kind": "family_include", "family": "extra_trees"}, status="rejected",
+        reason="inside_margin", experiment_id=g.exp[0], incumbent_experiment_id=start.id, planned_new_candidates=3,
+        planned_candidate_ids=["extra_trees"], idempotency_key=f"improve:{run.id}:0",
+        comparison={"status": "rejected", "mean_difference": 0.0123, "se_nb": 0.0081,
+                    "fold_scores": [{"fold_number": 1, "probe": 0.8123, "incumbent": 0.8001, "difference": 0.0122}]}))
+    db.commit()
+    return run.id
 
 
 def _seed_winner(db, g, index) -> None:

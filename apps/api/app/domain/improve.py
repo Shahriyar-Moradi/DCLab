@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Literal
+from datetime import datetime
+from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -138,6 +140,124 @@ class ImproveBudget(BaseModel):
     def _patience(self) -> "ImproveBudget":
         self.patience = min(self.patience, self.max_iterations)  # §3: patience's hard max is max_iterations
         return self
+
+
+TOKEN_BUDGET_CEILINGS = {  # §10: a token may only lower the founder defaults
+    "max_iterations": DEFAULT_MAX_ITERATIONS, "max_wall_seconds": DEFAULT_MAX_WALL_SECONDS,
+    "max_llm_micros": DEFAULT_MAX_LLM_MICROS, "patience": DEFAULT_PATIENCE,
+    "comparison_bound": CV_COMPARISON_BOUND_PER_SPLIT_PLAN,
+}
+IMPROVE_PAGE_DEFAULT, IMPROVE_PAGE_MAX = 20, 100
+
+
+def clamp_budget_for_agent(limits: "ImproveBudget") -> "ImproveBudget":
+    """§10: a service token or an agent proposal only lowers the founder defaults (never raises a
+    budget or the comparison bound)."""
+
+    lowered = {key: min(getattr(limits, key), ceiling) for key, ceiling in TOKEN_BUDGET_CEILINGS.items()}
+    return ImproveBudget.model_validate({**limits.model_dump(), **lowered})
+
+
+# --- /v1 shapes (P5.4-A3, ADR 0007 §7, §10) -------------------------------------------------------
+
+
+class ImproveStart(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    from_experiment_id: UUID = Field(description="A completed, locked open-ingest run of the project.")
+    fresh_split: bool = Field(False, description="A new split plan for the loop. Not available yet: requests that "
+                              "set it are refused (people 409 fresh_split_unavailable, service tokens 403).")
+    validation_folds: Literal[5, 10] | None = Field(None, description="Folds of a fresh split (5 or 10). Not "
+                                                    "available yet: requests that set it are refused.")
+
+    @model_validator(mode="after")
+    def _folds_need_fresh_split(self) -> "ImproveStart":
+        if self.validation_folds is not None and not self.fresh_split:
+            raise ValueError("validation_folds applies to a fresh split only")
+        return self
+
+
+class ImproveStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start: ImproveStart
+    goal: ImproveGoal
+    budget: ImproveBudget | None = None
+
+
+class ImproveAcceptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    iteration: int | None = Field(None, ge=0, description="The try (seq) to accept: only one that beat the noise.")
+    keep_current: bool = Field(False, description="Keep the current model instead (the final test set stays unused).")
+    rationale: str | None = Field(None, max_length=1000, description="Your reason, recorded with the acceptance.")
+
+
+class ImproveIterationRead(BaseModel):
+    seq: int
+    kind: str
+    status: str
+    reason: str | None = None
+    action: dict[str, Any]
+    experiment_id: UUID | None = None
+    incumbent_experiment_id: UUID
+    planned_new_candidates: int
+    planned_candidate_ids: list[str]
+    comparison: dict[str, Any] | None = Field(None, description="Cross-validation evidence only (§5).")
+    agent: str
+    training_seconds: float | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
+
+
+class ImproveActionsRead(BaseModel):
+    accept: bool = False
+    keep_current: bool = False
+    cancel: bool = False
+
+
+class ImproveRunRead(BaseModel):
+    """One loop. Service tokens get no person ids and every action false except cancelling a
+    queued / running loop; no field ever carries a final-test value (§6.6)."""
+
+    id: UUID
+    project_id: UUID
+    split_plan_id: UUID
+    start_experiment_id: UUID
+    incumbent_experiment_id: UUID
+    final_experiment_id: UUID | None = None
+    status: str
+    outcome: str | None = None
+    stop_reason: str | None = None
+    stop_detail: str | None = None
+    goal: dict[str, Any]
+    budget: dict[str, Any]
+    plan: list[Any]
+    planned_comparisons: int
+    validation_folds: int
+    looks_before: int
+    sealed_set_label: str
+    sealed_set_consulted: bool
+    final_attempts: int
+    accepted_iteration_seq: int | None = None
+    accepted_by_user_id: UUID | None = None
+    created_by_user_id: UUID | None = None
+    started_by: Literal["person", "service_token"]
+    ai: Literal["off"] = "off"
+    training_seconds_spent: float
+    llm_micros_spent: int
+    cancel_requested_at: datetime | None = None
+    waiting_user_expires_at: datetime | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    iterations: list[ImproveIterationRead]
+    actions: ImproveActionsRead
+
+
+class ImproveRunPage(BaseModel):
+    project_id: UUID
+    items: list[ImproveRunRead]
 
 
 def goal_size_ok(goal: ImproveGoal) -> bool:

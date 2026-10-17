@@ -175,7 +175,7 @@
         "call": 1,
         "fields": 4,
         "ok": true,
-        "preview": "[{\"data_class\":\"metadata\",\"key\":\"get_experiment.experiment\",\"outcome_scope\":\"none\",\"value\":{\"cancel_requested\":false,\"change_set\":null,\"created_at\":1788220801,\"ended_at\":null,\"failure_reason\":null,\"id\":\"<id:1>\",\"lineage\":{\"execution_request_id\":null,\"parent_experiment_id\":\"<id:2>\",\"prepared_dataset_id\":\"<id:3>\",\"problem_spec_id\":\"<id:4>\",\"source_dataset_id\":\"<id:5>\",\"split_plan_id\":\"<id:6>\",\"workflow_run_id\":\"<id:7>\"},\"project_id\":\"<id:8>\",\"status\":{\"completed\":true},\"target_column\":null,\"task_type\":null}}]",
+        "preview": "[{\"data_class\":\"metadata\",\"key\":\"get_experiment.experiment\",\"outcome_scope\":\"none\",\"value\":{\"cancel_requested\":false,\"change_set\":null,\"created_at\":1788220801,\"ended_at\":null,\"evidence_mode\":{\"scored\":true},\"failure_reason\":null,\"id\":\"<id:1>\",\"lineage\":{\"execution_request_id\":null,\"parent_experiment_id\":\"<id:2>\",\"prepared_dataset_id\":\"<id:3>\",\"problem_spec_id\":\"<id:4>\",\"source_dataset_id\":\"<id:5>\",\"split_plan_id\":\"<id:6>\",\"workflow_run_id\":\"<id:7>\"},\"project_id\":\"<id:8>\",\"status\":{\"completed\":true},\"target_column\":null,\"task_type\":null}}]",
         "preview_dropped": 3,
         "result_digest": "<digest>",
         "tool": "get_experiment"
@@ -196,13 +196,13 @@
       "payload": {
         "cache_hit": false,
         "call": 2,
-        "cost_micros": 6918,
+        "cost_micros": 6942,
         "invocation_id": "<id:11>",
         "ok": true,
         "output_digest": "<digest>",
         "refusal": null,
         "usage": {
-          "input": 1916,
+          "input": 1924,
           "output": 78
         }
       },
@@ -262,13 +262,13 @@
       "payload": {
         "cache_hit": false,
         "call": 3,
-        "cost_micros": 6873,
+        "cost_micros": 6897,
         "invocation_id": "<id:12>",
         "ok": true,
         "output_digest": "<digest>",
         "refusal": null,
         "usage": {
-          "input": 1981,
+          "input": 1989,
           "output": 62
         }
       },
@@ -300,8 +300,8 @@
     },
     {
       "payload": {
-        "cost_micros": 19452,
-        "freed_micros": 230548
+        "cost_micros": 19500,
+        "freed_micros": 230500
       },
       "type": "budget_settled"
     },
@@ -329,7 +329,7 @@
           "cache_hits": 0,
           "calls": 3,
           "steps": 3,
-          "tokens_in": 5584,
+          "tokens_in": 5600,
           "tokens_out": 180,
           "tool_calls": 2,
           "wall_ms": "<volatile>"
@@ -357,7 +357,7 @@
     {
       "cache_hit": false,
       "data_class": "aggregates",
-      "input_tokens": 1916,
+      "input_tokens": 1924,
       "llm_used": true,
       "model": "claude-sonnet-5-5",
       "outcome_scope": "cv",
@@ -372,7 +372,7 @@
     {
       "cache_hit": false,
       "data_class": "aggregates",
-      "input_tokens": 1981,
+      "input_tokens": 1989,
       "llm_used": true,
       "model": "claude-sonnet-5-5",
       "outcome_scope": "cv",

@@ -72,7 +72,7 @@
       "purpose": "assistant.turn"
     },
     {
-      "input_digest": "5a14366543185e52d26716db20a83f390de578628a4b1053fc4603b15b7288e2",
+      "input_digest": "ed902eea1b70888dbd3fb736e6728ba45956adc154dabfe0aa1eb4a575e117e3",
       "instructions_digest": "93d9ca5529a526cceba8bd49bdddb022ff06ffc57e76cd463c561ab7dec15ac6",
       "model": "claude-sonnet-5-5",
       "output": {
@@ -93,7 +93,7 @@
         ]
       },
       "output_schema_digest": "e8bba07dd3b9ba05b278836f8be9fe345b96d9825cea9f5912132c70b0b49e59",
-      "payload_digest": "a5b609124703fa50b0b780a6e0416ae5d304cd264a393a12d33ff5b53891b61f",
+      "payload_digest": "df68b7c28e438f2c5ac0982cfc2aa8d75a38e59689b91342caa53f82eb764e7b",
       "payload_keys": [
         "$.context",
         "$.context[].data_class",
@@ -149,6 +149,8 @@
         "$.transcript[].fields[].value.change_set",
         "$.transcript[].fields[].value.created_at",
         "$.transcript[].fields[].value.ended_at",
+        "$.transcript[].fields[].value.evidence_mode",
+        "$.transcript[].fields[].value.evidence_mode.scored",
         "$.transcript[].fields[].value.failure_reason",
         "$.transcript[].fields[].value.id",
         "$.transcript[].fields[].value.lineage",
@@ -173,7 +175,7 @@
       "purpose": "assistant.turn"
     },
     {
-      "input_digest": "a3dbb06e8e46a7509258cb738f9d8dd5a2ab7751970e024a843d7be677baca43",
+      "input_digest": "ba3df5359c10bbcf7ce75a77362aa8f4d031ee03cb8b0de9155c8e8333d5274b",
       "instructions_digest": "93d9ca5529a526cceba8bd49bdddb022ff06ffc57e76cd463c561ab7dec15ac6",
       "model": "claude-sonnet-5-5",
       "output": {
@@ -187,7 +189,7 @@
         "message": "The spec awaits your confirmation. [The branch](dclab://experiment/<id:3>) reaches CV roc_auc 0.812."
       },
       "output_schema_digest": "e8bba07dd3b9ba05b278836f8be9fe345b96d9825cea9f5912132c70b0b49e59",
-      "payload_digest": "0c0b2d64c4d0398f2cd2db0eaa15f9de23834af4621078c10771672711e296e3",
+      "payload_digest": "ac80586f1890b999824a8555d27045f21dd0cd6958e2e876e2254e5577b6ac93",
       "payload_keys": [
         "$.context",
         "$.context[].data_class",
@@ -243,6 +245,8 @@
         "$.transcript[].fields[].value.change_set",
         "$.transcript[].fields[].value.created_at",
         "$.transcript[].fields[].value.ended_at",
+        "$.transcript[].fields[].value.evidence_mode",
+        "$.transcript[].fields[].value.evidence_mode.scored",
         "$.transcript[].fields[].value.failure_reason",
         "$.transcript[].fields[].value.id",
         "$.transcript[].fields[].value.lineage",

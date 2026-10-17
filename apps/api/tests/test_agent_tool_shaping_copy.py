@@ -40,6 +40,7 @@ from app.domain.experiment_resources import (
 )
 from app.domain.findings import ExperimentFindingsRead
 from app.domain.governance_console import GovernanceRead
+from app.domain.improve import ImproveRunRead
 from app.domain.model_build import PipelineModelBuildRead
 from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.model_card import ModelCardRead
@@ -152,6 +153,9 @@ class CorpusReads:
 
     def monitoring(self, pid):
         return self._get(f"/v1/projects/{pid}/monitoring", MonitoringOverviewRead)
+
+    def improve_run(self, rid):
+        return self._get(f"/v1/improve-runs/{rid}", ImproveRunRead)
 
     def prediction(self, pid):
         return self._get(f"/v1/predictions/{pid}", BatchPredictionRead)

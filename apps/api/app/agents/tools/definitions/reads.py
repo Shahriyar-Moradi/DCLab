@@ -117,6 +117,10 @@ class ListReleasesInput(BaseModel):
     project_id: Id
 
 
+class ImproveRunInput(BaseModel):
+    improve_run_id: Id
+
+
 class ScoringScheduleInput(BaseModel):
     project_id: Id
 
@@ -279,6 +283,12 @@ class ServiceReads:
         # The agent view (as /v1 for service tokens): no approving person's id, no holdout-naming rationale.
         return list_releases(self.db, **self._who, project_id=project_id, agent=True)
 
+    def improve_run(self, improve_run_id: UUID) -> Any:
+        from app.services.improve.service import improve_run_read
+
+        # The agent view (as /v1 for service tokens): no person ids, no key naming the holdout.
+        return improve_run_read(self.db, **self._who, run_id=improve_run_id, agent=True)
+
     def scoring_schedule(self, project_id: UUID) -> Any:
         from app.services.scoring_schedule_service import schedule_state
 
@@ -360,6 +370,7 @@ def _experiment(e: Any) -> dict[str, Any]:
         "failure_reason": data_text(e.failure_reason, 500), "lineage": e.lineage.model_dump(mode="json"),
         "change_set": data_text(e.change_set, 2000), "metrics": cv_record(e.metrics),
         "diff_vs_parent": bound(cv_only(e.diff_vs_parent), max_items=20),
+        "evidence_mode": code(e.evidence_mode),  # sealed: an improve try, the final test set not used
     }
 
 
@@ -808,6 +819,41 @@ def _releases_shape(page: Any) -> Shaped:
                    "releases": [release_summary(r) for r in page.items[:LIST_LIMIT]]})
 
 
+IMPROVE_NOTE = ("Each try is a sealed branch on the same folds, judged per fold against noise on cross-validation; "
+                "the final test set is scored once, only after a person accepts a try in DCLab Studio (an agent "
+                "never accepts).")
+
+
+def _improve_run_fetch(reads: Any, a: ImproveRunInput) -> dict[str, Any]:
+    run = reads.improve_run(a.improve_run_id)
+    return {"run": run, "start": reads.experiment(run.start_experiment_id)}
+
+
+def improve_run_summary(r: Any) -> dict[str, Any]:
+    """Codes, ids and CV numbers only (shared with ``dclab_mcp``'s ``get_improve_run``)."""
+
+    tries = [{"seq": it.seq, "kind": code(it.kind), "status": code(it.status), "reason": code(it.reason),
+              "action": bound(it.action), "experiment_id": it.experiment_id,
+              "incumbent_experiment_id": it.incumbent_experiment_id,
+              "planned_candidate_ids": [code(c) for c in it.planned_candidate_ids[:LIST_LIMIT]],
+              "comparison": bound(cv_only(it.comparison)), "training_seconds": it.training_seconds}
+             for it in r.iterations[:LIST_LIMIT]]
+    return {"id": r.id, "project_id": r.project_id, "split_plan_id": r.split_plan_id,
+            "start_experiment_id": r.start_experiment_id, "incumbent_experiment_id": r.incumbent_experiment_id,
+            "final_experiment_id": r.final_experiment_id, "status": code(r.status), "outcome": code(r.outcome),
+            "stop_reason": code(r.stop_reason), "stop_detail": code(r.stop_detail), "goal": bound(r.goal),
+            "budget": bound(r.budget), "planned_comparisons": r.planned_comparisons,
+            "validation_folds": r.validation_folds, "sealed_set_label": code(r.sealed_set_label),
+            "final_attempts": r.final_attempts, "accepted_iteration_seq": r.accepted_iteration_seq,
+            "started_by": code(r.started_by), "ai": code(r.ai), "training_seconds_spent": r.training_seconds_spent,
+            "created_at": r.created_at, "finished_at": r.finished_at, "iterations": tries}
+
+
+def _improve_run_shape(raw: dict[str, Any]) -> Shaped:
+    return _cv_shaped({"improve_run": improve_run_summary(raw["run"]), "note": IMPROVE_NOTE}, raw["start"],
+                      "improve_run.iterations")
+
+
 def _scoring_schedule_fetch(reads: Any, a: ScoringScheduleInput) -> Any:
     return reads.scoring_schedule(a.project_id)
 
@@ -848,7 +894,9 @@ def _monitoring_shape(view: Any) -> Shaped:
     thresholds = {"psi_watch": t.psi_watch, "psi_alert": t.psi_alert, "significance_level": t.significance_level,
                   "flagged_share_relative_watch": t.flagged_share_relative_watch,
                   "flagged_share_absolute_watch": t.flagged_share_absolute_watch, "min_rows": t.min_rows,
-                  "min_labels": t.min_labels, "min_per_class": t.min_per_class}
+                  "min_labels": t.min_labels, "min_per_class": t.min_per_class,
+                  # D5b: the project's floors (null = off) and the thresholds' version (0 = defaults).
+                  "precision_floor": t.precision_floor, "recall_floor": t.recall_floor, "version": t.version}
     # Scope: outcome metrics are real production labels, neither CV nor holdout. The catalog and the
     # gateway know only "none" / "cv" (holdout never enters), so they ride under "cv", the scope
     # below holdout; the tool is MCP-only (never in an in-app AI call). A distinct "production"

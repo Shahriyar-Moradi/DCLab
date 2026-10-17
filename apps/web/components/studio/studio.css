@@ -568,3 +568,15 @@
 .studio .run-step-parts ol { margin: 6px 0 0; padding-left: 1.2rem; display: grid; gap: 2px; white-space: normal; list-style: decimal; }
 @media (max-width: 520px) { .studio .np-dialog .np-body { padding: 18px 16px; } }
 .studio .np-dialog .np-step-title { margin: 0; font-size: 1.1rem; }
+
+/* ---- D4e Improve loop (start form, decision, final test). Owned by the Improve loop screens. ---- */
+.studio .loop-start { max-width: 760px; }
+.studio .loop-budget { border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); min-width: 0; }
+.studio .loop-budget legend, .studio .loop-choices legend { font-weight: 600; padding: 0 4px; }
+.studio .loop-field-error { color: var(--crit-text); }
+.studio .loop-link { font: inherit; background: none; border: 0; padding: 0; color: var(--accent-text); text-decoration: underline; cursor: pointer; }
+.studio .loop-choices { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; min-width: 0; }
+.studio .loop-choice { display: flex; gap: 8px; align-items: center; }
+.studio .loop-final { font-size: 1.4rem; margin: 4px 0; }
+.studio .loop-cancel { display: grid; gap: 8px; }
+.studio .loop-cancel .toolbar span { white-space: normal; }

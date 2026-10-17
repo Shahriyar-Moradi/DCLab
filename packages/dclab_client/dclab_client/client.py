@@ -62,11 +62,14 @@ from dclab_client.types import (
     RefMoveResult,
     Replay,
     MonitoringOverview,
+    MonitoringThresholdSettings,
     MonitoringWindow,
     OutcomeSet,
     OutcomeSetList,
     RetrainPolicy,
     RetrainStatus,
+    ImproveRun,
+    ImproveRunPage,
     ScoringScheduleRunPage,
     ScoringScheduleState,
     SplitPlan,
@@ -981,6 +984,28 @@ class MonitoringClient:
             idempotency_key=idempotency_key)
         return _versioned(OutcomeSet, payload, headers)
 
+    def thresholds(self, project_id: UUID | str, *, request_id: str | None = None) -> MonitoringThresholdSettings:
+        """D5b: the project's PSI watch / alert lines and precision / recall floors in force."""
+
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/projects/{_id(project_id)}/monitoring-thresholds", request_id=request_id)
+        return _versioned(MonitoringThresholdSettings, payload, headers)
+
+    def set_thresholds(
+        self, project_id: UUID | str, *, psi_watch: float, psi_alert: float, precision_floor: float | None,
+        recall_floor: float | None, rationale: str, if_match: str, idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> MonitoringThresholdSettings:
+        """Owners and administrators (a user token), within the fixed bounds; a floor of ``None`` is off.
+        ``if_match``: the thresholds' ``etag`` (``'"0"'`` when never changed). Applies to later weeks."""
+
+        body = {"psi_watch": psi_watch, "psi_alert": psi_alert, "precision_floor": precision_floor,
+                "recall_floor": recall_floor, "rationale": rationale}
+        payload, headers = self._transport.request_with_headers(
+            "PUT", f"/v1/projects/{_id(project_id)}/monitoring-thresholds", json=body, request_id=request_id,
+            idempotency_key=idempotency_key, if_match=if_match)
+        return _versioned(MonitoringThresholdSettings, payload, headers)
+
 
 class RetrainClient:
     """Retrain on newest data (D5a). Any token reads the policy and the state; ``start`` (ML-write)
@@ -1022,6 +1047,68 @@ class RetrainClient:
             "POST", f"/v1/projects/{_id(project_id)}/retrain", json={"dataset_id": _id(dataset_id)},
             request_id=request_id, idempotency_key=idempotency_key)
         return RetrainStatus.model_validate(payload)
+
+
+class ImproveRunsClient:
+    """Improve loops (P5.4-A3, ADR 0007). ``start`` and ``cancel`` take ``experiments:write`` (a service
+    token's budget is only lowered, 5 starts per hour; it cancels only a queued or running loop);
+    ``accept`` is a person's act (a user token): service tokens get 403. Reads never carry a
+    final-test value."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def start(
+        self, *, from_experiment_id: UUID | str, goal: dict[str, Any], budget: dict[str, Any] | None = None,
+        idempotency_key: str | None = None, request_id: str | None = None,
+    ) -> ImproveRun:
+        """Start a loop on a completed run (``goal``: ``{"plain": {"metric": ...}}`` or ``{"objective": ...}``)."""
+
+        body: dict[str, Any] = {"start": {"from_experiment_id": _id(from_experiment_id)}, "goal": goal}
+        if budget is not None:
+            body["budget"] = budget
+        payload, headers = self._transport.request_with_headers(
+            "POST", "/v1/improve-runs", json=body, request_id=request_id, idempotency_key=idempotency_key)
+        return _versioned(ImproveRun, payload, headers)
+
+    def get(self, improve_run_id: UUID | str, *, request_id: str | None = None) -> ImproveRun:
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/improve-runs/{_id(improve_run_id)}", request_id=request_id)
+        return _versioned(ImproveRun, payload, headers)
+
+    def list(self, project_id: UUID | str, *, limit: int = 20, request_id: str | None = None) -> ImproveRunPage:
+        payload = self._transport.request("GET", f"/v1/projects/{_id(project_id)}/improve-runs",
+                                          params={"limit": limit}, request_id=request_id)
+        return ImproveRunPage.model_validate(payload)
+
+    def cancel(
+        self, improve_run_id: UUID | str, *, if_match: str, idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> ImproveRun:
+        """Stop a loop (``if_match``: the loop's ``etag``); its live try is cancelled, the best so far kept."""
+
+        payload, headers = self._transport.request_with_headers(
+            "POST", f"/v1/improve-runs/{_id(improve_run_id)}/cancel", request_id=request_id,
+            idempotency_key=idempotency_key, if_match=if_match)
+        return _versioned(ImproveRun, payload, headers)
+
+    def accept(
+        self, improve_run_id: UUID | str, *, if_match: str, iteration: int | None = None,
+        keep_current: bool = False, rationale: str | None = None, idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> ImproveRun:
+        """A person accepts one try that beat the noise (its final run scores the final test set once),
+        or keeps the current model."""
+
+        body: dict[str, Any] = {"keep_current": keep_current}
+        if iteration is not None:
+            body["iteration"] = iteration
+        if rationale is not None:
+            body["rationale"] = rationale
+        payload, headers = self._transport.request_with_headers(
+            "POST", f"/v1/improve-runs/{_id(improve_run_id)}/accept", json=body, request_id=request_id,
+            idempotency_key=idempotency_key, if_match=if_match)
+        return _versioned(ImproveRun, payload, headers)
 
 
 class NodesClient:
@@ -1635,6 +1722,7 @@ class DCLabClient:
         self.scoring_schedules = ScoringSchedulesClient(self._transport)
         self.monitoring = MonitoringClient(self._transport)
         self.retrain = RetrainClient(self._transport)
+        self.improve_runs = ImproveRunsClient(self._transport)
         self.predictions = PredictionsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)
         self.artifacts = ArtifactsClient(self._transport)

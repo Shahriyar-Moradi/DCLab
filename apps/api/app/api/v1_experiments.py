@@ -544,10 +544,18 @@ def cancel_experiment_v1(
     """Cancel a queued run (``200``, at once) or ask a running run to stop (``202``
     ``cancelling``; the worker stops between stages/candidates). Replay-safe by
     state: repeating it returns the same result. Terminal runs: ``409
-    not_cancellable``. ``If-Match`` (optional) must match before a transition."""
+    not_cancellable``. ``If-Match`` (optional) must match before a transition. A service token
+    may not cancel an improve loop's final run, nor a try of a loop it may not cancel itself
+    (``403 improve_run_owns_experiment``)."""
 
     del idempotency_key  # validated by the dependency; the state machine dedupes
     workspace_id = request_workspace_id(request)
+    if is_agent(request):
+        from app.services.improve.service import token_may_cancel_experiment
+
+        if not token_may_cancel_experiment(db, workspace_id, experiment_id, _token_id(request)):  # ADR 0007 §8
+            raise V1APIError(403, "improve_run_owns_experiment",
+                             "this run belongs to an improve loop a token may not cancel; cancel the loop instead")
 
     def precondition() -> None:
         if if_match is not None:

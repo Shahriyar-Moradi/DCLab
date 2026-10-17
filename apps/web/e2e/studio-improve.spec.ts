@@ -1,12 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { axeViolations, login, shot, trainedProject } from "./support/studio-fixture";
 
-/** V7-B4: the guided Improve screen. A try is an ordinary new run that adds one model family; the verdict and the look come from the verdict read. */
+/** V7-B4: the guided Improve screen (since D4e the "Try one change yourself" tab, `?tab=guided`). A try is an ordinary new run that adds one model family; the verdict and the look come from the verdict read. */
 const VIEWER_EMAIL = process.env.DCLAB_E2E_VIEWER_EMAIL ?? "viewer-a@verification.invalid";
 const VIEWER_PASSWORD = process.env.DCLAB_E2E_STUDIO_PASSWORD ?? "VerificationOnly123!";
-const BANNER = "Every try is scored on the final test set once. Do not pick a model by its final-test number.";
+const BANNER = "Every try started here is scored on the final test set once. Do not pick a model by its final-test number.";
 const LABEL: Record<string, string> = { beats_the_noise: "Beats the noise", within_the_noise: "Within the noise", worse: "Worse beyond the noise", not_comparable: "Can't compare" };
-const BANNED = /holdout|hold-out|\bloop\b|\bengine\b|champion|proposer|digest|out-of-fold|operating point|\bL[12]\b|autopilot/i;
+// "loop" is allowed since D4e: the page heading and the tab list name the improvement loop beside this guided tab.
+const BANNED = /holdout|hold-out|\bengine\b|champion|proposer|digest|out-of-fold|operating point|\bL[12]\b|autopilot/i;
 
 type Verdict = { verdict: string; folds?: number | null; mean_difference?: number | null; margin?: number | null; test_set_looks?: { looks_on_plan?: number | null; experiment_look?: number | null } | null };
 type Run = { id: string; status: string; parent_experiment_id?: string | null };
@@ -19,7 +20,7 @@ test("Improve: goal, threshold card, start a try, verdict and look label, banner
   const missing = await page.goto("/projects/not-a-uuid/improve");
   expect(missing?.status()).toBe(404);
 
-  await page.goto(`/projects/${projectId}/improve`);
+  await page.goto(`/projects/${projectId}/improve?tab=guided`);
   await expect(page.getByRole("heading", { name: "Improve", level: 1 })).toBeVisible();
   await expect(page.getByRole("link", { name: "Improve", exact: true }).first()).toBeVisible();
   const main = page.locator("main");
@@ -83,7 +84,7 @@ test("Improve: goal, threshold card, start a try, verdict and look label, banner
   // The screen shows the verdict the API gives, the look label and the standing banner.
   const api = (await (await page.request.get(`/api/backend/v1/experiments/${tryId}/verdict`)).json()) as Verdict;
   expect(Object.keys(LABEL)).toContain(api.verdict);
-  await page.goto(`/projects/${projectId}/improve`);
+  await page.goto(`/projects/${projectId}/improve?tab=guided`);
   const item = step3.getByRole("listitem").filter({ has: page.getByRole("heading", { level: 3 }) }).first();
   await expect(item.getByText(LABEL[api.verdict], { exact: true })).toBeVisible();
   const others = Object.values(LABEL).filter((l) => l !== LABEL[api.verdict]);
@@ -134,7 +135,7 @@ test("Improve: goal, threshold card, start a try, verdict and look label, banner
   await shot(page, "improve-3-dark");
   await page.emulateMedia({ colorScheme: "light" });
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto(`/projects/${projectId}/improve`);
+  await page.goto(`/projects/${projectId}/improve?tab=guided`);
   await expect(step3.getByText(LABEL[api.verdict], { exact: true }).first()).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
@@ -149,7 +150,7 @@ test("Improve: goal, threshold card, start a try, verdict and look label, banner
   await viewer.getByLabel("Password").fill(VIEWER_PASSWORD);
   await viewer.getByRole("button", { name: "Sign in" }).click();
   await expect(viewer).not.toHaveURL(/\/login/);
-  await viewer.goto(`/projects/${projectId}/improve`);
+  await viewer.goto(`/projects/${projectId}/improve?tab=guided`);
   const vstep2 = viewer.locator("#try");
   await expect(vstep2.getByText(/Your role can read this page but not start a try/)).toBeVisible();
   await expect(vstep2.getByRole("button", { name: /^Start this try/ })).toHaveCount(0);
@@ -175,7 +176,7 @@ test("Improve: a project with no model in use says so and offers no try", async 
   await expect(page.getByRole("table", { name: "Columns of the uploaded file" })).toBeVisible();
   const projects = (await page.request.get("/api/backend/v1/projects").then((r) => r.json())) as Array<{ id: string; name: string }>;
   const projectId = projects.find((p) => p.name === name)!.id;
-  await page.goto(`/projects/${projectId}/improve`);
+  await page.goto(`/projects/${projectId}/improve?tab=guided`);
   await expect(page.getByText(/No model is in use yet/)).toBeVisible();
   await expect(page.getByRole("button", { name: /^Start this try/ })).toHaveCount(0);
   await expect(page.locator("main").getByText(BANNER).first()).toBeVisible();

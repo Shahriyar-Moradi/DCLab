@@ -155,7 +155,14 @@ test("what needs you: a title, one sentence from the item's fields and one butto
   assert.deepEqual(needsYouRow(item({ kind: "question", summary: "Run needs a split confirmation" }), ctx).action, { label: "Answer", href: `/projects/${PROJECT}/experiments/${RUN}` });
   const drift = needsYouRow(item({ kind: "drift_alert", summary: "Drift alert on the model in use", subject: { kind: "monitoring_window", id: RUN } }), ctx);
   assert.deepEqual(drift.action, { label: "Open Monitoring", href: `/projects/${PROJECT}/monitoring` });
-  assert.match(drift.sentence, /look different from the rows it was trained on/);
+  assert.match(drift.sentence, /alert: drift, or real outcomes below a floor\. Monitoring says which\./);
+  // D5c: the retrain rule's question and the retrained model both go to Monitoring.
+  const ask = needsYouRow(item({ kind: "retrain_ask", status: "asked", summary: "SERVER" }), ctx);
+  assert.deepEqual([ask.title, ask.action.href], ["Retrain on newest data?", `/projects/${PROJECT}/monitoring`]);
+  assert.match(ask.sentence, /newer labelled file exists in Churn/);
+  const ready = needsYouRow(item({ kind: "challenger_ready", status: "proposed", summary: "SERVER" }), ctx);
+  assert.deepEqual([ready.title, ready.action.label], ["Retrained model ready to compare", "Open Monitoring"]);
+  assert.match(ready.sentence, /Switch to it or keep the model in use/);
   assert.deepEqual(needsYouRow(item({ kind: "run_finished", summary: "Run #3 completed" }), ctx).action, { label: "Open", href: `/projects/${PROJECT}/experiments/${RUN}` });
   assert.equal(needsYouRow(item({ kind: "run_finished", summary: "Run #3 completed" }), ctx).title, "Run 3 finished");
   // No project name known: the sentence just leaves it out; bad ids never become links.

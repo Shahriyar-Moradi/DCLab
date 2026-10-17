@@ -611,6 +611,20 @@ def _t_branch(ctx: _Ctx, args: dict[str, Any]):
     return _branch(ctx, UUID(str(args["experiment_id"])), list(args["changes"]), args["intent"]), "experiment"
 
 
+def _t_improve(ctx: _Ctx, args: dict[str, Any]):
+    """The assistant's ``improve`` (L1): a person accepting it starts the loop as themself (a loop
+    never accepts a try on its own; the try's acceptance is a second, separate person's act)."""
+
+    from app.services.improve.service import start_improve_run
+
+    def command(hook: Callable[[Any], None]) -> Any:
+        return start_improve_run(ctx.db, actor=ctx.user, workspace_id=ctx.workspace_id,
+                                 start_experiment_id=UUID(str(args["experiment_id"])), goal=args["goal"],
+                                 budget=args.get("budget"), agent_proposed=True, before_commit=hook)
+
+    return command, "improve_run"
+
+
 def _t_predict(ctx: _Ctx, args: dict[str, Any]):
     from app.services.batch_prediction_service import create_batch_prediction
 
@@ -709,6 +723,7 @@ _TOOLS: dict[str, Callable[[_Ctx, dict[str, Any]], Any]] = {
     "run_experiment": _t_run,
     "branch_experiment": _t_branch,
     "predict": _t_predict,
+    "improve": _t_improve,
     "record_decision": _t_record,
 }
 

@@ -2,6 +2,7 @@
  "ids": {
   "branch": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
   "decision": "a0ff9dca-afe0-41d4-b032-0a77c0789cf8",
+  "improve_run": "5e1f0c2a-4b7d-4c1e-9a3f-2d6b8e0f1a77",
   "model_version": "4810b254-866c-42a9-b41d-045c9749aa83",
   "project": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
   "root": "59c35e71-34a0-462b-996e-abc42cb4842a"
@@ -2445,6 +2446,130 @@
    },
    "workspace_id": "5d1c3f0e-8a2b-4c6d-9e1f-0a1b2c3d4e5f"
   },
+  "GET /v1/improve-runs/5e1f0c2a-4b7d-4c1e-9a3f-2d6b8e0f1a77": {
+   "accepted_by_user_id": null,
+   "accepted_iteration_seq": null,
+   "actions": {
+    "accept": false,
+    "cancel": false,
+    "keep_current": false
+   },
+   "ai": "off",
+   "budget": {
+    "comparison_bound": 30,
+    "max_iterations": 6,
+    "max_llm_micros": 2000000,
+    "max_training_seconds_total": 1200.0,
+    "max_wall_seconds": 7200,
+    "patience": 3
+   },
+   "cancel_requested_at": null,
+   "created_at": "2026-10-05T04:53:26.410599+04:00",
+   "created_by_user_id": null,
+   "final_attempts": 0,
+   "final_experiment_id": null,
+   "finished_at": "2026-10-05T04:53:26.410599+04:00",
+   "goal": {
+    "plain": {
+     "metric": "roc_auc"
+    }
+   },
+   "id": "5e1f0c2a-4b7d-4c1e-9a3f-2d6b8e0f1a77",
+   "incumbent_experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+   "iterations": [
+    {
+     "action": {
+      "family": "extra_trees",
+      "kind": "family_include"
+     },
+     "agent": "off",
+     "comparison": {
+      "basis": "locked_cv_fold_evaluations",
+      "comparisons": 3,
+      "fold_scores": [
+       {
+        "difference": 0.01,
+        "fold_number": 1,
+        "incumbent": 0.801,
+        "probe": 0.811
+       },
+       {
+        "difference": 0.01,
+        "fold_number": 2,
+        "incumbent": 0.802,
+        "probe": 0.812
+       },
+       {
+        "difference": 0.01,
+        "fold_number": 3,
+        "incumbent": 0.803,
+        "probe": 0.8130000000000001
+       },
+       {
+        "difference": 0.01,
+        "fold_number": 4,
+        "incumbent": 0.804,
+        "probe": 0.8140000000000001
+       },
+       {
+        "difference": 0.01,
+        "fold_number": 5,
+        "incumbent": 0.805,
+        "probe": 0.8150000000000001
+       }
+      ],
+      "folds": 5,
+      "goal_metric": "roc_auc",
+      "margin": 0.0402,
+      "mean_difference": 0.0123,
+      "reason": "inside_margin",
+      "se_nb": 0.0081,
+      "status": "rejected",
+      "version": "dclab.improve_comparison.v1"
+     },
+     "created_at": "2026-10-05T04:53:26.410599+04:00",
+     "experiment_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+     "finished_at": "2026-10-05T04:53:26.410599+04:00",
+     "incumbent_experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+     "kind": "family_include",
+     "planned_candidate_ids": [
+      "extra_trees",
+      "extra_trees__balanced",
+      "extra_trees__class_weight"
+     ],
+     "planned_new_candidates": 3,
+     "reason": "inside_margin",
+     "seq": 0,
+     "status": "rejected",
+     "training_seconds": 41.5
+    }
+   ],
+   "llm_micros_spent": 0,
+   "looks_before": 1,
+   "outcome": "kept_current",
+   "plan": [
+    {
+     "family": "extra_trees",
+     "index": 1,
+     "k": 3,
+     "kind": "family_include"
+    }
+   ],
+   "planned_comparisons": 3,
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "sealed_set_consulted": false,
+   "sealed_set_label": "reported_before",
+   "split_plan_id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+   "start_experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+   "started_at": "2026-10-05T04:53:26.410599+04:00",
+   "started_by": "service_token",
+   "status": "completed",
+   "stop_detail": null,
+   "stop_reason": "no_improvement",
+   "training_seconds_spent": 41.5,
+   "validation_folds": 5,
+   "waiting_user_expires_at": null
+  },
   "GET /v1/model-builds/1aa95c9b-e3be-4547-9f1b-b03da5467571": {
    "compatibility_fallback_used": false,
    "generator_version": "dclab.model_build_reproduction.v2",
@@ -4760,6 +4885,12 @@
     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
    },
    "tool": "get_monitoring"
+  },
+  {
+   "args": {
+    "improve_run_id": "5e1f0c2a-4b7d-4c1e-9a3f-2d6b8e0f1a77"
+   },
+   "tool": "get_improve_run"
   }
  ]
 }

@@ -110,6 +110,8 @@ def check_proposal_nodes(db: Session, *, workspace_id: UUID, project_id: UUID, t
         if arguments.get(key) is not None and not _node_exists(
                 db, kind, arguments[key], workspace_id=workspace_id, project_id=project_id):
             raise ToolError("node_not_in_project", f"{key} is not a node of this project")
+    if tool == "branch_experiment" and arguments.get("experiment_id") is not None:
+        _refuse_sealed_parent(db, workspace_id=workspace_id, experiment_id=arguments["experiment_id"])
     if tool != "record_decision":
         return
     try:
@@ -125,6 +127,20 @@ def check_proposal_nodes(db: Session, *, workspace_id: UUID, project_id: UUID, t
                                          moves={k: UUID(str(v)) for k, v in arguments["ref_moves"].items()})
     except DecisionRecordError as exc:
         raise ToolError(exc.reason if exc.reason else "invalid_arguments", exc.detail_message[:300]) from None
+
+
+def _refuse_sealed_parent(db: Session, *, workspace_id: UUID, experiment_id: Any) -> None:
+    """ADR 0007 §6.1: an agent never proposes a branch of a sealed improve try outside its loop (a
+    person's accept would score the try's final test set: a look the loop did not plan)."""
+
+    from app.db.models import Experiment
+    from app.domain.pipeline_run_branch import EVIDENCE_MODE_SEALED
+
+    mode = db.scalar(select(Experiment.evidence_mode).where(Experiment.id == UUID(str(experiment_id)),
+                                                            Experiment.workspace_id == workspace_id))
+    if mode == EVIDENCE_MODE_SEALED:
+        raise ToolError("sealed_parent_human_only", "a sealed improve try is branched by a person in DCLab Studio, "
+                        "never through an agent proposal")
 
 
 def citation_reasons(db: Session, citations: Sequence[Citation], *, workspace_id: UUID,

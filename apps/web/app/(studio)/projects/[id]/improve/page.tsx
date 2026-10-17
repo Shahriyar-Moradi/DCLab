@@ -1,9 +1,9 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { ImproveScreen } from "@/app/components/studio-app/ImproveScreen";
+import { ImproveHome } from "@/app/components/studio-app/ImproveLoop";
 
 export default function ImprovePage() {
   const { id } = useParams<{ id: string }>();
-  return <ImproveScreen projectId={id} />;
+  return <ImproveHome projectId={id} />;
 }

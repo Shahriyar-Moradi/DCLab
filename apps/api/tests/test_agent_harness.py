@@ -738,3 +738,39 @@ def _untrusted(value) -> list:
     if isinstance(value, (list, tuple)):
         return [hit for item in value for hit in _untrusted(item)]
     return []
+
+
+def test_assistant_improve_is_an_l1_tool_call_whose_card_carries_cost_and_duration(hz, monkeypatch):
+    """P5.4-A3 (30): the assistant's ``improve`` never starts a loop: it is an L1 ``ToolCallProposal``
+    under ``lead.improve`` whose card carries the cost (the loop uses no AI: 0) and the duration (its
+    wall budget); a goal naming the holdout is a ``rejected_by_validator`` proposal without a card.
+    The tool joins the assistant surface when A5-A releases a lead prompt listing it; here the surface
+    is extended the way that release will, to drive the harness path it uses."""
+
+    from app.agents.tools.catalog import visible
+    from app.db.models import ImproveRun
+    from app.services.proposal_review_service import proposal_read
+
+    assert "improve" not in {t.name for t in visible("assistant")}  # not on the released lead surface yet
+    monkeypatch.setattr(svc, "visible", lambda surface: (*visible(surface), catalog()["improve"]))
+    g, db = hz.g, hz.db
+    args = {"experiment_id": str(g.exp[0]), "goal": {"plain": {"metric": "roc_auc"}},
+            "budget": {"max_wall_seconds": 3600, "max_iterations": 20, "comparison_bound": 60, "patience": 9}}
+    holdout = {**args, "goal": {"plain": {"metric": "holdout_auc"}}}
+    result = hz.service((("tool", "improve", args, "try one more family"), ("tool", "improve", holdout),
+                         ("llm",))).run(db, hz.spec())
+    assert result.status == "completed"
+    assert [(o.status, o.code) for o in hz.log[:2]] == [("proposed", None),
+                                                       ("rejected_by_validator", "holdout_not_allowed")]
+    row = db.get(AgentProposal, hz.log[0].proposal_id)
+    assert (row.proposal_type, row.level_at_proposal, row.status, row.decision_point_key, row.tool_name) == (
+        "ToolCallProposal", 1, "proposed", "lead.improve", "improve")
+    card = proposal_read(row, agent=False)
+    assert (card.estimated_cost_micros, card.estimated_duration_s) == (0, 3600)
+    # An agent only lowers the defaults; the card shows the full budget a person accepts.
+    assert card.tool_arguments["budget"] == {"max_iterations": 6, "max_wall_seconds": 3600, "patience": 3,
+                                             "comparison_bound": 30, "max_llm_micros": 2_000_000,
+                                             "max_training_seconds_total": 6 * 3600.0}
+    rejected = db.get(AgentProposal, hz.log[1].proposal_id)
+    assert (rejected.estimated_cost_micros, rejected.estimated_duration_s) == (None, None)
+    assert db.scalar(select(func.count()).select_from(ImproveRun)) == 0  # nothing ran

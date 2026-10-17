@@ -3,15 +3,15 @@
 /**
  * Monitoring trends and steps (V7 UI-E): input change (PSI) by week for one column beside the largest change of any column,
  * real precision and recall by week once outcomes are measured, and "What the system does on its own" with the live state
- * of each step that exists (weekly checks, the drift rule, going back) and "Planned" for the steps that are not built. Every
+ * of each step (weekly checks, the alert rule, retrain on newest data, the comparison, switch or keep, going back). Every
  * value comes from the monitoring overview read; column names are untrusted plain text; no final test value is shown.
  */
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Card } from "@/components/studio/Card";
 import { Pill } from "@/components/studio/Pill";
 import {
   REAL_TREND_NOTE, THRESHOLDS_READ_ONLY, ownSteps, trendCell, psiTrend, realTrend, realTrendEmpty, seriesColumns,
-  type FeatureSeriesLike, type GoBack, type OverviewLike, type Thresholds, type TrendChart, type TrendsWeek,
+  type FeatureSeriesLike, type GoBack, type OverviewLike, type OwnStep, type Thresholds, type TrendChart, type TrendsWeek,
 } from "@/lib/application/studio-monitoring";
 
 const X_PAD = 3;
@@ -39,7 +39,7 @@ export function WeekTrendChart({ chart, caption, testId }: { chart: TrendChart; 
     <figure className="v7-mon-chart" data-testid={testId}>
       <ul className="v7-mon-legend" aria-label="Lines in the chart">
         {chart.lines.map((l) => <li key={l.id}><span className={`v7-mon-swatch ${l.style}`} aria-hidden="true" />{l.label}</li>)}
-        {chart.refs.map((r) => <li key={r.label}><span className={`v7-mon-swatch ref-${r.tone}`} aria-hidden="true" />{r.label} (set by DCLab)</li>)}
+        {chart.refs.map((r) => <li key={r.label}><span className={`v7-mon-swatch ref-${r.tone}`} aria-hidden="true" />{r.label} (in force now)</li>)}
       </ul>
       <div className="v7-mon-plot" role="img" aria-label={chart.summary}>
         <div className="v7-mon-y" aria-hidden="true">{yLabels.map((v, i) => <span key={i}>{v.toFixed(2)}</span>)}</div>
@@ -78,12 +78,12 @@ export function WeekTrendChart({ chart, caption, testId }: { chart: TrendChart; 
 }
 
 /** Input change by week (one column at a time) and real precision / recall by week. */
-export function TrendsSection({ windows, series, thresholds }: { windows: readonly TrendsWeek[]; series: readonly FeatureSeriesLike[] | undefined; thresholds: Thresholds }) {
+export function TrendsSection({ windows, series, thresholds, fallback }: { windows: readonly TrendsWeek[]; series: readonly FeatureSeriesLike[] | undefined; thresholds: Thresholds; fallback?: Pick<Thresholds, "psi_watch" | "psi_alert"> }) {
   const selectId = useId();
   const columns = seriesColumns(series);
   const [column, setColumn] = useState<number | null>(null);
   const chosen = columns.some((c) => c.index === column) ? column : columns[0]?.index ?? null;
-  const psi = psiTrend(windows, series, chosen, thresholds);
+  const psi = psiTrend(windows, series, chosen, thresholds, fallback ?? thresholds);
   const empty = realTrendEmpty(windows);
   return (
     <>
@@ -108,9 +108,9 @@ export function TrendsSection({ windows, series, thresholds }: { windows: readon
 }
 
 
-/** "What the system does on its own": live states for what exists, "Planned" for what does not. */
-export function OwnStepsCard({ overview, offer }: { overview: OverviewLike | undefined; offer: GoBack }) {
-  const steps = ownSteps(overview, offer);
+/** "What the system does on its own": the live state of each step; `retrain` are the retrain steps, `children` their action. */
+export function OwnStepsCard({ overview, offer, retrain, children }: { overview: OverviewLike | undefined; offer: GoBack; retrain: readonly OwnStep[]; children?: ReactNode }) {
+  const steps = ownSteps(overview, offer, retrain);
   return (
     <Card title="What the system does on its own" aside={<span className="muted">and where it stops for you</span>}>
       <ol className="v7-mon-steps" data-testid="own-steps">
@@ -121,6 +121,7 @@ export function OwnStepsCard({ overview, offer }: { overview: OverviewLike | und
           </li>
         ))}
       </ol>
+      {children}
       <p className="muted">Nothing on this screen changes the model in use by itself. Switching models, or going back, is always done by a person and saved in History.</p>
     </Card>
   );

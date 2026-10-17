@@ -514,6 +514,32 @@ def test_monitoring_reads_and_outcome_link_use_v1_paths():
                                                "outcome_column": "churned"}
 
 
+def test_monitoring_thresholds_read_and_change_use_v1_paths_and_if_match():
+    recorded: list[httpx.Request] = []
+    pid = "66666666-6666-6666-6666-666666666666"
+    values = {"psi_watch": 0.3, "psi_alert": 0.6, "precision_floor": 0.7, "recall_floor": None}
+    body = {"project_id": pid, "version": 1, "etag": '"1"', **values,
+            "defaults": {"psi_watch": 0.1, "psi_alert": 0.2, "precision_floor": None, "recall_floor": None},
+            "bounds": {"psi_watch_min": 0.05, "psi_watch_max": 0.5, "psi_alert_max": 1.0, "floor_min": 0.01,
+                       "floor_max": 0.99},
+            "changed_at": "2030-01-08T00:00:00Z", "changed_by_user_id": None, "can_edit": False, "notes": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json=body, headers={"ETag": '"1"'})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    read = api.monitoring.thresholds(pid)
+    assert (read.etag, read.version, read.recall_floor, read.bounds["psi_alert_max"]) == ('"1"', 1, None, 1.0)
+    saved = api.monitoring.set_thresholds(pid, **values, rationale="fewer false alarms", if_match='"0"',
+                                          idempotency_key="k4")
+    assert saved.psi_watch == 0.3
+    assert [(r.method, r.url.path) for r in recorded] == [
+        ("GET", f"/v1/projects/{pid}/monitoring-thresholds"), ("PUT", f"/v1/projects/{pid}/monitoring-thresholds")]
+    assert recorded[1].headers["If-Match"] == '"0"' and recorded[1].headers["Idempotency-Key"] == "k4"
+    assert json.loads(recorded[1].content) == {**values, "rationale": "fewer false alarms"}
+
+
 def test_project_decisions_use_v1_path_filters_and_untrusted_fields():
     from datetime import UTC, datetime
 

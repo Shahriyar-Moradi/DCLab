@@ -1025,6 +1025,129 @@
         "successSchema": "SwitchRead"
       }
     },
+    "/v1/improve-runs": {
+      "POST": {
+        "operationId": "start_improve_run_v1_v1_improve_runs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "ImproveStartRequest",
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "ImproveRunRead"
+      }
+    },
+    "/v1/improve-runs/{improve_run_id}": {
+      "GET": {
+        "operationId": "read_improve_run_v1_improve_runs__improve_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "improve_run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ImproveRunRead"
+      }
+    },
+    "/v1/improve-runs/{improve_run_id}/accept": {
+      "POST": {
+        "operationId": "accept_improve_run_v1_v1_improve_runs__improve_run_id__accept_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "improve_run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ImproveAcceptRequest",
+        "statusCodes": [
+          "200",
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "429",
+          "500"
+        ],
+        "successSchema": "ImproveRunRead"
+      }
+    },
+    "/v1/improve-runs/{improve_run_id}/cancel": {
+      "POST": {
+        "operationId": "cancel_improve_run_v1_v1_improve_runs__improve_run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "improve_run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "ImproveRunRead"
+      }
+    },
     "/v1/inbox": {
       "GET": {
         "operationId": "read_inbox_v1_inbox_get",
@@ -1815,6 +1938,34 @@
         "successSchema": "ProjectGraphRead"
       }
     },
+    "/v1/projects/{project_id}/improve-runs": {
+      "GET": {
+        "operationId": "list_project_improve_runs_v1_projects__project_id__improve_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ImproveRunPage"
+      }
+    },
     "/v1/projects/{project_id}/model-versions": {
       "GET": {
         "operationId": "read_project_model_versions_v1_projects__project_id__model_versions_get",
@@ -1874,6 +2025,63 @@
           "500"
         ],
         "successSchema": "MonitoringOverviewRead"
+      }
+    },
+    "/v1/projects/{project_id}/monitoring-thresholds": {
+      "GET": {
+        "operationId": "read_monitoring_thresholds_v1_projects__project_id__monitoring_thresholds_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "MonitoringThresholdsRead"
+      },
+      "PUT": {
+        "operationId": "set_monitoring_thresholds_v1_projects__project_id__monitoring_thresholds_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "MonitoringThresholdsWrite",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "MonitoringThresholdsRead"
       }
     },
     "/v1/projects/{project_id}/monitoring/outcomes": {
@@ -3808,14 +4016,19 @@
     },
     "MonitoringThresholds": {
       "properties": [
+        "changed_at",
+        "changed_by_user_id",
         "flagged_share_absolute_watch",
         "flagged_share_relative_watch",
         "min_labels",
         "min_per_class",
         "min_rows",
+        "precision_floor",
         "psi_alert",
         "psi_watch",
-        "significance_level"
+        "recall_floor",
+        "significance_level",
+        "version"
       ],
       "required": [
         "flagged_share_absolute_watch",
@@ -3834,6 +4047,7 @@
         "coverage",
         "feature_sentences",
         "finding",
+        "floor_status",
         "input_drift",
         "max_psi",
         "model_release_id",
@@ -3856,6 +4070,7 @@
         "summary",
         "summary_code",
         "thresholds",
+        "thresholds_used",
         "window_end",
         "window_start"
       ],
@@ -3891,6 +4106,7 @@
       "properties": [
         "computed_at",
         "coverage",
+        "floor_status",
         "max_psi",
         "model_release_id",
         "model_version_id",
@@ -3907,6 +4123,7 @@
         "status",
         "summary",
         "summary_code",
+        "thresholds_used",
         "window_end",
         "window_start"
       ],

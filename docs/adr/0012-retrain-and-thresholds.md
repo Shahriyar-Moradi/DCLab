@@ -86,6 +86,37 @@ editable by workspace owners and administrators only, within fixed bounds, with 
 entry), applying to windows computed after the change (no recompute of past weeks except the existing
 outcomes-link path). Floors raise alerts only when outcomes are linked and judged.
 
+- Storage: `monitoring_thresholds`, append-only versions per project (the newest is in force; no row =
+  the defaults PSI 0.10 / 0.20, no floors), each naming its `monitoring_thresholds_changed` History
+  entry. `GET /v1/projects/{id}/monitoring-thresholds` (workspace read; tokens with `read`, no user
+  ids); `PUT` with a reason, `If-Match` (version) and `Idempotency-Key`, owners and administrators
+  only (never platform staff, never a token: the rule of the retrain policy). The same values again
+  are `409 thresholds_unchanged`. A change queues no recompute.
+- Bounds (API and DB CHECK): PSI watch 0.05–0.5; alert above watch, at most 1.0; each floor 0.01–0.99
+  or null (off). Significance level, flagged-share lines and minimum rows / labels stay code-owned.
+- Which values a computation uses: a window that already has a revision keeps the values stored on
+  its newest one (`monitoring_windows.thresholds_used`; null = computed before 0089 = the defaults)
+  when the week had ended when the job was queued or no scoring of the week completed since that
+  revision. So a past week never changes, also when linked outcomes recompute it, and a looser edit
+  never hides an alert the open week already raised without new scored data; only new scored data
+  (or a first computation) picks up the values in force. Every new revision stores the values it used.
+- Floors (binary models, real outcomes at the locked threshold): judged only when the window's
+  outcomes are `measured` (minimum labelled rows and rows per class; the newest measured outcome file
+  is used, so a small newer file never erases a measured week) and the floor's own rows (flagged
+  labelled rows for precision, labelled positives for recall) number at least the minimum per class.
+  A floor is `below` only when a one-sided exact binomial test (successes = true positives) gives
+  p strictly below 0.01 / floors set; at or above the floor is `ok`; otherwise `not_judged` (not
+  measured, not binary, counts unavailable, too few rows, or under the floor within chance).
+- A floor judged below makes the week an `alert`. It is not drift: the summary code is `below_floor`
+  unless drift alerted too (the summary still mentions watch-level drift), the finding is
+  `performance_below_floor` when no drift alert, the notification headline says real outcomes fell
+  below a floor, and the retrain rule (D2) still fires on it with the status state `below_floor`
+  instead of `drift_found`.
+- Error rates: inputs, scores and floors are each gated at 1% (family-wise within each), so one
+  computation's worst-case false-alert rate is about 3%. The open week is recomputed when scorings
+  or outcome links arrive, and each recompute looks again (the drift gate has the same property), so
+  across a week's revisions the chance of a false alert is higher than per computation.
+
 ## Consequences
 
 - No AI anywhere in the path: every step works with AI off.
@@ -94,3 +125,5 @@ outcomes-link path). Floors raise alerts only when outcomes are linked and judge
   answer. The real outcomes beside it remain available.
 - Three additive tables (migration `0087_retrain_policy`); downgrade drops them (runs, proposals and
   History entries stay).
+- D5b: one additive table and one nullable column (migration `0089_monitoring_thresholds`); downgrade
+  drops them (thresholds fall back to the defaults; History entries stay).

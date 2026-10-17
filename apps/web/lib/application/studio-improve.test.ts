@@ -190,5 +190,5 @@ test("numbers print without noise", () => {
 });
 
 test("the standing banner says what is true and nothing about picking by the final number being fine", () => {
-  assert.equal(STANDING_BANNER, "Every try is scored on the final test set once. Do not pick a model by its final-test number.");
+  assert.equal(STANDING_BANNER, "Every try started here is scored on the final test set once. Do not pick a model by its final-test number.");
 });

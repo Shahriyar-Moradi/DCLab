@@ -230,6 +230,7 @@
         "created_at": "<ts>",
         "diff_vs_parent": null,
         "ended_at": null,
+        "evidence_mode": "scored",
         "failure_reason": null,
         "id": "<id:5>",
         "intent": {
@@ -269,6 +270,7 @@
         "created_at": "<ts>",
         "diff_vs_parent": null,
         "ended_at": "<ts>",
+        "evidence_mode": "scored",
         "failure_reason": null,
         "id": "<id:5>",
         "intent": {

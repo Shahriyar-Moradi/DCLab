@@ -11,7 +11,7 @@ no ``decision_point_resolved``, ``agent_runs`` or ``llm_invocations`` row (ADR 0
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -54,9 +54,17 @@ from app.domain.improve import (
     RUN_RUNNING,
     RUN_WAITING_USER,
     TERMINAL_RUN_STATUSES,
+    TOKEN_STARTS_PER_HOUR,
     WAITING_USER_EXPIRY_DAYS,
+    IMPROVE_PAGE_DEFAULT,
+    IMPROVE_PAGE_MAX,
+    ImproveActionsRead,
     ImproveBudget,
     ImproveGoal,
+    ImproveIterationRead,
+    ImproveRunPage,
+    ImproveRunRead,
+    clamp_budget_for_agent,
     goal_size_ok,
     sealed_set_label,
 )
@@ -281,7 +289,7 @@ def _eligible_start(db: Session, workspace_id: UUID, start: Experiment) -> tuple
     if str(start.status or "").upper() != "COMPLETED" or start.scientific_evidence_locked_at is None:
         raise _refuse("start_not_locked", "the start must be a completed run with locked evidence")
     if start.evidence_mode != EVIDENCE_MODE_SCORED:
-        raise _refuse("start_sealed", "a sealed improve try cannot start a loop (fresh splits come with P5.4-A3)")
+        raise _refuse("start_sealed", "a sealed improve try cannot start a loop (fresh splits are deferred)")
     plan = db.scalar(select(SplitPlan).where(SplitPlan.id == start.split_plan_id, SplitPlan.workspace_id == workspace_id))
     if plan is None or start.project_id is None:
         raise _refuse("start_without_split_plan", "the start has no split plan")
@@ -298,6 +306,14 @@ def _eligible_start(db: Session, workspace_id: UUID, start: Experiment) -> tuple
     return evidence, selection, plan
 
 
+def _token_starts_last_hour(db: Session, workspace_id: UUID, service_token_id: UUID) -> int:
+    """§3: token starts are counted in the DB (5 per hour per token), under the workspace lock."""
+
+    return int(db.scalar(select(func.count()).select_from(ImproveRun).where(
+        ImproveRun.workspace_id == workspace_id, ImproveRun.created_by_service_token_id == service_token_id,
+        ImproveRun.created_at > func.now() - timedelta(hours=1))) or 0)
+
+
 def start_improve_run(
     db: Session,
     *,
@@ -307,9 +323,15 @@ def start_improve_run(
     goal: Any,
     budget: Any = None,
     service_token_id: UUID | None = None,
+    fresh_split: bool = False,
+    agent_proposed: bool = False,
+    before_commit: Callable[[ImproveRun], None] | None = None,
 ) -> ImproveRun:
     """Plan and queue one loop. Commits. 404 (no access), 422 (goal/budget), 409 (eligibility, a live
-    loop on the plan, the comparison bound, nothing to try), 429 (the workspace's live loops)."""
+    loop on the plan, the comparison bound, nothing to try), 429 (the workspace's live loops, a
+    token's starts per hour). A token's budget, and that of an agent proposal a person accepted
+    (``agent_proposed``), is clamped to the defaults; ``fresh_split`` is a person's request (403 for
+    tokens) and is deferred (409 ``fresh_split_unavailable``, ADR 0007 Revision 5)."""
 
     from app.services.experiment_branch_service import load_parent_context
     from app.services.improve.rule_proposer import is_blocking
@@ -321,6 +343,11 @@ def start_improve_run(
                                                Experiment.workspace_id == workspace_id))
     if start is None:
         raise ExperimentNotFoundError("experiment not found")
+    if fresh_split:
+        if service_token_id is not None:
+            raise ImproveRunError("fresh_split_human_only", "only a person can ask for a fresh split", status_code=403)
+        raise _refuse("fresh_split_unavailable", "a loop on a fresh split plan is not available yet; start from "
+                                                 "this run's own split plan")
     evidence, selection, split_plan = _eligible_start(db, workspace_id, start)
     task_type = str(((start.result or {}).get("task") or {}).get("task_type") or "")
     parsed = parse_goal(goal, task_type=task_type, selection_metric=selection.selection_metric)
@@ -328,6 +355,9 @@ def start_improve_run(
         limits = budget if isinstance(budget, ImproveBudget) else ImproveBudget.model_validate(budget or {})
     except ValidationError as exc:
         raise ImproveRunError("invalid_budget", str(exc.errors()[0].get("msg")), status_code=422) from exc
+    clamped = service_token_id is not None or agent_proposed
+    if clamped:
+        limits = clamp_budget_for_agent(limits)
     findings = stored_findings(db, workspace_id, start.id)
     if is_blocking(findings):
         raise _refuse("blocking_finding", "the start failed a target-leakage or implausible-score check")
@@ -344,8 +374,15 @@ def start_improve_run(
     budgets = [probe_budget_seconds(evidence, item.k) for item in tries]
     if any(value is None for value in budgets):
         raise _refuse("start_too_slow", "a try would not fit the per-probe time budget")
-    total = limits.max_training_seconds_total or min(28_800.0, limits.max_iterations * max(budgets))
+    default_total = min(28_800.0, limits.max_iterations * max(budgets))
+    total = limits.max_training_seconds_total or default_total
+    if clamped:
+        total = min(total, default_total)
     _lock_plan(db, workspace_id, split_plan.id)
+    if service_token_id is not None and _token_starts_last_hour(db, workspace_id, service_token_id) \
+            >= TOKEN_STARTS_PER_HOUR:
+        raise _refuse("improve_rate_limited", f"a token may start {TOKEN_STARTS_PER_HOUR} loops per hour",
+                      status_code=429)
     n = plan_comparisons(db, workspace_id, split_plan.id)
     t_planned = plan.planned_comparisons
     if n >= limits.comparison_bound:
@@ -380,6 +417,8 @@ def start_improve_run(
                         handler_key=HANDLER_LABS_IMPROVE, handler_version=HANDLER_VERSION_LABS_IMPROVE,
                         target_id=run.id, payload={"improve_run_id": str(run.id)})
     run.continuation_job_id = job.id
+    if before_commit is not None:
+        before_commit(run)
     db.commit()
     return run
 
@@ -479,19 +518,61 @@ def wait_for_person(db: Session, run: ImproveRun, *, now: datetime, stop_reason:
 # --- cancel (§8) -----------------------------------------------------------------------------------
 
 
+def _live_token(db: Session, workspace_id: UUID, service_token_id: UUID, actor: User) -> None:
+    """A token principal must be a live token of this workspace created by ``actor`` (defence in
+    depth for in-process callers; ``/v1`` authenticated it already)."""
+
+    token = db.scalar(select(ServiceToken).where(ServiceToken.id == service_token_id,
+                                                 ServiceToken.workspace_id == workspace_id))
+    if token is None or token.revoked_at is not None or token.expires_at <= _now() \
+            or token.created_by_user_id != actor.id:
+        raise ImproveRunError("token_not_authorized", "this service token may not act here", status_code=403)
+
+
+def token_cancellable(run: ImproveRun, service_token_id: UUID | None) -> bool:
+    """§8: a token cancels only a ``queued`` / ``running`` loop it started itself."""
+
+    return (service_token_id is not None and run.created_by_service_token_id == service_token_id
+            and run.status in (RUN_QUEUED, RUN_RUNNING))
+
+
+def token_may_cancel_experiment(db: Session, workspace_id: UUID, experiment_id: UUID, service_token_id: UUID) -> bool:
+    """§8: the generic experiment cancel refuses a token for a loop's probe or final run unless the
+    loop itself is cancellable by that token (a final run's loop never is). A lock-free read: the
+    experiment cancel locks the job, not the loop; a loop that leaves ``running`` meanwhile only makes
+    the cancelled probe a cancelled try, which the loop's next step settles (never a look)."""
+
+    final = db.scalar(select(ImproveRun.id).where(ImproveRun.workspace_id == workspace_id,
+                                                  ImproveRun.final_experiment_id == experiment_id))
+    if final is not None:
+        return False
+    loop = db.scalar(select(ImproveRun).join(
+        ImproveIteration, ImproveIteration.improve_run_id == ImproveRun.id).where(
+        ImproveIteration.workspace_id == workspace_id, ImproveRun.workspace_id == workspace_id,
+        ImproveIteration.experiment_id == experiment_id, ImproveIteration.kind == KIND_FAMILY_INCLUDE).limit(1))
+    return loop is None or token_cancellable(loop, service_token_id)
+
+
 def cancel_improve_run(db: Session, *, actor: User, workspace_id: UUID, run_id: UUID,
-                       service_token_id: UUID | None = None) -> ImproveRun:
+                       service_token_id: UUID | None = None,
+                       precondition: Callable[[ImproveRun], None] | None = None) -> ImproveRun:
     """Humans may cancel any live state; tokens only ``queued`` / ``running``. During ``finalizing``
     the final run is asked to stop: before its final test the loop ends ``cancelled``; after it the
-    look counts and the loop still completes (§6.4). Commits; idempotent on a finished loop."""
+    look counts and the loop still completes (§6.4). Commits; idempotent on a finished loop (no
+    precondition then). ``precondition(run)`` runs under the row lock (the route's If-Match)."""
 
     if not can_execute_workspace_ml(db, actor, workspace_id):
         raise ImproveRunError("improve_run_not_found", "improve run not found", status_code=404)
     run = load_run(db, workspace_id, run_id, for_update=True)
     if run.status in TERMINAL_RUN_STATUSES:
         return run
-    if service_token_id is not None and run.status not in (RUN_QUEUED, RUN_RUNNING):
-        raise ImproveRunError("token_cannot_cancel", "a token may cancel only a queued or running loop", status_code=403)
+    if service_token_id is not None:
+        _live_token(db, workspace_id, service_token_id, actor)
+    if service_token_id is not None and not token_cancellable(run, service_token_id):
+        raise ImproveRunError("token_cannot_cancel", "a token may cancel only a queued or running loop it started",
+                              status_code=403)
+    if precondition is not None:
+        precondition(run)
     now = _now()
     if run.status == RUN_FINALIZING:
         run.cancel_requested_at = run.cancel_requested_at or now
@@ -511,7 +592,7 @@ def cancel_improve_run(db: Session, *, actor: User, workspace_id: UUID, run_id: 
 
 
 def _acceptance_record(db: Session, run: ImproveRun, actor: User, *, subject_id: UUID, seq: int | None,
-                       key: str | None = None) -> UUID:
+                       key: str | None = None, reason: str | None = None) -> UUID:
     """The person's ``experiment_accepted`` record (reserved key ``improve:<run>:accept``; a keep after a
     final run that stopped before its look gets its own ``improve:<run>:keep`` record)."""
 
@@ -524,7 +605,7 @@ def _acceptance_record(db: Session, run: ImproveRun, actor: User, *, subject_id:
         subject_id=subject_id, subject_digest=node_digest(subject),
         rationale=("Accepted improve try {seq} on cross-validation; its final run scores the final test set once."
                    .format(seq=seq) if seq is not None else "Kept the current model; nothing beyond the noise "
-                   "was accepted, so the final test set is not used."),
+                   "was accepted, so the final test set is not used.") + (f" Reason: {reason}" if reason else ""),
         facts={"decided_on": "cross_validation", "keep_current": seq is None},
         evidence_refs=[evidence_ref("experiment", subject_id)],
         details={"improve_run_id": str(run.id), "iteration_seq": seq, "keep_current": seq is None},
@@ -534,7 +615,9 @@ def _acceptance_record(db: Session, run: ImproveRun, actor: User, *, subject_id:
 
 
 def accept_improve_run(db: Session, *, actor: User, workspace_id: UUID, run_id: UUID, iteration_seq: int | None = None,
-                       keep_current: bool = False, source_surface: str = "api") -> ImproveRun:
+                       keep_current: bool = False, source_surface: str = "api", rationale: str | None = None,
+                       precondition: Callable[[ImproveRun], None] | None = None,
+                       before_commit: Callable[[ImproveRun], None] | None = None) -> ImproveRun:
     """A person (never a token or an agent: the caller passes a session user) accepts one ``accepted``
     try of this loop -- one ordinary branch of the probe's parent with the probe's own change set,
     its selection, budget and goal pinned (§6.2) -- or keeps the current model (no look). A retry after
@@ -546,23 +629,36 @@ def accept_improve_run(db: Session, *, actor: User, workspace_id: UUID, run_id: 
 
     if not can_execute_workspace_ml(db, actor, workspace_id):
         raise ImproveRunError("improve_run_not_found", "improve run not found", status_code=404)
+    run = load_run(db, workspace_id, run_id, for_update=True)
+    if precondition is not None:
+        precondition(run)
     if keep_current == (iteration_seq is not None):
         raise ImproveRunError("invalid_acceptance", "accept exactly one try, or keep the current model", status_code=422)
-    run = load_run(db, workspace_id, run_id, for_update=True)
     if run.status != RUN_WAITING_USER:
         raise ImproveRunError("not_waiting_for_a_person", f"the loop is {run.status}")
     now = _now()
     if keep_current:  # also after a final run that stopped before its look: nothing was scored
         if run.acceptance_record_id is None:
-            run.acceptance_record_id = _acceptance_record(db, run, actor, subject_id=run.start_experiment_id, seq=None)
+            run.acceptance_record_id = _acceptance_record(db, run, actor, subject_id=run.start_experiment_id, seq=None,
+                                                          reason=rationale)
         else:  # the try's own acceptance record stays; the keep is a record of its own
             _acceptance_record(db, run, actor, subject_id=run.start_experiment_id, seq=None,
-                               key=f"{IMPROVE_KEY_PREFIX}{run.id}:keep")
+                               key=f"{IMPROVE_KEY_PREFIX}{run.id}:keep", reason=rationale)
         run.accepted_by_user_id = run.accepted_by_user_id or actor.id
         run.incumbent_experiment_id = run.start_experiment_id
         finish(db, run, status=RUN_COMPLETED, outcome="kept_current", now=now, detail="kept_by_person")
+        if before_commit is not None:
+            before_commit(run)
         commit(db)
         return run
+    # waiting_user -> finalizing re-enters the workspace cap (§3): re-checked under the lock order
+    # improve_runs -> ml-runs:<workspace>.
+    db.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(f"ml-runs:{workspace_id}", 0))))
+    live = db.scalar(select(func.count()).select_from(ImproveRun).where(
+        ImproveRun.workspace_id == workspace_id, ImproveRun.status.in_(CAPPED_RUN_STATUSES), ImproveRun.id != run.id))
+    if int(live or 0) >= MAX_LIVE_IMPROVE_RUNS_PER_WORKSPACE:
+        raise ImproveRunError("improve_run_quota", f"this workspace already runs {live} improve loops; accept "
+                              "again when one finishes", status_code=429)
     if run.accepted_iteration_seq is not None and run.accepted_iteration_seq != iteration_seq:
         raise ImproveRunError("acceptance_is_final", "this loop's accepted try cannot change")
     if run.final_attempts >= MAX_FINAL_ATTEMPTS:
@@ -590,13 +686,16 @@ def accept_improve_run(db: Session, *, actor: User, workspace_id: UUID, run_id: 
 
     def bind(shell: Experiment) -> None:
         if run.acceptance_record_id is None:
-            run.acceptance_record_id = _acceptance_record(db, run, actor, subject_id=probe.id, seq=iteration_seq)
+            run.acceptance_record_id = _acceptance_record(db, run, actor, subject_id=probe.id, seq=iteration_seq,
+                                                          reason=rationale)
         run.accepted_iteration_seq = iteration_seq
         run.accepted_by_user_id = run.accepted_by_user_id or actor.id
         run.final_experiment_id, run.final_attempts = shell.id, attempt
         run.status, run.stop_detail, run.waiting_user_expires_at = RUN_FINALIZING, None, None
         run.incumbent_experiment_id = probe.id
         arm(db, run)
+        if before_commit is not None:
+            before_commit(run)
 
     result = branch_experiment(
         db, actor=actor, workspace_id=workspace_id, parent_id=probe.parent_pipeline_run_id,
@@ -608,6 +707,90 @@ def accept_improve_run(db: Session, *, actor: User, workspace_id: UUID, run_id: 
         run = load_run(db, workspace_id, run_id, for_update=True)
         if run.status == RUN_WAITING_USER:
             bind(result.experiment)
+        elif before_commit is not None:
+            before_commit(run)
         commit(db)
     db.refresh(run)
     return run
+
+
+# --- read models (§10; P5.4-A3) -------------------------------------------------------------------
+
+
+def _iteration_read(row: ImproveIteration) -> ImproveIterationRead:
+    return ImproveIterationRead(
+        seq=row.seq, kind=row.kind, status=row.status, reason=row.reason, action=dict(row.action or {}),
+        experiment_id=row.experiment_id, incumbent_experiment_id=row.incumbent_experiment_id,
+        planned_new_candidates=row.planned_new_candidates, planned_candidate_ids=list(row.planned_candidate_ids or []),
+        comparison=row.comparison, agent=row.agent, training_seconds=row.training_seconds, created_at=row.created_at,
+        finished_at=row.finished_at,
+    )
+
+
+def run_read(run: ImproveRun, its: list[ImproveIteration], *, agent: bool, can_act: bool,
+             token_id: UUID | None = None) -> ImproveRunRead:
+    """The loop as this reader may see it. Built from the loop's own rows only (CV evidence and
+    whether a look happened); a token/agent reader gets no person ids, every key naming the holdout
+    stripped and only the cancel action of a queued / running loop that token started."""
+
+    waiting = run.status == RUN_WAITING_USER and can_act and not agent
+    acceptable = any(it.status == IT_ACCEPTED for it in its) and run.final_attempts < MAX_FINAL_ATTEMPTS
+    actions = ImproveActionsRead(
+        accept=waiting and acceptable, keep_current=waiting,
+        cancel=can_act and (token_cancellable(run, token_id) if agent else run.status in LIVE_RUN_STATUSES),
+    )
+    body = ImproveRunRead(
+        id=run.id, project_id=run.project_id, split_plan_id=run.split_plan_id,
+        start_experiment_id=run.start_experiment_id, incumbent_experiment_id=run.incumbent_experiment_id,
+        final_experiment_id=run.final_experiment_id, status=run.status, outcome=run.outcome,
+        stop_reason=run.stop_reason, stop_detail=run.stop_detail, goal=dict(run.goal or {}),
+        budget=dict(run.budget or {}), plan=list(run.plan or []), planned_comparisons=run.planned_comparisons,
+        validation_folds=run.validation_folds, looks_before=run.looks_before, sealed_set_label=run.sealed_set_label,
+        sealed_set_consulted=bool(run.sealed_set_consulted), final_attempts=run.final_attempts,
+        accepted_iteration_seq=run.accepted_iteration_seq,
+        accepted_by_user_id=None if agent else run.accepted_by_user_id,
+        created_by_user_id=None if agent else run.created_by_user_id,
+        started_by="service_token" if run.created_by_service_token_id is not None else "person",
+        training_seconds_spent=float(run.training_seconds_spent or 0.0), llm_micros_spent=int(run.llm_micros_spent or 0),
+        cancel_requested_at=run.cancel_requested_at, waiting_user_expires_at=run.waiting_user_expires_at,
+        created_at=run.created_at, started_at=run.started_at, finished_at=run.finished_at,
+        iterations=[_iteration_read(it) for it in its], actions=actions,
+    )
+    if agent:
+        from app.agents.tools.shaping import strip_holdout
+
+        body = ImproveRunRead.model_validate(strip_holdout(body))
+    return body
+
+
+def improve_run_read(db: Session, *, actor: User, workspace_id: UUID, run_id: UUID, agent: bool,
+                     token_id: UUID | None = None) -> ImproveRunRead:
+    """404 for another workspace's loop or a reader without workspace access (no oracle)."""
+
+    if not can_read_workspace(db, actor, workspace_id):
+        raise ImproveRunError("improve_run_not_found", "improve run not found", status_code=404)
+    run = load_run(db, workspace_id, run_id)
+    return run_read(run, iterations(db, run), agent=agent, can_act=can_execute_workspace_ml(db, actor, workspace_id),
+                    token_id=token_id)
+
+
+def list_improve_runs(db: Session, *, actor: User, workspace_id: UUID, project_id: UUID, agent: bool,
+                      limit: int = IMPROVE_PAGE_DEFAULT, token_id: UUID | None = None) -> ImproveRunPage:
+    """A project's loops, newest first (``limit`` ≤ 100)."""
+
+    from app.services.project_service import get_project
+
+    get_project(db, actor=actor, workspace_id=workspace_id, project_id=project_id)  # 404 for another tenant
+    runs = list(db.scalars(select(ImproveRun).where(ImproveRun.workspace_id == workspace_id,
+                                                    ImproveRun.project_id == project_id)
+                           .order_by(ImproveRun.created_at.desc(), ImproveRun.id.desc())
+                           .limit(max(1, min(limit, IMPROVE_PAGE_MAX)))))
+    by_run: dict[UUID, list[ImproveIteration]] = {run.id: [] for run in runs}
+    if runs:
+        for row in db.scalars(select(ImproveIteration).where(
+                ImproveIteration.workspace_id == workspace_id, ImproveIteration.improve_run_id.in_(list(by_run)))
+                .order_by(ImproveIteration.seq)):
+            by_run[row.improve_run_id].append(row)
+    can_act = can_execute_workspace_ml(db, actor, workspace_id)
+    return ImproveRunPage(project_id=project_id, items=[
+        run_read(run, by_run[run.id], agent=agent, can_act=can_act, token_id=token_id) for run in runs])

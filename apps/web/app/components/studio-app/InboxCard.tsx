@@ -14,13 +14,15 @@ import { proposedMoves } from "@/lib/application/studio-compare";
 import { decideProposal, useInboxInvalidation, useRunNamer, type StudioInboxItem } from "@/lib/application/studio-inbox-hooks";
 import {
   DRIFT_STATS_NOTE, actionRoute, agreementPill, answerLines, approvalNote, comparableRunIds, disabledReason, driftSentence, driftStats, evidenceLinks, findAction, inboxCompareHref, inboxTitle, lookup,
-  mapInboxError, monitoringHref, outcomeWords, questionHref, refVersionsFor, resolverPill, subjectLink, suggestedBy,
+  improveItemHref, improveItemSentence, mapInboxError, monitoringHref, outcomeWords, questionHref, refVersionsFor, resolverPill, retrainItemSentence, subjectLink, suggestedBy,
 } from "@/lib/application/studio-inbox";
 import { ActionKeys, type PlainError } from "@/lib/application/studio-wizard";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
 type Mode = "accept" | "reject" | "revert" | "supersede";
 const MODE_LABEL: Record<Mode, string> = { accept: "Approve", reject: "Reject", revert: "Undo", supersede: "Correct" };
+/** D5c: the retrained model's card says Switch / Keep for the same approve / reject writes. */
+const label = (kind: string, mode: Mode) => (kind === "challenger_ready" && mode === "accept" ? "Switch" : kind === "challenger_ready" && mode === "reject" ? "Keep" : MODE_LABEL[mode]);
 const DONE_TEXT: Record<Mode, string> = {
   accept: "Approved. The decision was recorded.", reject: "Rejected. The decision was recorded.",
   revert: "Undone. The rules' value is back in place.", supersede: "Corrected. A new History entry replaces the old one.",
@@ -52,7 +54,7 @@ function DecidePanel({ item, title, mode, keys, onClose, onDone }: { item: Studi
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<PlainError | null>(null);
-  const needsReason = item.kind === "decision_proposal" || mode === "supersede";
+  const needsReason = item.kind === "decision_proposal" || item.kind === "challenger_ready" || mode === "supersede";
   const waitingForRefs = (viaRefs && !detail.data) || (needsRefs && !refs.data);
 
   const submit = async () => {
@@ -90,7 +92,7 @@ function DecidePanel({ item, title, mode, keys, onClose, onDone }: { item: Studi
           break;
       }
       keys.done(mode);
-      onDone(DONE_TEXT[mode]);
+      onDone(item.kind === "challenger_ready" ? (mode === "accept" ? "Switched. The retrained model is the model in use; it is recorded in History." : "Kept. The model in use stays; it is recorded in History.") : DONE_TEXT[mode]);
       invalidate();
     } catch (caught) {
       setError(mapInboxError(caught));
@@ -101,7 +103,7 @@ function DecidePanel({ item, title, mode, keys, onClose, onDone }: { item: Studi
   };
 
   return (
-    <form className="form" aria-label={`${MODE_LABEL[mode]} ${title}`} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+    <form className="form" aria-label={`${label(item.kind, mode)} ${title}`} onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <p className="muted">
         {approvalNote(item, route, mode) ?? "This is recorded in History."} Nothing recorded is edited.
         {needsReason ? " A reason is required." : " A reason is optional."}
@@ -111,7 +113,7 @@ function DecidePanel({ item, title, mode, keys, onClose, onDone }: { item: Studi
       <div className="toolbar">
         <button type="button" className="btn" disabled={busy} onClick={onClose}>Back</button>
         <button type="submit" className={`btn ${mode === "reject" ? "" : "primary"}`} disabled={busy || waitingForRefs || (needsReason && !reason.trim())}>
-          {busy ? "Saving…" : `Confirm ${MODE_LABEL[mode].toLowerCase()}`}
+          {busy ? "Saving…" : `Confirm ${label(item.kind, mode).toLowerCase()}`}
         </button>
       </div>
       {error ? <Banner tone="crit"><b>{error.title}.</b> {error.detail}</Banner> : null}
@@ -137,11 +139,14 @@ export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; 
   const evidence = evidenceLinks(item, runName);
   const title = inboxTitle(item, item.subject.kind === "experiment" && isUuid(item.subject.id) ? runName(item.subject.id) : null);
   const drift = item.kind === "drift_alert";
+  const retrainText = retrainItemSentence(item);
+  const improveText = improveItemSentence(item);
+  const loopHref = improveItemHref(item);
   const by = drift ? "Flagged by the weekly monitoring rule" : suggestedBy(item.proposed_by, item.kind);
   const agreement = agreementPill(item.agreement, item.tab, aiOff);
   const resolver = resolverPill(item.resolved_by, item.tab);
   const stats = drift ? driftStats(item.monitoring) : [];
-  const monitoring = drift ? monitoringHref(item.project_id) : null;
+  const monitoring = drift || retrainText ? monitoringHref(item.project_id) : null;
   const auto = item.tab === "applied_automatically";
   // The AI panel is dropped only when AI is known off and nothing was recorded; a recorded AI answer is evidence and stays.
   const showAi = !(aiOff === true && !item.ai_answer);
@@ -175,6 +180,8 @@ export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; 
         </p>
       ) : null}
       {drift ? <p data-testid="drift-sentence">{driftSentence(item)}</p> : null}
+      {retrainText ? <p data-testid="retrain-sentence">{retrainText}</p> : null}
+      {improveText ? <p data-testid="improve-sentence">{improveText}</p> : null}
       {stats.length ? (
         <dl className="v7-inbox-stats" aria-label="The week's numbers">
           {stats.map((st) => <div key={st.label}><dt>{st.label}</dt><dd>{st.value}</dd></div>)}
@@ -205,12 +212,13 @@ export function InboxCard({ item, canDecide, onDone }: { item: StudioInboxItem; 
               const action = findAction(item, name)!;
               return (
                 <button key={name} type="button" className={`btn ${name === "accept" ? "primary" : ""}`} disabled={!action.allowed || actionRoute(item, name) === null} onClick={() => setMode(name)}>
-                  {MODE_LABEL[name]}<span className="sr-only"> {title}</span>
+                  {label(item.kind, name)}<span className="sr-only"> {title}</span>
                 </button>
               );
             })}
             {answerHref ? <Link className="btn primary" href={answerHref}>Answer on the run page</Link> : null}
-            {monitoring ? <Link className={`btn ${item.tab === "needs_decision" ? "primary" : ""}`} href={monitoring}>Open Monitoring<span className="sr-only"> for {title}</span></Link> : null}
+            {monitoring ? <Link className={`btn ${item.tab === "needs_decision" && item.kind !== "challenger_ready" ? "primary" : ""}`} href={monitoring}>Open Monitoring<span className="sr-only"> for {title}</span></Link> : null}
+            {loopHref ? <Link className={`btn ${item.status === "waiting_user" ? "primary" : ""}`} href={loopHref}>Open the loop<span className="sr-only"> for {title}</span></Link> : null}
             <CompareLink item={item} title={title} />
           </div>
         </>

@@ -880,3 +880,19 @@ def test_champion_accept_carries_the_human_only_evaluation_and_refuses_a_failed_
     page = pr.client.get(f"/v1/projects/{pr.project}/decisions", headers={"Authorization": f"Bearer {raw}"}).json()
     assert "final_holdout" not in json.dumps(page)  # agents never see the evaluation ref
     assert _records(pr, "proposal_accepted")[-1].details.get("holdout_looks") == 1
+
+
+def test_accepting_an_l1_improvement_action_performs_nothing(pr):
+    """P5.4-A3 (30): an L1 ``ImprovementActionProposal`` (the agent's second opinion on a loop's try) is an
+    acknowledgement: accepting it records the person's answer and branches, starts or queues nothing."""
+
+    from app.db.models import ImproveRun, MlJob
+
+    before = (_count(pr, Experiment), _count(pr, ImproveRun), _count(pr, MlJob))
+    row = _mk(pr, "ImprovementActionProposal", point="improve.next_action",
+              payload={"kind": "family_include", "family": "extra_trees"})
+    accepted = _post(pr, row, "accept", body={"rationale": "noted"})
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["status"] == "accepted"  # never "applied"
+    assert (_count(pr, Experiment), _count(pr, ImproveRun), _count(pr, MlJob)) == before
+    assert len(_records(pr, "proposal_accepted")) == 1

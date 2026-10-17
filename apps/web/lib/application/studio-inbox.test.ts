@@ -177,8 +177,9 @@ const BANNED = /\b(release|champion|ref|digest|holdout|manifest|package|slot|tic
 
 test("UI-E drift alert: a plain title per tab, the week's numbers only, fixed sentences and a Monitoring link", () => {
   const t = (tab: string) => inboxTitle({ kind: "drift_alert", subject: { kind: "model_version", id: A }, summary: "SERVER WORDS", status: "alert", tab });
-  assert.equal(t("needs_decision"), "Drift alert on the model in use");
-  assert.equal(t("done"), "Drift alert on an earlier week or model");
+  // The item does not say whether drift or a floor raised the alert, so the title never calls it drift.
+  assert.equal(t("needs_decision"), "Alert on the model in use");
+  assert.equal(t("done"), "Alert on an earlier week or model");
   const m = { window_start: "2026-10-05T00:00:00Z", max_psi: 0.314, prediction_psi: 0.05 };
   assert.deepEqual(driftStats(m), [
     { label: "Week (UTC)", value: "Mon, 5 Oct 2026" }, { label: "Largest input change of any column (PSI)", value: "0.31" }, { label: "Score change (PSI)", value: "0.05" },
@@ -188,7 +189,8 @@ test("UI-E drift alert: a plain title per tab, the week's numbers only, fixed se
   const open = driftSentence({ tab: "needs_decision", monitoring: m });
   const done = driftSentence({ tab: "done", monitoring: m });
   assert.match(open, /^Weekly monitoring marked the week of Mon, 5 Oct 2026 \(UTC\) as alert/);
-  assert.match(open, /does not mean the model is wrong, and DCLab did not retrain or switch it/);
+  assert.match(open, /look different from training \(drift\), or its real outcomes fell below a floor set for this project\. Monitoring says which\./);
+  assert.match(open, /does not mean the model is wrong, and nothing switched the model in use/);
   assert.notEqual(open, done);
   assert.match(done, /an earlier week, or a model that is no longer in use/);
   assert.equal(outcomeWords("alert"), "alert");

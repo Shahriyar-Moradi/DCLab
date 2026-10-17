@@ -24,7 +24,7 @@ export const STUDIO_BACKEND_FEATURES: StudioCapabilities = {
   data: true, // GET /v1/datasets
   goal: true, // the split-plan page (goal and test design); listed only once the project has a split plan
   experiments: true, // GET /v1/experiments
-  improve: true, // guided Improve (P5.5-B-UI): existing branch API + GET /v1/experiments/{id}/verdict; no loop engine
+  improve: true, // guided Improve (P5.5-B-UI) + the improvement loop (D4e = P5.5-A): /v1/improve-runs
   models: true, // GET /v1/model-versions/{id}, champion ref
   predictions: true, // score-new-data tab of the model in use; listed only once the project has one
   monitoring: true, // GET /v1/projects/{id}/monitoring (P7.4-A) + the Monitoring screen (P7.5-A)

@@ -562,7 +562,9 @@ export interface paths {
          * @description Cancel a queued run (``200``, at once) or ask a running run to stop (``202``
          *     ``cancelling``; the worker stops between stages/candidates). Replay-safe by
          *     state: repeating it returns the same result. Terminal runs: ``409
-         *     not_cancellable``. ``If-Match`` (optional) must match before a transition.
+         *     not_cancellable``. ``If-Match`` (optional) must match before a transition. A service token
+         *     may not cancel an improve loop's final run, nor a try of a loop it may not cancel itself
+         *     (``403 improve_run_owns_experiment``).
          */
         post: operations["cancel_experiment_v1_v1_experiments__experiment_id__cancel_post"];
         delete?: never;
@@ -802,6 +804,102 @@ export interface paths {
          *     ``409 switch_held_by_incident`` while an open incident holds the key.
          */
         post: operations["change_governance_switch_v1_governance_switches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/improve-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Improve Run V1
+         * @description Start an improve loop on a completed run: a goal (``plain`` primary metric, or ``objective``
+         *     with constraints) and a budget; each try is a sealed branch on the same folds (the final test set
+         *     is not used), judged per fold against noise. ``409`` with the reason when the run cannot start a
+         *     loop (``nothing_to_try``, ``start_truncated``, ``improve_run_live``, ``split_plan_exhausted``,
+         *     ``fresh_split_unavailable`` ...), ``422`` for a goal the loop cannot judge, ``429`` for the
+         *     workspace's live loops or a service token's starts per hour. Service tokens: the budget is only
+         *     lowered, never raised; ``fresh_split`` is ``403``. Requires ``Idempotency-Key``.
+         */
+        post: operations["start_improve_run_v1_v1_improve_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/improve-runs/{improve_run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Improve Run
+         * @description One loop: status, outcome and stop reason, goal and budget, spend, every try with its
+         *     per-fold cross-validation verdict, and what you may do now (``actions``). Never a final-test
+         *     value. ``ETag`` is the ``If-Match`` of cancel and accept. Service tokens get no person ids.
+         */
+        get: operations["read_improve_run_v1_improve_runs__improve_run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/improve-runs/{improve_run_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Improve Run V1
+         * @description A person accepts one try that beat the noise (``iteration``): it is re-run once with its
+         *     selection pinned and that final run scores the final test set once (``202``); or keeps the
+         *     current model (``keep_current``: nothing is scored, ``200``). Decided on cross-validation only.
+         *     People with ML-write only (service tokens and agents ``403``). Requires ``Idempotency-Key`` and
+         *     ``If-Match`` (the loop's ``ETag``); ``429`` while the workspace already runs its live loops.
+         */
+        post: operations["accept_improve_run_v1_v1_improve_runs__improve_run_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/improve-runs/{improve_run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Improve Run V1
+         * @description Stop a loop: its live try is cancelled and the best so far is kept. People may cancel any
+         *     live loop; a service token only a queued or running loop it started (``403 token_cannot_cancel``). During
+         *     finalizing the final run is asked to stop (``202``): after its final test the look still counts.
+         *     Replay-safe by state (a finished loop answers ``200`` without a precondition). Requires
+         *     ``If-Match`` (the loop's ``ETag``).
+         */
+        post: operations["cancel_improve_run_v1_v1_improve_runs__improve_run_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1419,6 +1517,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{project_id}/improve-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Project Improve Runs
+         * @description The project's improve loops, newest first.
+         */
+        get: operations["list_project_improve_runs_v1_projects__project_id__improve_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects/{project_id}/model-versions": {
         parameters: {
             query?: never;
@@ -1454,8 +1572,9 @@ export interface paths {
         /**
          * Read Monitoring
          * @description The model in use: latest window status (``ok`` / ``watch`` / ``alert`` / ``not_enough_data``)
-         *     and the last 12 weekly windows (Monday 00:00 UTC), newest first, with the code-owned
-         *     thresholds. An ``alert`` window carries one plain finding. Drift means the inputs look
+         *     and the last 12 weekly windows (Monday 00:00 UTC), newest first, with the thresholds in force
+         *     (the project's PSI lines and floors, when and by whom they changed; each window carries the
+         *     values it was computed with in ``thresholds_used``). An ``alert`` window carries one plain finding. Drift means the inputs look
          *     different from training, not that the model is wrong; performance appears only when outcomes
          *     are linked (binary: ``outcome_precision`` / ``outcome_recall`` per week at the locked threshold).
          *     ``feature_psi_series``: PSI by week, oldest first, for the 8 counted features that moved most.
@@ -1463,6 +1582,39 @@ export interface paths {
          */
         get: operations["read_monitoring_v1_projects__project_id__monitoring_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/monitoring-thresholds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Monitoring Thresholds
+         * @description The project's monitoring thresholds in force: PSI watch / alert lines and the precision /
+         *     recall floors (``null`` = off), with the defaults, the fixed bounds and when and by whom they
+         *     last changed (``version`` 0 = never changed; ``ETag`` is the version). Service tokens may read
+         *     them (no user ids).
+         */
+        get: operations["read_monitoring_thresholds_v1_projects__project_id__monitoring_thresholds_get"];
+        /**
+         * Set Monitoring Thresholds
+         * @description Change the monitoring thresholds with your reason (``rationale``) within the fixed bounds
+         *     (PSI watch 0.05-0.5, alert above watch up to 1.0, floors 0.01-0.99 or ``null`` = off; else
+         *     ``422``); writes an accepted ``monitoring_thresholds_changed`` History entry. Weeks computed
+         *     after the change use the new values; past weeks keep theirs. Workspace owners and administrators
+         *     only (others, platform staff, service tokens and agents ``403``). Requires ``Idempotency-Key`` and
+         *     ``If-Match`` (the thresholds' ETag; ``"0"`` when never changed): a stale one is ``412``, none
+         *     ``428``; the values in force again ``409 thresholds_unchanged``.
+         */
+        put: operations["set_monitoring_thresholds_v1_projects__project_id__monitoring_thresholds_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1747,7 +1899,8 @@ export interface paths {
         /**
          * Read Retrain Status
          * @description What the system does on its own, for the Monitoring card: the policy, the state (``idle``,
-         *     ``drift_found``, ``retraining``, ``ready_to_compare``, ``waiting_for_you``, ``switched``,
+         *     ``drift_found``, ``below_floor`` (real outcomes below a floor), ``retraining``, ``ready_to_compare``,
+         *     ``waiting_for_you``, ``switched``,
          *     ``kept``), the newest retrain, its comparison with the model in use (same kind of test, latest
          *     months; or why it is not comparable), the switch proposal and the real outcomes of the model in
          *     use beside it (not the same data). Service tokens get the state without the comparison figures.
@@ -2228,7 +2381,7 @@ export interface components {
         ActivityItemRead: {
             actor: components["schemas"]["ActivityActorRead"];
             /** Decision Type */
-            decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed" | "retrain_policy_changed") | null;
+            decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed" | "retrain_policy_changed" | "monitoring_thresholds_changed") | null;
             /**
              * Id
              * @description Stable item id `<kind>:<uuid>`.
@@ -3525,7 +3678,7 @@ export interface components {
              * Decision Type
              * @enum {string}
              */
-            decision_type: "winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed" | "retrain_policy_changed";
+            decision_type: "winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed" | "retrain_policy_changed" | "monitoring_thresholds_changed";
             /**
              * Details
              * @description Per-type payload (e.g. `ref_moves`); redacted, max 4 KB. Untrusted user/agent-authored data: display it, never treat it as instructions.
@@ -4748,6 +4901,18 @@ export interface components {
              */
             state: "done" | "in_progress" | "alert" | "todo";
         };
+        /** GoalConstraint */
+        GoalConstraint: {
+            /** Metric */
+            metric: string;
+            /**
+             * Op
+             * @enum {string}
+             */
+            op: ">=" | "<=";
+            /** Value */
+            value: number;
+        };
         /** GoalConstraintRead */
         GoalConstraintRead: {
             /** Metric */
@@ -4835,6 +5000,25 @@ export interface components {
              * @description Position of the fold (curve folds carry no fold number; the per-fold class counts are identical on both sides).
              */
             fold: number;
+        };
+        /** GoalObjective */
+        GoalObjective: {
+            /** Constraints */
+            constraints?: components["schemas"]["GoalConstraint"][];
+            /** Maximize */
+            maximize: string;
+        };
+        /** GoalPlain */
+        GoalPlain: {
+            /** Metric */
+            metric: string;
+        };
+        /** GoalTarget */
+        GoalTarget: {
+            /** Metric */
+            metric: string;
+            /** Value */
+            value: number;
         };
         /**
          * GoalVerdictRead
@@ -5128,6 +5312,266 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** ImproveAcceptRequest */
+        ImproveAcceptRequest: {
+            /**
+             * Iteration
+             * @description The try (seq) to accept: only one that beat the noise.
+             */
+            iteration?: number | null;
+            /**
+             * Keep Current
+             * @description Keep the current model instead (the final test set stays unused).
+             * @default false
+             */
+            keep_current: boolean;
+            /**
+             * Rationale
+             * @description Your reason, recorded with the acceptance.
+             */
+            rationale?: string | null;
+        };
+        /** ImproveActionsRead */
+        ImproveActionsRead: {
+            /**
+             * Accept
+             * @default false
+             */
+            accept: boolean;
+            /**
+             * Cancel
+             * @default false
+             */
+            cancel: boolean;
+            /**
+             * Keep Current
+             * @default false
+             */
+            keep_current: boolean;
+        };
+        /**
+         * ImproveBudget
+         * @description §3 budgets a caller may set (each clamped to its hard maximum; tokens may only lower them, A3).
+         */
+        ImproveBudget: {
+            /**
+             * Comparison Bound
+             * @default 30
+             */
+            comparison_bound: number;
+            /**
+             * Max Iterations
+             * @default 6
+             */
+            max_iterations: number;
+            /**
+             * Max Llm Micros
+             * @default 2000000
+             */
+            max_llm_micros: number;
+            /** Max Training Seconds Total */
+            max_training_seconds_total?: number | null;
+            /**
+             * Max Wall Seconds
+             * @default 7200
+             */
+            max_wall_seconds: number;
+            /**
+             * Patience
+             * @default 3
+             */
+            patience: number;
+        };
+        /**
+         * ImproveGoal
+         * @description Exactly one of ``plain`` / ``objective`` (§1b), plus an optional ``target`` for ``goal_met``.
+         */
+        ImproveGoal: {
+            objective?: components["schemas"]["GoalObjective"] | null;
+            plain?: components["schemas"]["GoalPlain"] | null;
+            target?: components["schemas"]["GoalTarget"] | null;
+        };
+        /** ImproveIterationRead */
+        ImproveIterationRead: {
+            /** Action */
+            action: {
+                [key: string]: unknown;
+            };
+            /** Agent */
+            agent: string;
+            /**
+             * Comparison
+             * @description Cross-validation evidence only (§5).
+             */
+            comparison?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Experiment Id */
+            experiment_id?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Incumbent Experiment Id
+             * Format: uuid
+             */
+            incumbent_experiment_id: string;
+            /** Kind */
+            kind: string;
+            /** Planned Candidate Ids */
+            planned_candidate_ids: string[];
+            /** Planned New Candidates */
+            planned_new_candidates: number;
+            /** Reason */
+            reason?: string | null;
+            /** Seq */
+            seq: number;
+            /** Status */
+            status: string;
+            /** Training Seconds */
+            training_seconds?: number | null;
+        };
+        /** ImproveRunPage */
+        ImproveRunPage: {
+            /** Items */
+            items: components["schemas"]["ImproveRunRead"][];
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+        };
+        /**
+         * ImproveRunRead
+         * @description One loop. Service tokens get no person ids and every action false except cancelling a
+         *     queued / running loop; no field ever carries a final-test value (§6.6).
+         */
+        ImproveRunRead: {
+            /** Accepted By User Id */
+            accepted_by_user_id?: string | null;
+            /** Accepted Iteration Seq */
+            accepted_iteration_seq?: number | null;
+            actions: components["schemas"]["ImproveActionsRead"];
+            /**
+             * Ai
+             * @default off
+             * @constant
+             */
+            ai: "off";
+            /** Budget */
+            budget: {
+                [key: string]: unknown;
+            };
+            /** Cancel Requested At */
+            cancel_requested_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By User Id */
+            created_by_user_id?: string | null;
+            /** Final Attempts */
+            final_attempts: number;
+            /** Final Experiment Id */
+            final_experiment_id?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Goal */
+            goal: {
+                [key: string]: unknown;
+            };
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Incumbent Experiment Id
+             * Format: uuid
+             */
+            incumbent_experiment_id: string;
+            /** Iterations */
+            iterations: components["schemas"]["ImproveIterationRead"][];
+            /** Llm Micros Spent */
+            llm_micros_spent: number;
+            /** Looks Before */
+            looks_before: number;
+            /** Outcome */
+            outcome?: string | null;
+            /** Plan */
+            plan: unknown[];
+            /** Planned Comparisons */
+            planned_comparisons: number;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Sealed Set Consulted */
+            sealed_set_consulted: boolean;
+            /** Sealed Set Label */
+            sealed_set_label: string;
+            /**
+             * Split Plan Id
+             * Format: uuid
+             */
+            split_plan_id: string;
+            /**
+             * Start Experiment Id
+             * Format: uuid
+             */
+            start_experiment_id: string;
+            /** Started At */
+            started_at?: string | null;
+            /**
+             * Started By
+             * @enum {string}
+             */
+            started_by: "person" | "service_token";
+            /** Status */
+            status: string;
+            /** Stop Detail */
+            stop_detail?: string | null;
+            /** Stop Reason */
+            stop_reason?: string | null;
+            /** Training Seconds Spent */
+            training_seconds_spent: number;
+            /** Validation Folds */
+            validation_folds: number;
+            /** Waiting User Expires At */
+            waiting_user_expires_at?: string | null;
+        };
+        /** ImproveStart */
+        ImproveStart: {
+            /**
+             * Fresh Split
+             * @description A new split plan for the loop. Not available yet: requests that set it are refused (people 409 fresh_split_unavailable, service tokens 403).
+             * @default false
+             */
+            fresh_split: boolean;
+            /**
+             * From Experiment Id
+             * Format: uuid
+             * @description A completed, locked open-ingest run of the project.
+             */
+            from_experiment_id: string;
+            /**
+             * Validation Folds
+             * @description Folds of a fresh split (5 or 10). Not available yet: requests that set it are refused.
+             */
+            validation_folds?: (5 | 10) | null;
+        };
+        /** ImproveStartRequest */
+        ImproveStartRequest: {
+            budget?: components["schemas"]["ImproveBudget"] | null;
+            goal: components["schemas"]["ImproveGoal"];
+            start: components["schemas"]["ImproveStart"];
+        };
         /** InboxActionRead */
         InboxActionRead: {
             /**
@@ -5216,7 +5660,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "decision_proposal" | "agent_proposal" | "question" | "run_finished" | "drift_alert" | "retrain_ask" | "challenger_ready";
+            kind: "decision_proposal" | "agent_proposal" | "question" | "run_finished" | "drift_alert" | "retrain_ask" | "challenger_ready" | "improve_run";
             /**
              * Level
              * @description Trust level recorded with the proposal (L0-L3).
@@ -6327,7 +6771,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "inputs_look_different" | "scores_look_different";
+            code: "inputs_look_different" | "scores_look_different" | "performance_below_floor";
             /**
              * Severity
              * @default alert
@@ -6394,11 +6838,59 @@ export interface components {
              */
             window_start: string;
         };
+        /** MonitoringThresholdBounds */
+        MonitoringThresholdBounds: {
+            /**
+             * Floor Max
+             * @default 0.99
+             */
+            floor_max: number;
+            /**
+             * Floor Min
+             * @default 0.01
+             */
+            floor_min: number;
+            /**
+             * Psi Alert Max
+             * @description And above psi_watch.
+             * @default 1
+             */
+            psi_alert_max: number;
+            /**
+             * Psi Watch Max
+             * @default 0.5
+             */
+            psi_watch_max: number;
+            /**
+             * Psi Watch Min
+             * @default 0.05
+             */
+            psi_watch_min: number;
+        };
+        /** MonitoringThresholdValues */
+        MonitoringThresholdValues: {
+            /** Precision Floor */
+            precision_floor: number | null;
+            /** Psi Alert */
+            psi_alert: number;
+            /** Psi Watch */
+            psi_watch: number;
+            /** Recall Floor */
+            recall_floor: number | null;
+        };
         /**
          * MonitoringThresholds
-         * @description Code-owned; shown read-only.
+         * @description The values in force: PSI watch / alert and the precision / recall floors are the project's
+         *     (D5b; ``version`` 0 = the defaults, never changed); the rest is code-owned.
          */
         MonitoringThresholds: {
+            /** Changed At */
+            changed_at?: string | null;
+            /**
+             * Changed By User Id
+             * @description Never shown to service tokens.
+             */
+            changed_by_user_id?: string | null;
             /** Flagged Share Absolute Watch */
             flagged_share_absolute_watch: number;
             /** Flagged Share Relative Watch */
@@ -6409,15 +6901,108 @@ export interface components {
             min_per_class: number;
             /** Min Rows */
             min_rows: number;
+            /**
+             * Precision Floor
+             * @description Null: off. Binary models, real outcomes.
+             */
+            precision_floor?: number | null;
             /** Psi Alert */
             psi_alert: number;
             /** Psi Watch */
             psi_watch: number;
             /**
+             * Recall Floor
+             * @description Null: off. Binary models, real outcomes.
+             */
+            recall_floor?: number | null;
+            /**
              * Significance Level
              * @description A feature counts only when a G-test on its bucket counts has p below this level divided by the features compared.
              */
             significance_level: number;
+            /**
+             * Version
+             * @description 0: the defaults (never changed for this project).
+             * @default 0
+             */
+            version: number;
+        };
+        /** MonitoringThresholdsRead */
+        MonitoringThresholdsRead: {
+            bounds: components["schemas"]["MonitoringThresholdBounds"];
+            /**
+             * Can Edit
+             * @description You are a workspace owner or administrator (never platform staff or a token).
+             */
+            can_edit: boolean;
+            /** Changed At */
+            changed_at?: string | null;
+            /**
+             * Changed By User Id
+             * @description Never shown to service tokens.
+             */
+            changed_by_user_id?: string | null;
+            defaults: components["schemas"]["MonitoringThresholdValues"];
+            /** Etag */
+            etag: string;
+            /** Notes */
+            notes: string[];
+            /** Precision Floor */
+            precision_floor: number | null;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Psi Alert */
+            psi_alert: number;
+            /** Psi Watch */
+            psi_watch: number;
+            /** Recall Floor */
+            recall_floor: number | null;
+            /**
+             * Version
+             * @description 0 when never changed (the defaults); send `If-Match: "<version>"`.
+             */
+            version: number;
+        };
+        /**
+         * MonitoringThresholdsUsed
+         * @description The values one window was computed with (stored on it; later changes never alter it).
+         */
+        MonitoringThresholdsUsed: {
+            /** Precision Floor */
+            precision_floor?: number | null;
+            /** Psi Alert */
+            psi_alert: number;
+            /** Psi Watch */
+            psi_watch: number;
+            /** Recall Floor */
+            recall_floor?: number | null;
+            /** Version */
+            version: number;
+        };
+        /**
+         * MonitoringThresholdsWrite
+         * @description All four values are required (a floor is ``null`` to switch it off).
+         */
+        MonitoringThresholdsWrite: {
+            /** Precision Floor */
+            precision_floor: number | null;
+            /**
+             * Psi Alert
+             * @description Above psi_watch.
+             */
+            psi_alert: number;
+            /** Psi Watch */
+            psi_watch: number;
+            /**
+             * Rationale
+             * @description Your reason (History).
+             */
+            rationale: string;
+            /** Recall Floor */
+            recall_floor: number | null;
         };
         /** MonitoringWindowRead */
         MonitoringWindowRead: {
@@ -6437,6 +7022,11 @@ export interface components {
              */
             feature_sentences: string[];
             finding: components["schemas"]["MonitoringFinding"] | null;
+            /**
+             * Floor Status
+             * @description Precision / recall floors on real outcomes: `below` (an alert), `not_judged` (outcomes not linked or measured, or too few rows to say), `ok`; null: no floor.
+             */
+            floor_status?: ("below" | "not_judged" | "ok") | null;
             /**
              * Input Drift
              * @description Per feature (top 20 by PSI, then dates): psi, G-test p, status, kind, missing shares, mean change, the category bucket that moved most or date ranges. Names and category values: Untrusted user data: column names and values from the user's files; display as plain text.
@@ -6507,6 +7097,8 @@ export interface components {
             /** Summary Code */
             summary_code: string;
             thresholds: components["schemas"]["MonitoringThresholds"];
+            /** @description The values this week was computed with; null: computed before they were recorded (the defaults, no floors). */
+            thresholds_used?: components["schemas"]["MonitoringThresholdsUsed"] | null;
             /**
              * Window End
              * Format: date-time
@@ -6530,6 +7122,11 @@ export interface components {
              * @description Labelled rows / scored customers with a key in this week.
              */
             coverage: number | null;
+            /**
+             * Floor Status
+             * @description Precision / recall floors on real outcomes: `below` (an alert), `not_judged` (outcomes not linked or measured, or too few rows to say), `ok`; null: no floor.
+             */
+            floor_status?: ("below" | "not_judged" | "ok") | null;
             /** Max Psi */
             max_psi: number | null;
             /** Model Release Id */
@@ -6577,6 +7174,8 @@ export interface components {
             summary: string;
             /** Summary Code */
             summary_code: string;
+            /** @description The values this week was computed with; null: computed before they were recorded (the defaults, no floors). */
+            thresholds_used?: components["schemas"]["MonitoringThresholdsUsed"] | null;
             /**
              * Window End
              * Format: date-time
@@ -8749,7 +9348,7 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "idle" | "drift_found" | "retraining" | "ready_to_compare" | "waiting_for_you" | "switched" | "kept";
+            state: "idle" | "drift_found" | "below_floor" | "retraining" | "ready_to_compare" | "waiting_for_you" | "switched" | "kept";
         };
         /**
          * RunProgressRead
@@ -13559,6 +14158,444 @@ export interface operations {
             };
         };
     };
+    start_improve_run_v1_v1_improve_runs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImproveStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    /** @description URL of the improve loop. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImproveRunRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (error envelope) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_improve_run_v1_improve_runs__improve_run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                improve_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImproveRunRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    accept_improve_run_v1_v1_improve_runs__improve_run_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+                /** @description Strong ETag from a previous read; a mismatch is 412 precondition_failed. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                improve_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImproveAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Kept the current model. */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImproveRunRead"];
+                };
+            };
+            /** @description Accepted: the one final run is queued. */
+            202: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition failed (error envelope) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Too many requests (error envelope) */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancel_improve_run_v1_v1_improve_runs__improve_run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+                /** @description Strong ETag from a previous read; a mismatch is 412 precondition_failed. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                improve_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled (now or earlier). */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImproveRunRead"];
+                };
+            };
+            /** @description Finalizing: the final run is asked to stop. */
+            202: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition failed (error envelope) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
     read_inbox_v1_inbox_get: {
         parameters: {
             query?: {
@@ -15613,7 +16650,7 @@ export interface operations {
                 state?: ("proposed" | "accepted" | "rejected") | null;
                 /** @description Derived state: `superseded` when a later record supersedes it. */
                 effective_state?: ("proposed" | "accepted" | "rejected" | "superseded") | null;
-                decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed" | "retrain_policy_changed") | null;
+                decision_type?: ("winner_locked" | "split_plan_created" | "ref_initialized" | "problem_spec_locked" | "ref_moved" | "champion_promoted" | "experiment_accepted" | "experiment_rejected" | "proposal_accepted" | "proposal_rejected" | "decision_point_resolved" | "proposal_reverted" | "operating_point_chosen" | "scoring_schedule_changed" | "monitoring_outcomes_linked" | "target_confirmed" | "test_design_confirmed" | "goal_metric_confirmed" | "goal_rule_confirmed" | "retrain_policy_changed" | "monitoring_thresholds_changed") | null;
                 subject_kind?: ("project" | "problem_spec" | "dataset_version" | "split_plan" | "feature_recipe" | "experiment" | "candidate" | "model_version") | null;
                 /** @description Requires `subject_kind`. */
                 subject_id?: string | null;
@@ -16029,6 +17066,84 @@ export interface operations {
             };
         };
     };
+    list_project_improve_runs_v1_projects__project_id__improve_runs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImproveRunPage"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
     read_project_model_versions_v1_projects__project_id__model_versions_get: {
         parameters: {
             query?: {
@@ -16172,6 +17287,200 @@ export interface operations {
             };
             /** @description Unprocessable entity (error envelope) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_monitoring_thresholds_v1_projects__project_id__monitoring_thresholds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitoringThresholdsRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    set_monitoring_thresholds_v1_projects__project_id__monitoring_thresholds_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+                /** @description Strong ETag from a previous read; a mismatch is 412 precondition_failed. */
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonitoringThresholdsWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Strong entity tag of this representation; send it as If-Match on mutations. */
+                    ETag?: string;
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitoringThresholdsRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition failed (error envelope) */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

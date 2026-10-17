@@ -5,8 +5,9 @@
  * different from training" — never "the model is wrong" and never a cause. A column is marked watch / alert only when its
  * PSI passes the line AND a statistical test says the difference is not chance (the backend's gate); this page never says
  * more. Date columns are shown but not judged. Real-world results are real outcomes of scored rows, never the final test
- * set; no final test value is read or formatted here. DCLab never retrains or switches the model on its own. No sentence
- * built here passes the server's own message through; all times say UTC.
+ * set; no final test value is read or formatted here. Nothing switches the model on its own; a retrain starts by itself only under
+ * the project's Automatic retrain policy (D5c). A week that alerts because real outcomes fell below a floor is never called drift.
+ * No sentence built here passes the server's own message through; all times say UTC.
  */
 import { plainText } from "./command-search.ts";
 import { utcWhen } from "./format-time.ts";
@@ -47,10 +48,11 @@ export type Thresholds = {
   psi_watch: number; psi_alert: number; flagged_share_relative_watch: number; min_rows: number; min_labels: number; min_per_class: number;
   significance_level?: number | null; flagged_share_absolute_watch?: number | null;
 };
+export type ThresholdsUsed = { psi_watch: number; psi_alert: number; precision_floor?: number | null; recall_floor?: number | null; version?: number };
 export type WeekSummaryLike = {
   window_start: string; status: string; summary_code: string; n_rows: number; n_batch_predictions: number; model_version_id?: string;
   max_psi?: number | null; prediction_psi?: number | null; outcomes_status: string; n_labelled?: number | null; coverage?: number | null;
-  outcome_metric?: string | null; outcome_metric_value?: number | null;
+  outcome_metric?: string | null; outcome_metric_value?: number | null; thresholds_used?: ThresholdsUsed | null; floor_status?: string | null;
 };
 export type OverviewLike = { enabled: boolean; status: string; model_version?: string | null; latest?: WeekSummaryLike | null; windows: WeekSummaryLike[]; thresholds: Thresholds };
 export type FeatureLike = {
@@ -110,7 +112,13 @@ export function statusWords(status: string): { label: string; tone: Tone } {
 }
 
 export const NOT_THE_MODEL = "Drift means the inputs look different from training. It does not mean the model is wrong.";
-export const NOTHING_AUTOMATIC = "DCLab did not retrain or switch the model; it never does that on its own.";
+export const NOTHING_AUTOMATIC = "Nothing switches the model in use on its own: a person decides. A retrain starts by itself only when the project's retrain policy is Automatic.";
+export const BELOW_FLOOR = "below_floor";
+/** The week's own watch and alert lines: the values it was computed with, else (computed before they were recorded) `fallback`. */
+export function weekLines<T extends Pick<Thresholds, "psi_watch" | "psi_alert">>(w: Pick<WeekSummaryLike, "thresholds_used">, fallback: T): T {
+  const used = w.thresholds_used;
+  return used && num(used.psi_watch) !== null && num(used.psi_alert) !== null ? { ...fallback, psi_watch: used.psi_watch, psi_alert: used.psi_alert } : fallback;
+}
 export const WITHIN_CHANCE = "within what chance allows for this many rows and columns";
 
 const NOT_ENOUGH: Record<string, (w: WeekSummaryLike, t: Thresholds) => string> = {
@@ -137,6 +145,9 @@ export function weekSentence(w: WeekSummaryLike, t: Thresholds, compared?: numbe
   if (w.status === "ok") {
     if (compared === 0) return `In the ${week}, no column could be compared with training, so nothing is judged.`;
     return `In the ${week}, the columns compared look like training (${count(w.n_rows)} rows scored).${measured} ${lines}`;
+  }
+  if (w.status === "alert" && w.summary_code === BELOW_FLOOR) {
+    return `Alert: in the ${week}, real outcomes of the model in use fell below a precision or recall floor set for this project. This is not drift: the inputs and scores did not raise this alert.${measured} ${NOTHING_AUTOMATIC}`;
   }
   if (w.status === "watch" || w.status === "alert") {
     const below = (inputs === null || inputs < t.psi_watch) && (scores === null || scores < t.psi_watch);
@@ -200,19 +211,30 @@ export function outcomeCell(w: WeekSummaryLike): string {
   }
 }
 
-export type WeekRow = { key: string; week: string; label: string; tone: Tone; rows: string; inputs: string; scores: string; outcomes: string };
+export type WeekRow = { key: string; week: string; label: string; tone: Tone; rows: string; inputs: string; scores: string; outcomes: string; floor: string; floorTone: Tone };
+const FLOOR_WORDS: Record<string, { label: string; tone: Tone }> = { below: { label: "Below a floor", tone: "crit" }, ok: { label: "At or above", tone: "ok" }, not_judged: { label: "Not judged", tone: "gray" } };
+/** The floor cell: below / at or above / not judged (the week's details say why) / no floor set. */
+export function floorWords(status: string | null | undefined): { label: string; tone: Tone } {
+  if (status === null || status === undefined) return { label: "No floor", tone: "gray" };
+  return own(FLOOR_WORDS, status) ?? { label: "Unknown", tone: "gray" };
+}
 const psiCell = (v: number | null, status: string, t: Thresholds) => (v === null ? "—" : status === "ok" && v >= t.psi_watch ? `${fixed(v)} (within chance)` : fixed(v));
-/** The weeks table: newest first, at most 12, only weeks with a readable date. An ok week above a line says "within chance". */
-export function weekRows(windows: readonly WeekSummaryLike[], t: Thresholds): WeekRow[] {
+/**
+ * The weeks table: newest first, at most 12, only weeks with a readable date. An ok week above a line says "within chance",
+ * judged against the week's own lines (`fallback`: the lines of a week computed before they were recorded).
+ */
+export function weekRows(windows: readonly WeekSummaryLike[], t: Thresholds, fallback: Pick<Thresholds, "psi_watch" | "psi_alert"> = t): WeekRow[] {
   return windows
     .flatMap((w) => { const key = weekKey(w.window_start); return key ? [{ key, w }] : []; })
     .sort((a, b) => b.key.localeCompare(a.key))
     .slice(0, WEEKS_LISTED)
     .map(({ key, w }) => {
       const words = statusWords(w.status);
+      const lines = { ...t, ...weekLines(w, { psi_watch: fallback.psi_watch, psi_alert: fallback.psi_alert }) };
+      const floor = floorWords(w.floor_status);
       return {
-        key, week: weekLabel(w.window_start), label: words.label, tone: words.tone, rows: count(w.n_rows),
-        inputs: psiCell(num(w.max_psi), w.status, t), scores: psiCell(num(w.prediction_psi), w.status, t), outcomes: outcomeCell(w),
+        key, week: weekLabel(w.window_start), label: w.status === "alert" && w.summary_code === BELOW_FLOOR ? "Alert: below a floor" : words.label, tone: words.tone, rows: count(w.n_rows),
+        inputs: psiCell(num(w.max_psi), w.status, lines), scores: psiCell(num(w.prediction_psi), w.status, lines), outcomes: outcomeCell(w), floor: floor.label, floorTone: floor.tone,
       };
     });
 }
@@ -440,7 +462,7 @@ export function thresholdLines(t: Thresholds): string[] {
     DATES_NOT_JUDGED,
   ];
 }
-export const THRESHOLDS_READ_ONLY = "These lines are set by DCLab and cannot be changed here.";
+export const THRESHOLDS_READ_ONLY = "Workspace owners and administrators can change the watch and alert lines and the floors under Thresholds; each week keeps the values it was computed with.";
 
 /* ---------- linking an outcomes file ---------- */
 
@@ -488,7 +510,7 @@ export function linkConfirmWords(i: LinkIntent, t: Pick<Thresholds, "min_labels"
       `Once at least ${count(t.min_labels)} scored rows have a real outcome, this screen shows how the model in use really did on those rows. Until then it says how many are labelled.`,
       recheck,
       "A link cannot be removed; the newest linked file that shares IDs with a week is the one used.",
-      "Outcomes are never used to train or to choose a model, and nothing is retrained or switched. A file that trained a model in this project is refused.",
+      "Outcomes are never used to train or to choose a model, and linking them never switches the model in use. A file that trained a model in this project is refused.",
       "The link is saved in History.",
     ],
   };
@@ -632,20 +654,23 @@ function markFor(psi: number | null, status: unknown, weekStatus: string | undef
 
 /**
  * Input change (PSI) by week: one chosen column's line (from `feature_psi_series`) beside the largest change of any column
- * (from each week's `max_psi`), with the read-only watch and alert lines. The axis stops at 3x the alert line like the bars.
- * A week where the column was not among the shown columns is a gap, never a zero.
+ * (from each week's `max_psi`), with the watch and alert lines in force now (`t`). Each week's value is judged with that
+ * week's own lines (`thresholds_used`; `fallback` for a week computed before they were recorded). The axis stops at 3x the
+ * alert line like the bars. A week where the column was not among the shown columns is a gap, never a zero.
  */
-export function psiTrend(windows: readonly WeekSummaryLike[], series: readonly FeatureSeriesLike[] | null | undefined, column: number | null, t: Pick<Thresholds, "psi_watch" | "psi_alert">): TrendChart {
+export function psiTrend(windows: readonly WeekSummaryLike[], series: readonly FeatureSeriesLike[] | null | undefined, column: number | null, t: Pick<Thresholds, "psi_watch" | "psi_alert">, fallback: Pick<Thresholds, "psi_watch" | "psi_alert"> = t): TrendChart {
   const weeks = weekTicks(windows);
   const byWeek = new Map<string, WeekSummaryLike>();
   for (const w of windows) { const key = weekKey(w.window_start); if (key && !byWeek.has(key)) byWeek.set(key, w); }
   const weekStatus = (key: string) => byWeek.get(key)?.status;
+  const linesOf = (key: string) => { const w = byWeek.get(key); return w ? weekLines(w, fallback) : fallback; };
+  const otherLines = weeks.some((w) => { const l = linesOf(w.key); return l.psi_watch !== t.psi_watch || l.psi_alert !== t.psi_alert; });
   const lines: TrendLine[] = [];
   const columns = seriesColumns(series);
   const picked = columns.find((c) => c.index === column) ?? columns[0] ?? null;
   const build = (id: string, label: string, style: TrendLine["style"], at: (key: string) => { psi: number | null; status: unknown }): TrendLine => {
     const raw = weeks.map((w) => at(w.key).psi);
-    const marks = weeks.map((w, i) => markFor(raw[i], at(w.key).status, weekStatus(w.key), t));
+    const marks = weeks.map((w, i) => markFor(raw[i], at(w.key).status, weekStatus(w.key), linesOf(w.key)));
     return { id, label, style, raw, marks, values: raw.map((v, i) => (marks[i] === "not_judged" ? null : v)) };
   };
   if (picked) {
@@ -681,6 +706,7 @@ export function psiTrend(windows: readonly WeekSummaryLike[], series: readonly F
       chance ? "A hollow dot is above a line but within what chance allows for that week's rows, so it is not marked." : null,
       notJudged ? "A week with too little data is not judged and is left off the lines; the table has its number." : null,
       clipped ? "A value above the top of the axis is drawn at the top; the table has the exact number." : null,
+      otherLines ? "The lines drawn are the ones in force now; some weeks were judged with other lines (the weekly table shows the values each week used)." : null,
     ].filter(Boolean).join(" ") || null,
   };
 }
@@ -721,10 +747,11 @@ export const REAL_TREND_NOTE = "Precision: of the rows the model flagged, the sh
 
 export type OwnStep = { key: string; title: string; who: string; state: "on" | "off" | "planned" | "yours"; pill: string; tone: Tone; text: string };
 /**
- * "What the system does on its own", from what is real: weekly checks and the drift rule are live and say their state; the
- * retrain steps are not built and say "Planned"; going back is always a person's choice. Nothing here claims an automatic action.
+ * "What the system does on its own", from what is real: weekly checks and the alert rule say their state, the retrain steps come
+ * from the retrain status read (`retrain`, built by `retrainSteps`), and going back is always a person's choice. Nothing here
+ * claims an automatic switch. A week below a floor is named as such, never as drift.
  */
-export function ownSteps(o: OverviewLike | undefined, offer: GoBack): OwnStep[] {
+export function ownSteps(o: OverviewLike | undefined, offer: GoBack, retrain: readonly OwnStep[] = []): OwnStep[] {
   const latest = o?.latest ?? null;
   const week = latest ? weekLabel(latest.window_start) : null;
   let check: Pick<OwnStep, "state" | "pill" | "tone" | "text">;
@@ -734,8 +761,11 @@ export function ownSteps(o: OverviewLike | undefined, offer: GoBack): OwnStep[] 
   else if (!latest) check = { state: "on", pill: "On", tone: "ok", text: "On. The first week is checked after the model in use scores a file in it." };
   else check = { state: "on", pill: "On", tone: "ok", text: `On. The latest check was the ${week}. A week is checked only after the model in use scores a file in it.` };
   const status = o && latest && o.status !== "no_model_in_use" ? o.status : null;
+  const floorAlert = status === "alert" && latest?.summary_code === BELOW_FLOOR;
   const flag: Record<string, string> = {
-    alert: `Alert in the ${week}: the inputs or scores look different from training. It is also listed in the Inbox.`,
+    alert: floorAlert
+      ? `Alert in the ${week}: real outcomes fell below a floor set for this project. This is not drift. It is also listed in the Inbox.`
+      : `Alert in the ${week}: the inputs or scores look different from training. It is also listed in the Inbox.`,
     watch: `Watch in the ${week}: something moved somewhat. Nothing is listed in the Inbox for a watch.`,
     ok: `Nothing flagged in the ${week}.`,
     not_enough_data: `Not judged in the ${week}: not enough data.`,
@@ -745,9 +775,8 @@ export function ownSteps(o: OverviewLike | undefined, offer: GoBack): OwnStep[] 
     : offer.kind === "none" ? "There is no earlier approved model to go back to." : "Always a person's choice. When an earlier approved model exists, it is offered here when the latest week of the model in use is an alert, and any time on Model → Approved for scoring.";
   return [
     { key: "check", title: "Check each week the model in use scores a file", who: "Automatic", ...check },
-    { key: "flag", title: "Flag drift", who: "A rule", state: status ? "on" : "off", pill: status ? statusWords(status).label : "Nothing yet", tone: status ? statusWords(status).tone : "gray", text: status ? own(flag, status) ?? "The latest week has a result this page does not recognise." : "Nothing to judge until a week is checked." },
-    { key: "retrain", title: "Train again on newer data", who: "Not built", state: "planned", pill: "Planned", tone: "gray", text: "Not built. DCLab never trains a model again on its own; to use a newer file, start a run on the Experiments screen." },
-    { key: "compare", title: "Show the new model beside the current one and ask you", who: "Not built", state: "planned", pill: "Planned", tone: "gray", text: "Not built. Today you compare runs on the Experiments screen and approve a model on Model → Approved for scoring." },
+    { key: "flag", title: "Flag drift, or real outcomes below a floor", who: "A rule", state: status ? "on" : "off", pill: status ? (floorAlert ? "Alert: below a floor" : statusWords(status).label) : "Nothing yet", tone: status ? statusWords(status).tone : "gray", text: status ? own(flag, status) ?? "The latest week has a result this page does not recognise." : "Nothing to judge until a week is checked." },
+    ...retrain,
     { key: "back", title: "Go back to the previous model", who: "You decide", state: "yours", pill: "Yours", tone: "gray", text: back },
   ];
 }

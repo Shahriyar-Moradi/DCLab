@@ -86,7 +86,7 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
   {
     id: "improve", name: "Improve", group: "Project", href: null, feature: "improve",
     tags: [{ kind: "working" }],
-    missing: "Guided: you try one change at a time and see whether it beats the noise. A loop that tries several changes on its own is not built.",
+    missing: "Guided tries and an improvement loop within a budget work today; each loop try is sealed and only an accepted try scores the final test set once. A loop on a fresh split and AI-suggested tries are not built.",
   },
   {
     id: "model", name: "Model", group: "Project", href: null, feature: "models",
