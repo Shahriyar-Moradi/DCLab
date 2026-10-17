@@ -29,7 +29,12 @@ REQUEST_DIGEST_SPEC_KEY = "request_digest"
 # Key namespaces owned by internal surfaces (they replay by key alone); a /v1
 # caller can never claim them, so it can never plant a row they would adopt.
 LEGACY_LABS_UPLOAD_IDEMPOTENCY_PREFIX = "legacy_labs_upload:"
-RESERVED_IDEMPOTENCY_KEY_PREFIXES = (LEGACY_LABS_UPLOAD_IDEMPOTENCY_PREFIX,)
+# P5.4-A2 (ADR 0007 §7, §8): improve probes (``improve:<run>:<seq>``), the acceptance record
+# (``improve:<run>:accept``) and final runs (``improve-final:<run>:<attempt>``).
+IMPROVE_KEY_PREFIX = "improve:"
+IMPROVE_FINAL_KEY_PREFIX = "improve-final:"
+RESERVED_IDEMPOTENCY_KEY_PREFIXES = (LEGACY_LABS_UPLOAD_IDEMPOTENCY_PREFIX, IMPROVE_KEY_PREFIX,
+                                     IMPROVE_FINAL_KEY_PREFIX)
 
 
 def is_reserved_idempotency_key(key: str) -> bool:
@@ -91,6 +96,9 @@ RESOURCE_EXPERIMENT = "experiment"
 RESOURCE_DECISION_RECORD = "decision_record"
 RESOURCE_SERVICE_TOKEN = "service_token"
 RESOURCE_BATCH_PREDICTION = "batch_prediction"
+RESOURCE_IMPROVE_RUN = "improve_run"  # P5.4-A3: a loop start or an acceptance
+RESOURCE_BUSINESS_QUESTION = "business_question"  # D7a: asking or closing a question
+RESOURCE_BUSINESS_QUESTION_REPLY = "business_question_reply"  # D7a: one reply
 
 CK_IDEMPOTENCY_KEYS_PRINCIPAL_KIND = "principal_kind IN ('user', 'service_token')"
 CK_IDEMPOTENCY_KEYS_OPERATION = (

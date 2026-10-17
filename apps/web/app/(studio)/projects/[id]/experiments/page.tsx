@@ -10,16 +10,46 @@ import { Pill } from "@/components/studio/Pill";
 import { GlossaryTerm } from "@/components/studio/GlossaryTerm";
 import { Term } from "@/components/studio/Term";
 import { QueryNotice, statusTone } from "@/app/components/studio-app/StudioParts";
-import { useProjectExperiments, type StudioExperimentItem } from "@/lib/application";
+import { useProjectExperiments, useStudioProjects, type StudioExperimentItem } from "@/lib/application";
+import { listProgressText } from "@/lib/application/studio-home";
 import { COMPARE_MAX, COMPARE_MIN, compareHref } from "@/lib/application/studio-compare";
-import { isUuid, plainText } from "@/lib/application/command-search";
+import { isUuid, plainText, projectHref } from "@/lib/application/command-search";
 import { FINDINGS_BADGE_CAP, useFindingsBadges } from "@/lib/application/studio-data-hooks";
 import { RUN_LIST_CAP, useRunDetails } from "@/lib/application/studio-inspect-hooks";
 import { designLabels, runName, runOrdinals } from "@/lib/application/studio-names";
 import {
-  STATUS_FILTERS, bestRunIds, beatsText, changeSentences, familyLabel, matchesStatusFilter, runFacts, scoreText, statusWords, trustCounts, trustSentence,
+  STATUS_FILTERS, bestRunIds, beatsText, changeSentences, familyLabel, matchesStatusFilter, runFacts, scoreText, startedByText, statusWords, trustCounts, trustSentence,
   type StatusFilter,
 } from "@/lib/application/studio-runs";
+
+/** D8b: "Try a change" from the list: choose a finished run, then its change panel opens on the run's page. */
+function TryChangeEntry({ projectId, runs, nameOf, onClose }: { projectId: string; runs: StudioExperimentItem[]; nameOf: (e: StudioExperimentItem) => string; onClose: () => void }) {
+  const router = useRouter();
+  const finished = runs.filter((e) => e.status === "completed" && e.evidence_mode !== "sealed");
+  const [chosen, setChosen] = useState(finished[0]?.id ?? "");
+  const pick = finished.some((e) => e.id === chosen) ? chosen : "";
+  const base = isUuid(pick) ? projectHref(projectId, "experiments", pick) : null;
+  const href = base ? `${base}#branch` : null;
+  return (
+    <form className="form card flat" aria-label="Try a change" onSubmit={(event) => { event.preventDefault(); if (href) router.push(href); }}>
+      <h2>Try a change</h2>
+      {finished.length === 0 ? <p className="muted" role="note">No finished run to start from yet. A change starts from a finished run.</p> : (
+        <>
+          <p className="muted">A change starts from a finished run and keeps its test design, so the two can be compared fairly. Choose the run, then pick the change on its page; nothing starts until you choose Start there, and the server refuses a run that cannot be a starting point.</p>
+          <label className="field"><span>Start from</span>
+            <select value={pick} onChange={(event) => setChosen(event.target.value)}>
+              {finished.map((e) => <option key={e.id} value={e.id}>{nameOf(e)}</option>)}
+            </select>
+          </label>
+        </>
+      )}
+      <div className="toolbar">
+        <button type="button" className="btn" onClick={onClose}>Close</button>
+        {finished.length ? <button type="submit" className="btn primary" disabled={!href}>Open its change panel</button> : null}
+      </div>
+    </form>
+  );
+}
 
 function ExperimentsPageInner() {
   const { id } = useParams<{ id: string }>();
@@ -28,6 +58,10 @@ function ExperimentsPageInner() {
   const [selected, setSelected] = useState<string[]>(() => (isUuid(preselect) ? [preselect.toLowerCase()] : []));
   const [filter, setFilter] = useState<StatusFilter>("all");
   const experiments = useProjectExperiments(id);
+  const [trying, setTrying] = useState(false);
+  // The project summary records the latest event of the project's latest run only (refreshed every 10 s while a run is live).
+  const projects = useStudioProjects();
+  const latestRun = projects.data?.find((p) => p.id === id)?.summary?.latest_run ?? null;
   const allRuns = experiments.data?.items ?? [];
   const ordinals = runOrdinals(allRuns);
   const partial = !!experiments.data?.next_cursor;
@@ -108,7 +142,14 @@ function ExperimentsPageInner() {
         );
       },
     },
-    { key: "status", header: "Status", sortValue: (e) => e.status, render: (e) => <Pill tone={statusTone(e.status)}>{statusWords(e.status)}</Pill> },
+    {
+      key: "status", header: "Status", sortValue: (e) => e.status,
+      render: (e) => {
+        const progress = listProgressText(e.id, e.status, latestRun);
+        return <><Pill tone={statusTone(e.status)}>{statusWords(e.status)}</Pill>{progress ? <span className="small muted" data-testid="run-progress"> {progress}</span> : null}</>;
+      },
+    },
+    { key: "by", header: "Started by", render: (e) => <span className={e.started_by ? undefined : "muted"}>{startedByText(e.started_by)}</span> },
     { key: "split", header: "Test design", render: (e) => (e.split_plan_id ? designs.get(e.split_plan_id) ?? "—" : "—") },
   ];
   const items = allRuns.filter((e) => matchesStatusFilter(e.status, filter));
@@ -120,6 +161,7 @@ function ExperimentsPageInner() {
         actions={(
           <>
             <button type="button" className="btn" disabled={selected.length < COMPARE_MIN || !href} onClick={() => href && router.push(href)}>Compare selected ({selected.length})</button>
+            <button type="button" className="btn" aria-expanded={trying} onClick={() => setTrying((v) => !v)}>Try a change</button>
             <Link className="btn primary" href={`/projects/${id}/experiments/new`}>New run</Link>
           </>
         )}
@@ -128,10 +170,11 @@ function ExperimentsPageInner() {
       <PageGuide
         purpose="See every run of this project, what each one changed and how it scored."
         howTo={<>Open a run to follow its steps. Runs on the same <Term definition="How the rows are split into training folds and a final test set. Runs with the same test design are scored on the same rows, so they can be compared.">test design</Term> are comparable. Scores are <GlossaryTerm term="cv" /> scores; the ± is how much they moved from fold to fold. Beating the <GlossaryTerm term="baseline" /> means doing better than a model that ignores the columns.</>}
-        youGet="Model, what changed from the run it is based on, score, baseline result, trust checks (✓ passed, ⚠ to review, “failed” for a failed check) and status. Tick two or more finished runs and press Compare selected; open a run to try a change, stop it or put its model in use. Start a new run with New run."
+        youGet="Model, what changed from the run it is based on, score, baseline result, trust checks (✓ passed, ⚠ to review, “failed” for a failed check), status (the latest run also shows its fold while it trains) and who started it. Tick two or more finished runs and press Compare selected; press Try a change to start from a finished run; open a run to stop it or put its model in use. Start a new run with New run."
       />
       {experiments.isError ? <QueryNotice error={experiments.error} what="experiment list" /> : null}
       {experiments.isPending ? <p role="status">Loading runs…</p> : null}
+      {trying && experiments.data ? <TryChangeEntry projectId={id} runs={allRuns} nameOf={nameOf} onClose={() => setTrying(false)} /> : null}
       {experiments.data ? (
         <>
           <div className="toolbar">

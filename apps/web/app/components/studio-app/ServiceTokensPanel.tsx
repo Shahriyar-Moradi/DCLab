@@ -12,12 +12,14 @@ import { Skeleton } from "@/app/components/ui/Skeleton";
 import { Table, Td, Th } from "@/app/components/ui/Table";
 import { useCreateServiceToken, useRevokeServiceToken, useServiceTokens } from "@/lib/application";
 import { SERVICE_TOKEN_SCOPES, formatTimestamp, type ServiceTokenScope } from "@/lib/domain";
+import { abilityHelp, abilityLabel, TOKEN_LIMIT_TEXT } from "@/lib/application/studio-agents";
 import { newIdempotencyKey } from "@/lib/infrastructure/api-client";
+import { actionErrorSentence, readErrorSentence } from "@/lib/application/api-error-text";
 
 const STATUS_TONE = { active: "green", expired: "amber", revoked: "oxblood" } as const;
 const EXPIRY_DAYS = ["7", "30", "90"] as const;
 
-/** Create (secret shown once), list and revoke /v1 service tokens for SDK / MCP clients. */
+/** Create (the token is shown once), list and revoke access tokens for the Python library, terminal and MCP tools. */
 export function ServiceTokensPanel() {
   const tokens = useServiceTokens();
   const create = useCreateServiceToken();
@@ -71,8 +73,8 @@ export function ServiceTokensPanel() {
 
   return (
     <Panel
-      title="Service tokens"
-      description="Bearer credentials for the SDK and MCP clients. A token acts only in this workspace, only within its scopes and your current role, and never in the browser."
+      title="Access tokens"
+      description="An access token lets code or a connected tool use DCLab for you. It works only in this workspace, only for what you allow below and within your current role. Revoke a token you no longer use."
       className="mt-6"
     >
       <form onSubmit={submit} className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
@@ -97,17 +99,18 @@ export function ServiceTokensPanel() {
           />
         </div>
         <fieldset className="flex flex-wrap gap-4 md:col-span-2">
-          <legend className="mb-2 font-sans text-label uppercase text-ink-muted">Scopes</legend>
+          <legend className="mb-2 font-sans text-label uppercase text-ink-muted">What it can do</legend>
           {SERVICE_TOKEN_SCOPES.map((scope) => (
             <Checkbox
               key={scope}
               id={`scope-${scope}`}
-              label={scope}
+              label={<><b>{abilityLabel(scope)}</b>{" "}<span className="text-ink-muted">{abilityHelp(scope)}</span></>}
               checked={scopes.includes(scope)}
               onChange={(event) => toggle(scope, event.target.checked)}
             />
           ))}
         </fieldset>
+        <p className="text-body text-ink-muted md:col-span-2">{TOKEN_LIMIT_TEXT}</p>
         <div className="md:col-span-2">
           <Button
             type="submit"
@@ -116,13 +119,13 @@ export function ServiceTokensPanel() {
           >
             Create token
           </Button>
-          {create.error ? <p className="mt-2 text-body text-oxblood">{create.error.message}</p> : null}
+          {create.error ? <p className="mt-2 text-body text-oxblood">{actionErrorSentence(create.error, "creating the access token")}</p> : null}
         </div>
       </form>
 
       {secret ? (
         <div role="status" className="mt-4 rounded-md border border-hairline bg-navy-soft p-4">
-          <p className="text-body text-ink">Copy this token now. It will not be shown again.</p>
+          <p className="text-body text-ink">Copy this token now. It will not be shown again. Paste it where the snippet says dclab_st_….</p>
           <code className="mt-2 block break-all font-mono text-data text-ink">{secret}</code>
           <div className="mt-3 flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => void copySecret(secret)}>
@@ -140,16 +143,16 @@ export function ServiceTokensPanel() {
         {tokens.isLoading ? (
           <Skeleton className="h-24" />
         ) : tokens.error ? (
-          <ErrorState body={tokens.error.message} onRetry={() => void tokens.refetch()} />
+          <ErrorState body={readErrorSentence(tokens.error, "access tokens")} onRetry={() => void tokens.refetch()} />
         ) : !tokens.data?.length ? (
-          <p className="text-body text-ink-muted">No service tokens in this workspace.</p>
+          <p className="text-body text-ink-muted">No access tokens in this workspace yet.</p>
         ) : (
           <Table>
             <thead>
               <tr>
                 <Th>Name</Th>
                 <Th>Token</Th>
-                <Th>Scopes</Th>
+                <Th>What it can do</Th>
                 <Th>Status</Th>
                 <Th>Expires</Th>
                 <Th>Last used</Th>
@@ -163,7 +166,7 @@ export function ServiceTokensPanel() {
                 <tr key={token.id}>
                   <Td>{token.name}</Td>
                   <Td mono>{token.prefix}…</Td>
-                  <Td>{token.scopes.join(", ")}</Td>
+                  <Td>{token.scopes.map(abilityLabel).join(", ")}</Td>
                   <Td>
                     <Badge tone={STATUS_TONE[token.status]}>{token.status}</Badge>
                   </Td>
@@ -186,7 +189,7 @@ export function ServiceTokensPanel() {
             </tbody>
           </Table>
         )}
-        {revoke.error ? <p className="mt-2 text-body text-oxblood">{revoke.error.message}</p> : null}
+        {revoke.error ? <p className="mt-2 text-body text-oxblood">{actionErrorSentence(revoke.error, "revoking the access token")}</p> : null}
       </div>
     </Panel>
   );

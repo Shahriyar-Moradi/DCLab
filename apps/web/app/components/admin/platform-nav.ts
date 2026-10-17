@@ -1,6 +1,6 @@
 import type { AppNavigationSection } from "@/app/components/layout/app-navigation";
 import { ADMIN_REGISTRY_HREF } from "@/app/components/admin/paths";
-import { Building2, FlaskConical, LineChart, Network, Users } from "lucide-react";
+import { Building2, FlaskConical, Gauge, LineChart, Network, Users } from "lucide-react";
 
 function prefixMatch(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -15,6 +15,15 @@ export const PLATFORM_NAV_SECTION: AppNavigationSection = {
   label: "Platform",
   audience: "platform",
   items: [
+    {
+      // P8.5-UI: the operator console replaces Monitoring as the platform administrator's start page (Monitoring stays).
+      id: "operator-console",
+      label: "Operator console",
+      href: "/operator",
+      icon: Gauge,
+      audience: "platform_admin",
+      isActive: (pathname) => pathname === "/operator",
+    },
     {
       id: "businesses",
       label: "Businesses",

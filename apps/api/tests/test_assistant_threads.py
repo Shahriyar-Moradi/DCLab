@@ -41,6 +41,7 @@ from app.services.auth_service import create_access_token, create_user
 from app.services.idempotency_service import KeyScope
 from app.services.ml_job_service import process_next_job
 from app.services.service_token_service import create_service_token
+from app.services.workspace_entitlement_service import AI_ASSISTANT_BETA, set_entitlement
 from conftest import TRUSTED_ORIGIN, browser_login, csrf_headers
 from test_decision_record_service import g, setup  # noqa: F401  (fixtures)
 from test_lead_agent import lead  # noqa: F401  (fixture)
@@ -63,6 +64,8 @@ def _sse(response) -> list[tuple[str, dict]]:
 def chat(lead, client, monkeypatch):  # noqa: F811
     monkeypatch.setattr(assistant, "agent_service", lead.service)
     monkeypatch.setattr(assistant, "ai_settings", lambda: lead.settings)
+    set_entitlement(lead.db, lead.g.ws, AI_ASSISTANT_BETA, True, source="test")  # D6a: the beta flag
+    lead.db.commit()
     assert browser_login(client, lead.g.actor.email, PASSWORD).status_code == 200
     client.headers["X-Workspace-Id"] = str(lead.g.ws)
 
@@ -183,6 +186,7 @@ def test_threads_are_owner_only_workspace_scoped_session_only_and_csrf_checked(c
                          role=UserRole.VIEWER, workspace_id=g.ws)
     _row, raw = create_service_token(db, creator=g.actor, workspace_id=g.ws, name="agent", scopes=["read"],
                                      expires_in_days=30, current_password=PASSWORD)
+    set_entitlement(db, setup["beta"].id, AI_ASSISTANT_BETA, True, source="test")  # so absence reads as 404
     db.commit()
     for browser in (_browser(colleague, g.ws), _browser(setup["beta_admin"], setup["beta"].id)):
         _assert_envelope(browser.get(f"/v1/assistant/threads/{tid}"), 404, "not_found")  # never 403

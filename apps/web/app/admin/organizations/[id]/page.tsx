@@ -11,6 +11,7 @@ import { PageHeader } from "@/app/components/ui/PageHeader";
 import { Skeleton } from "@/app/components/ui/Skeleton";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
 import { filterByText } from "@/app/components/ui/localCollection";
+import { roleLabelWithDetail } from "@/lib/application/role-labels";
 import { useAdminOrganization } from "@/lib/application";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -27,7 +28,7 @@ export default function OrganizationDetailPage() {
   }
 
   const org = query.data;
-  const users = filterByText(org.users, userQuery, (user) => [user.email, user.full_name, user.role]);
+  const users = filterByText(org.users, userQuery, (user) => [user.email, user.full_name, user.role, roleLabelWithDetail(user.role)]);
 
   return (
     <div>
@@ -64,7 +65,7 @@ export default function OrganizationDetailPage() {
           columns={[
             { id: "email", header: "Email", mono: true, cell: (user) => user.email },
             { id: "name", header: "Name", cell: (user) => user.full_name || "—" },
-            { id: "role", header: "Role", cell: (user) => user.role },
+            { id: "role", header: "Role", cell: (user) => roleLabelWithDetail(user.role) },
             {
               id: "status",
               header: "Status",

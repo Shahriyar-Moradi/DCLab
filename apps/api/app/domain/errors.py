@@ -258,10 +258,11 @@ class ExperimentNotBranchableError(Exception):
 
     status_code = 409
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, *, status_code: int = 409) -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
         self.detail_message = message
+        self.status_code = status_code
 
     def public_detail(self) -> dict[str, str]:
         return {"code": self.code, "message": self.detail_message}
@@ -292,6 +293,14 @@ class BatchPredictionError(ExperimentRequestError):
     """A batch prediction cannot be created or downloaded (P4.9-A): stable ``code``."""
 
 
+class MonitoringError(ExperimentRequestError):
+    """An outcome file cannot be linked, or a monitoring window cannot be computed (P7.4-A)."""
+
+
+class RetrainError(ExperimentRequestError):
+    """A retrain on newest data cannot start or a retrain policy cannot change (D5a): stable ``code``."""
+
+
 class OperatingPointError(ExperimentRequestError):
     """An operating point cannot be chosen (P5.2-A): stable ``code``, 409/422, typed ``details``
     (e.g. the closest point of an infeasible objective)."""
@@ -303,6 +312,19 @@ class OperatingPointError(ExperimentRequestError):
 
     def public_detail(self) -> dict[str, object]:
         return {**self.details, "code": self.code, "message": self.detail_message}
+
+
+class ImproveRunError(Exception):
+    """An improve-loop request refused (ADR 0007 §4, §7): 404 / 409 / 422 / 429 with a closed code."""
+
+    def __init__(self, code: str, message: str, *, status_code: int = 409) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.detail_message = message
+        self.status_code = status_code
+
+    def public_detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.detail_message}
 
 
 class RunQuotaExceededError(Exception):
@@ -317,6 +339,38 @@ class RunQuotaExceededError(Exception):
 
     def public_detail(self) -> dict[str, object]:
         return {"code": self.code, "message": str(self), "limit": self.limit}
+
+    def legacy_detail(self) -> dict[str, object]:
+        """The ``detail`` of a non-/v1 (legacy Labs) refusal."""
+
+        return self.public_detail()
+
+
+class QuotaExceededError(RunQuotaExceededError):
+    """A plan limit of the workspace is reached (P8.4-A). 429 ``quota_exceeded``, not retryable
+    before ``resets_at``. A subclass so every admission point that maps the run limit maps this too."""
+
+    code = "quota_exceeded"
+    retryable = False
+
+    def __init__(self, key: str, *, used: int, limit: int, resets_at: object | None, message: str,
+                 plain_message: str | None = None) -> None:
+        Exception.__init__(self, message)
+        self.key, self.used, self.limit, self.resets_at = key, used, limit, resets_at
+        self.plain_message = plain_message or message
+
+    def _resets(self) -> str | None:
+        resets = getattr(self.resets_at, "isoformat", None)
+        return resets() if callable(resets) else None
+
+    def public_detail(self) -> dict[str, object]:
+        return {"code": self.code, "message": str(self), "kind": self.key, "used": self.used, "limit": self.limit,
+                "resets_at": self._resets()}
+
+    def legacy_detail(self) -> dict[str, object]:
+        """Legacy (non-/v1) surfaces get no numbers: what ran out and when it resets."""
+
+        return {"code": self.code, "message": self.plain_message, "kind": self.key, "resets_at": self._resets()}
 
 
 class ExperimentNotCancellableError(Exception):

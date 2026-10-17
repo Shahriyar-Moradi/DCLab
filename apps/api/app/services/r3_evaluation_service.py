@@ -1143,7 +1143,7 @@ def _subjects(key: str) -> list[str]:
     if point is not None and point.ai_kind != "none":
         kind, _, name = point.ai_kind.partition(":")
         subjects.append(f"{'purpose' if kind == 'jev' else 'agent'}:{name}")
-        subjects.append(f"provider:{'typesafe' if kind == 'jev' else 'openai'}")
+        subjects.append("provider:anthropic")  # every role since 2026-10-16 (LEGACY: typesafe / openai)
     return subjects
 
 

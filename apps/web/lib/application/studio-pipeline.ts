@@ -343,7 +343,7 @@ export function replayErrorText(error: unknown): { title: string; detail: string
   if (status === 409) return { title: "The replay was refused", detail: "The run is not in a state that can be replayed." };
   if (status === 403) return { title: "You cannot replay this", detail: "Replay needs a role that can run ML work in this workspace. The API enforces this." };
   if (status === 404) return { title: "Agent run not found", detail: "It does not exist in the active workspace, or you cannot see it." };
-  return { title: "The replay did not run", detail: error instanceof Error && error.message ? error.message : "Try again." };
+  return { title: "The replay did not run", detail: "Nothing was changed. Try again; if it keeps failing, reload the page." };
 }
 
 // --- artifacts and downloads -------------------------------------------------------------

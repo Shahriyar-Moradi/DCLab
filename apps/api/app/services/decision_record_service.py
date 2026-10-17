@@ -449,6 +449,25 @@ def clean_json_object(value: Any, *, label: str, caller_details: bool = False) -
     return json.loads(encoded)
 
 
+PROPOSED_RATIONALE_DETAIL_MAX = 1000
+
+
+def with_proposed_rationale(details: dict[str, Any], proposed: Any) -> dict[str, Any]:
+    """``details`` plus an agent's own text as untrusted ``proposed_rationale`` (capped; only
+    ``proposed_rationale_omitted`` when the record refuses it). Never the record's rationale: a
+    person deciding an agent's proposal records their own reason."""
+
+    text = str(proposed or "").strip()
+    if not text:
+        return details
+    try:
+        return clean_json_object(
+            {**details, "proposed_rationale": text[:PROPOSED_RATIONALE_DETAIL_MAX]}, label="details"
+        )
+    except InvalidDecisionRecordError:
+        return {**details, "proposed_rationale_omitted": True}
+
+
 def _evidence_invalid(index: int, message: str) -> InvalidDecisionRecordError:
     return InvalidDecisionRecordError("evidence_ref_invalid", f"evidence_refs[{index}]: {message}")
 
@@ -870,7 +889,7 @@ def record(
     if decision_type not in DECISION_TYPES:
         raise InvalidDecisionRecordError("unknown_decision_type", "unknown decision type")
     if decision_type in RESERVED_DECISION_TYPES:
-        raise InvalidDecisionRecordError("reserved_decision_type", "reserved for Phase 6 proposals")
+        raise InvalidDecisionRecordError("reserved_decision_type", "this type is written only by its owning service")
     if decision_type in RULE_ONLY_DECISION_TYPES and actor.kind != ACTOR_RULE:
         raise DecisionActorNotPermittedError("rule_only_decision_type", "only engine rules write this type")
     if decision_type in SERVICE_ONLY_DECISION_TYPES - RULE_ONLY_DECISION_TYPES:
@@ -927,7 +946,14 @@ def record(
         details=clean_json_object(details, label="details", caller_details=True),
         idempotency_key=key,
     )
-    return insert_record(db, row)
+    inserted = insert_record(db, row)
+    if state == STATE_PROPOSED:  # P8.8-A: a proposal now waits for a person; never raises
+        from app.services.notification_service import notify_decision_needed
+
+        notify_decision_needed(db, workspace_id=workspace_id, project_id=project_id, subject_kind="decision",
+                               subject_id=inserted.id, dedupe_key=f"decision:record:{inserted.id}",
+                               exclude_user_id=actor.user_id if actor.kind == "human" else None)
+    return inserted
 
 
 def propose(db: Session, **kwargs: Any) -> ProjectDecisionRecord:

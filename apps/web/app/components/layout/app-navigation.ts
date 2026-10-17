@@ -12,10 +12,11 @@ import {
   Scale,
   Upload,
 } from "lucide-react";
-import { CAPABILITIES, defaultProductRoute, hasCapability, isStudioPath } from "@/lib/infrastructure/capabilities";
+import { CAPABILITIES, defaultProductRoute, hasCapability, isBusinessViewPath, isOperatorPath, isStudioPath } from "@/lib/infrastructure/capabilities";
 import type { SessionUser } from "@/lib/infrastructure/session";
 
-type NavAudience = "all" | "platform" | "business" | "development";
+/** `platform_admin`: platform read AND platform write (the operator console, P8.5-UI). */
+type NavAudience = "all" | "platform" | "platform_admin" | "business" | "development";
 
 export type AppNavigationItem = {
   id: string;
@@ -99,6 +100,14 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
         isActive: (pathname) => prefixMatch(pathname, "/app/opportunities/upload"),
       },
       {
+        id: "outcomes",
+        label: "Business view",
+        href: "/outcomes",
+        icon: BarChart3,
+        audience: "all",
+        isActive: (pathname) => prefixMatch(pathname, "/outcomes"),
+      },
+      {
         id: "labs",
         label: "Labs",
         href: "/app/labs",
@@ -145,6 +154,7 @@ export const APP_NAVIGATION: AppNavigationSection[] = [
 function isVisible(audience: NavAudience, user: SessionUser) {
   if (audience === "all") return hasCapability(user, CAPABILITIES.applicationAccess);
   if (audience === "platform") return hasCapability(user, CAPABILITIES.platformRead);
+  if (audience === "platform_admin") return hasCapability(user, CAPABILITIES.platformRead) && hasCapability(user, CAPABILITIES.platformWrite);
   if (audience === "development") return hasCapability(user, CAPABILITIES.developmentAccess);
   return hasCapability(user, CAPABILITIES.businessAccess);
 }
@@ -202,12 +212,18 @@ export function isProductRoute(pathname: string) {
   );
 }
 
-/** Studio design kit and Developer Studio routes render their own shell, outside marketing and product chrome. */
+/** Studio design kit, Developer Studio, Business view and operator console routes render their own shell, outside marketing and product chrome. */
 export function isStudioRoute(pathname: string) {
-  return pathname === "/dev" || pathname.startsWith("/dev/") || isStudioPath(pathname);
+  return pathname === "/dev" || pathname.startsWith("/dev/") || isStudioPath(pathname) || isBusinessViewPath(pathname) || isOperatorPath(pathname);
 }
 
-export { STUDIO_BACKEND_FEATURES, studioNavigationForUser, studioRoleForUser } from "@/lib/application/studio-navigation";
+export {
+  STUDIO_BACKEND_FEATURES,
+  businessNavigationForUser,
+  operatorNavigationForUser,
+  studioNavigationForUser,
+  studioRoleForUser,
+} from "@/lib/application/studio-navigation";
 
 export function isAuthRoute(pathname: string) {
   return pathname === "/login" || pathname.startsWith("/login/");

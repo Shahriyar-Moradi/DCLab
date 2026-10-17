@@ -236,7 +236,8 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
 
   test("authenticated routes use the role-aware application shell", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("navigation", { name: "Marketing" })).toBeVisible();
+    // P4.12-A: the marketing links left navigation (empty landmark, so attached but not visible).
+    await expect(page.getByRole("navigation", { name: "Marketing" })).toBeAttached();
     await expect(page.getByRole("navigation", { name: "Application navigation" })).toHaveCount(0);
     await expect(page.getByRole("contentinfo")).toBeVisible();
 
@@ -247,7 +248,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await page.getByLabel("Email").fill("nobody@verification.invalid");
     await page.getByLabel("Password").fill("wrong-password");
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.locator("#login-error")).toHaveText(/invalid email or password/i);
+    await expect(page.locator("#login-error")).toHaveText(/email or password is not right/i);
 
     await login(page, "dclab-admin@verification.invalid");
     await page.goto("/app/dashboards");
@@ -395,13 +396,17 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     await expect(page.getByRole("navigation", { name: "Application navigation" })).toHaveCount(0);
 
     await login(page, "dclab-developer@verification.invalid");
+    // P4.1-A: development roles land in Studio (/projects); the application shell is on the app routes.
+    await page.goto("/app/dashboards");
     await expect(navigation.getByRole("link", { name: "Model Registry" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Businesses" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Organizations" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Business Admin" })).toBeVisible();
     await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/login/); // the logout request finishes before the next sign-in
 
     await login(page, "business-admin-a@verification.invalid");
+    await page.goto("/app/dashboards");
     await expect(navigation.getByRole("link", { name: "Business Admin" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Businesses" })).toHaveCount(0);
     await expect(navigation.getByRole("link", { name: "Organizations" })).toHaveCount(0);
@@ -412,8 +417,10 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
       "page",
     );
     await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/login/);
 
     await login(page, "business-developer-a@verification.invalid");
+    await page.goto("/app/dashboards");
     await expect(navigation.getByRole("link", { name: "Business Admin" })).toBeVisible();
     await expect(navigation.getByRole("link", { name: "Businesses" })).toHaveCount(0);
     await expect(navigation.getByRole("link", { name: "Organizations" })).toHaveCount(0);
@@ -428,7 +435,9 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     page,
   }) => {
     await login(page, "client-user@verification.invalid");
-    await expect(page).toHaveURL(/\/app\/dashboards/);
+    // P7.6-A: a client lands on the Business view; the application routes stay one click away.
+    await expect(page).toHaveURL(/\/outcomes$/);
+    await page.goto("/app/dashboards");
     await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
     await expect(
       page.getByRole("group", { name: "Account" }).getByText("Client User", { exact: true }),
@@ -782,6 +791,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     page,
   }, testInfo) => {
     await login(page, "dclab-admin@verification.invalid");
+    await page.goto("/admin/businesses"); // P4.1-A: platform staff now land in Studio
     const main = page.locator("#main");
     await expect(main.getByRole("link", { name: "Business A", exact: true })).toBeVisible();
     await expect(main.getByRole("link", { name: "Business B", exact: true })).toBeVisible();
@@ -889,6 +899,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     page,
   }) => {
     await login(page, "dclab-developer@verification.invalid");
+    await page.goto("/admin/businesses"); // P4.1-A: platform staff now land in Studio
     const navigation = page.getByRole("navigation", {
       name: "Application navigation",
     });
@@ -920,6 +931,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
     page,
   }, testInfo) => {
     await login(page, "business-admin-a@verification.invalid");
+    await page.goto("/business"); // P4.1-A: business roles now land in Studio
     const navigation = page.getByRole("navigation", {
       name: "Application navigation",
     });
@@ -1096,6 +1108,7 @@ test.describe.serial("DCLab whole-system browser acceptance", () => {
 
   test("Business Developer is tenant-scoped and read-only", async ({ page }) => {
     await login(page, "business-developer-a@verification.invalid");
+    await page.goto("/business"); // P4.1-A: business roles now land in Studio
     const navigation = page.getByRole("navigation", {
       name: "Application navigation",
     });

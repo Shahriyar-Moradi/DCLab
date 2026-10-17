@@ -135,6 +135,10 @@ def record_artifact(
     return artifact
 
 
+class ArtifactTooLargeError(ValueError):
+    """A capped read found more bytes than the cap allows."""
+
+
 def get_artifact(
     db: Session, *, workspace_id: UUID, artifact_id: UUID
 ) -> Artifact:
@@ -150,14 +154,24 @@ def read_artifact_bytes(
     workspace_id: UUID,
     artifact_id: UUID,
     storage: ObjectStorage | None = None,
+    max_bytes: int | None = None,
 ) -> bytes:
+    """The object's bytes. With ``max_bytes`` the object is streamed and refused
+    (``ArtifactTooLargeError``) once it exceeds the cap, whatever the row says."""
+
     artifact = get_artifact(db, workspace_id=workspace_id, artifact_id=artifact_id)
     backend = storage_for_artifact(artifact, storage=storage)
     if publication_enforced(get_settings()):
         from app.services.ingestion_run_service import require_published_artifact
 
         require_published_artifact(db, artifact)
-    payload = backend.get(artifact.object_key)
+    if max_bytes is None:
+        payload = backend.get(artifact.object_key)
+    else:
+        with backend.open(artifact.object_key) as handle:
+            payload = handle.read(max_bytes + 1)
+        if len(payload) > max_bytes:
+            raise ArtifactTooLargeError("artifact is larger than the limit for this read")
     if publication_enforced(get_settings()) and artifact.artifact_type in {"dataset", "derived_dataset"}:
         if sha256_bytes(payload) != artifact.content_digest:
             raise IdentityError("dataset object changed", status_code=409)

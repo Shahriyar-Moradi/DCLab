@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Goal & test design · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="goal.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Goal &amp; test design</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch" title="Admins only: preview what another role sees. Your rights and every request stay yours."><span>View as</span><select id="role-switch"><option value="admin">Admin (your own view)</option><option value="ds">Data scientist</option><option value="analyst">Analyst (view only)</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant <span class="beta">Beta</span></button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Goal &amp; test design</h1><p class="sub">What we want to predict, what “good” means, and how we test it fairly. They are set when a project starts a run; this screen shows them.</p></div>
+</div>
+<div class="statusrow"><a class="stag ok" href="real.html" title="See what is real today">Working today</a></div>
+
+<div class="grid cols-3">
+  <div class="card"><h3>What we predict</h3>
+    <p class="big-sentence"><code>churned_next_30d</code></p>
+    <p class="small muted">Will this customer cancel in the next 30 days? A yes/no answer (binary classification). One answer per customer-month. Prediction horizon: 30 days.</p></div>
+  <div class="card"><h3>How we rank models</h3>
+    <p class="big-sentence">PR-AUC</p>
+    <p class="small muted">Only about 1 in 5 training rows has the answer the model treats as yes, and PR-AUC rewards finding them without flagging many others.</p></div>
+  <div class="card"><h3>Business rule</h3>
+    <p class="big-sentence">Recall ≥ 0.80</p>
+    <p class="small muted">Catch at least 80% of the customers who will cancel. The model in use met it on cross-validation.</p></div>
+</div>
+
+<div class="card">
+  <h3>How we test <span class="sp">the same design is used for every run on this file</span></h3>
+  <svg class="chart" viewBox="0 0 760 236" role="img" aria-label="Test design drawn to scale by rows: 5 time-ordered cross-validation folds on 39,306 training rows. Fold 1 learns from 6,551 rows and checks on the next 6,551; fold 5 learns from 32,755 rows. Then a final test set of the latest 8,904 rows, used once per run at the end."><line class="lim-w" x1="617.8" y1="22" x2="617.8" y2="214"/><text class="axis" x="356.9" y="16" text-anchor="middle">training rows · 39,306 · in time order</text><text class="axis" x="676.9" y="16" text-anchor="middle">latest 8,904 rows (18%)</text><text class="lbl" x="86" y="48" text-anchor="end">Fold 1</text><rect class="tl-train" x="96" y="34" width="87.0" height="20" rx="4"/><rect class="tl-val" x="183.0" y="34" width="87.0" height="20" rx="4"/><text class="tl-t" x="104" y="48">learn 6,551</text><text class="tl-t tl-tv" x="226.4" y="48" text-anchor="middle">check</text><text class="lbl" x="86" y="76" text-anchor="end">Fold 2</text><rect class="tl-train" x="96" y="62" width="173.9" height="20" rx="4"/><rect class="tl-val" x="269.9" y="62" width="87.0" height="20" rx="4"/><text class="tl-t" x="104" y="76">learn 13,102</text><text class="tl-t tl-tv" x="313.4" y="76" text-anchor="middle">check</text><text class="lbl" x="86" y="104" text-anchor="end">Fold 3</text><rect class="tl-train" x="96" y="90" width="260.9" height="20" rx="4"/><rect class="tl-val" x="356.9" y="90" width="87.0" height="20" rx="4"/><text class="tl-t" x="104" y="104">learn 19,653</text><text class="tl-t tl-tv" x="400.4" y="104" text-anchor="middle">check</text><text class="lbl" x="86" y="132" text-anchor="end">Fold 4</text><rect class="tl-train" x="96" y="118" width="347.9" height="20" rx="4"/><rect class="tl-val" x="443.9" y="118" width="87.0" height="20" rx="4"/><text class="tl-t" x="104" y="132">learn 26,204</text><text class="tl-t tl-tv" x="487.3" y="132" text-anchor="middle">check</text><text class="lbl" x="86" y="160" text-anchor="end">Fold 5</text><rect class="tl-train" x="96" y="146" width="434.8" height="20" rx="4"/><rect class="tl-val" x="530.8" y="146" width="87.0" height="20" rx="4"/><text class="tl-t" x="104" y="160">learn 32,755</text><text class="tl-t tl-tv" x="574.3" y="160" text-anchor="middle">check</text><text class="lbl" x="86" y="202" text-anchor="end">Final test</text><rect class="tl-test" x="617.8" y="188" width="118.2" height="20" rx="4"/><text class="tl-t tl-tt" x="676.9" y="202" text-anchor="middle">used once</text><text class="axis" x="96" y="228">drawn to scale by rows · earlier rows on the left, later rows on the right</text></svg>
+  <div class="chips">
+    <span class="chip"><b>Training rows: 39,306</b><small>5 time-ordered cross-validation folds</small></span>
+    <span class="chip"><b>Final test set: 8,904 rows (18%)</b><small>the latest rows in time · used once per run, at the end</small></span>
+  </div>
+  <p class="small muted">Time-ordered by <code>snapshot_month</code>. Fold 1 learns from the first 6,551 rows and is checked on the next 6,551; each later fold learns from more of the past, up to 32,755 rows in fold 5. The final test set is the latest 8,904 rows (18%). Shuffled rows would let the model peek at the future.</p>
+  <p class="small muted">No dates are shown here, only rows: where the final test set starts in time is part of what it keeps sealed.</p>
+  <div class="banner warn"><div class="sp"><b>What a time-ordered design rules out.</b> The “beats the noise” comparison and the improvement loop assume folds that are not ordered in time, so on this project two runs can be compared side by side but not judged against the noise. See <a href="improve.html">Improve</a>.</div></div>
+</div>
+
+<div class="card">
+  <h3>Who decided <span class="sp">who suggested each part and who confirmed it</span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Part</th><th>Suggested by</th><th>Confirmed by</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>What we predict</td><td>A person</td><td><span class="who-pill you">You</span></td><td>Who will cancel in the next 30 days, so the retention team can call them first.</td></tr>
+      <tr><td>Test design</td><td><span class="who-pill">The rules</span></td><td><span class="who-pill you">You</span></td><td>Kept the rules’ test design <span class="muted">(no reason given)</span></td></tr>
+      <tr><td>Ranking metric</td><td><span class="who-pill">The rules</span></td><td><span class="who-pill you">You</span></td><td>PR-AUC suits a rare outcome.</td></tr>
+      <tr><td>Business rule</td><td>A person</td><td><span class="who-pill you">You</span></td><td>The retention team needs to reach at least 80% of the customers who would cancel.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">A test design the rules chose with nobody asked reads “Nobody was asked”; anything not recorded reads “Not recorded”. Each confirmation is a History entry.</p>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v8"></script>
+<script src="guide.js"></script>
+</body>
+</html>

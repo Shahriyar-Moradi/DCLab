@@ -52,6 +52,13 @@ from app.domain.errors import (
     InvalidChangeSetError,
 )
 from app.domain.execution_requests import OPERATION_MODEL_BUILD, SOURCE_API
+from app.domain.pipeline_run_branch import (
+    EVIDENCE_MODE_SCORED,
+    EVIDENCE_MODE_SEALED,
+    SERVICE_OVERRIDES_CONFIG_KEY,
+    ServiceOverrides,
+    strip_service_only,
+)
 from app.domain.experiment_changes import (
     CHANGE_KINDS,
     CHANGE_SET_SCHEMA_VERSION,
@@ -69,6 +76,7 @@ from app.engine.modeling.objective import (
     objective_from_dict,
 )
 from app.engine.models.registry import HYPERPARAMETER_OVERRIDES, available_families
+from app.engine.serving.model_package import ESTIMATOR_MAX_BYTES, FOREST_BYTES_PER_ROW_TREE
 from app.engine.search.generator import (
     CUSTOM_CLASS_WEIGHT_FAMILIES,
     DUMMY_FAMILIES,
@@ -337,7 +345,12 @@ def _bad(reason: str, message: str, index: int, field: str | None = None) -> Inv
     return InvalidChangeSetError(reason, message, path=path)
 
 
-def _hyperparameter(change, index: int, task_type: str, portfolio: list[str]) -> dict[str, Any]:
+_FORESTS = frozenset({"random_forest", "extra_trees", "random_forest_regressor", "extra_trees_regressor"})
+
+
+def _hyperparameter(
+    change, index: int, task_type: str, portfolio: list[str], n_train: int | None = None
+) -> dict[str, Any]:
     family = change.family
     if family not in available_families(task_type):
         raise _bad("unknown_family", f"{family!r} is not a registry family for {task_type}", index, "family")
@@ -363,6 +376,18 @@ def _hyperparameter(change, index: int, task_type: str, portfolio: list[str]) ->
                 f"parameters.{key}",
             )
         values[key] = value
+    # P7.1-A: a forest's saved size grows with trees x training rows; refuse an override whose
+    # worst case cannot be saved now, before any training (instead of after cross-validation).
+    trees = values.get("n_estimators")
+    if family in _FORESTS and trees and n_train and trees * n_train * FOREST_BYTES_PER_ROW_TREE > ESTIMATOR_MAX_BYTES:
+        limit = max(1, ESTIMATOR_MAX_BYTES // (n_train * FOREST_BYTES_PER_ROW_TREE))
+        raise _bad(
+            "invalid_hyperparameter_value",
+            f"{trees} trees on {n_train} training rows would make a model too large to save safely; "
+            f"use at most {limit} trees",
+            index,
+            "parameters.n_estimators",
+        )
     return values
 
 
@@ -634,7 +659,8 @@ def materialize_branch(
     hyperparameters = dict(overrides.get("hyperparameters") or {})
     for index, change in enumerate(change_set.changes):
         if change.kind == "hyperparameter_override":
-            values = _hyperparameter(change, index, ctx.task_type, portfolio)
+            n_train = ((ctx.experiment.result or {}).get("split") or {}).get("n_train")
+            values = _hyperparameter(change, index, ctx.task_type, portfolio, int(n_train) if n_train else None)
             hyperparameters[change.family] = {**dict(hyperparameters.get(change.family) or {}), **values}
         elif change.kind == "class_weighting":
             overrides["class_weighting"] = _class_weighting(change, index, replace(ctx, portfolio=portfolio))
@@ -667,8 +693,17 @@ class BranchResult:
     created: bool
 
 
+def _overrides_digest(service_overrides: ServiceOverrides | None) -> str | None:
+    """Binds an idempotency key to the service-only overrides too (a replay never swaps a probe for a final run)."""
+
+    if service_overrides is None:
+        return None
+    encoded = json.dumps(service_overrides.config_record(), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _existing_branch(
-    db: Session, *, workspace_id: UUID, key: str, parent_id: UUID, digest: str
+    db: Session, *, workspace_id: UUID, key: str, parent_id: UUID, digest: str, overrides_digest: str | None = None
 ) -> BranchResult | None:
     request = db.scalar(
         select(ExecutionRequest).where(
@@ -682,6 +717,7 @@ def _existing_branch(
         request.pipeline_run_id is None
         or spec.get("parent_experiment_id") != str(parent_id)
         or spec.get("change_set_digest") != digest
+        or spec.get("service_overrides_digest") != overrides_digest
     ):
         raise ExperimentNotBranchableError(
             "idempotency_key_conflict", "idempotency key was used for another branch"
@@ -704,17 +740,32 @@ def branch_experiment(
     source_surface: str = SOURCE_API,
     before_commit: Callable[[Experiment], None] | None = None,
     initiated_by_service_token_id: UUID | None = None,
+    service_overrides: ServiceOverrides | None = None,
 ) -> BranchResult:
     """Validate, materialize and enqueue one branch of ``parent_id``. Commits.
 
+    ``service_overrides`` (ADR 0007 §6.2) is service-only: never a request field. Its
+    ``evidence_mode`` is set at INSERT; the rest is recorded under ``config.service_overrides``
+    of this run only (every copy of a ``config`` drops it) for the worker's ``execute_experiment``.
+
     Raises ``ExperimentNotFoundError`` (404, also cross-tenant / no ML write),
-    ``ExperimentNotBranchableError`` (409) or ``InvalidChangeSetError`` (422).
+    ``ExperimentNotBranchableError`` (409; 403 ``sealed_parent_human_only`` when a service token
+    branches a sealed improve try) or ``InvalidChangeSetError`` (422).
     ``before_commit(shell)`` runs inside the transaction: ``POST
     /v1/experiments/{id}/branches`` binds its ``idempotency_keys`` row there and
     passes no ``idempotency_key`` (one binding per surface, never both).
     """
 
     ctx = load_parent_context(db, actor=actor, workspace_id=workspace_id, parent_id=parent_id)
+    sealed_child = service_overrides is not None and service_overrides.evidence_mode == EVIDENCE_MODE_SEALED
+    if (initiated_by_service_token_id is not None and ctx.experiment.evidence_mode == EVIDENCE_MODE_SEALED
+            and not sealed_child):
+        # ADR 0007 §6.1: branching a sealed improve try into a scored run is a person's act -- a token
+        # must not score a probe's holdout by branching it. A token-started loop's next sealed try
+        # (service-only overrides, never a request field) scores nothing and stays allowed.
+        raise ExperimentNotBranchableError(
+            "sealed_parent_human_only", "only a person can branch a sealed improve try", status_code=403
+        )
     change_set = parse_change_set(changes)
     text = sanitize_intent(intent)
     # A service-token caller is an agent surface for the feature contract (P5.0-A).
@@ -722,9 +773,11 @@ def branch_experiment(
         change_set, ctx, proposed_by="agent" if initiated_by_service_token_id is not None else "human"
     )
     digest = overrides["change_set_digest"]
+    overrides_digest = _overrides_digest(service_overrides)
     key = (idempotency_key or "").strip()[:256] or None
     if key is not None:
-        existing = _existing_branch(db, workspace_id=workspace_id, key=key, parent_id=parent_id, digest=digest)
+        existing = _existing_branch(db, workspace_id=workspace_id, key=key, parent_id=parent_id, digest=digest,
+                                    overrides_digest=overrides_digest)
         if existing is not None:
             return existing
 
@@ -776,7 +829,7 @@ def branch_experiment(
         problem_spec_id=ctx.workflow_run.problem_spec_id,
     )
     config = search_from_mapping(
-        {**dict(parent.config or {}), "objective": objective, "branch_overrides": overrides}
+        {**strip_service_only(parent.config), "objective": objective, "branch_overrides": overrides}
     )
     shell = create_pipeline_run(
         db,
@@ -794,7 +847,10 @@ def branch_experiment(
         split_plan_id=parent.split_plan_id,
         intent=text,
         change_set=change_set.to_storage(),
+        evidence_mode=service_overrides.evidence_mode if service_overrides is not None else EVIDENCE_MODE_SCORED,
     )
+    if service_overrides is not None:
+        shell.config = {**dict(shell.config or {}), SERVICE_OVERRIDES_CONFIG_KEY: service_overrides.config_record()}
     upload.experiment_id = shell.id
     request = create_execution_request(
         db,
@@ -808,7 +864,8 @@ def branch_experiment(
         request_spec=_legacy_labs_request_spec(
             upload,
             problem_spec_id=ctx.workflow_run.problem_spec_id,
-            origin={"parent_experiment_id": str(parent.id), "change_set_digest": digest},
+            origin={"parent_experiment_id": str(parent.id), "change_set_digest": digest,
+                    **({"service_overrides_digest": overrides_digest} if overrides_digest else {})},
         ),
         workflow_run_id=workflow_run.id,
         pipeline_run_id=shell.id,
@@ -892,6 +949,7 @@ def compare_experiments(db: Session, parent: Experiment, child: Experiment) -> d
         "parent_experiment_id": str(parent.id),
         "split_plan_id": str(child.split_plan_id),
         "selection_metric": {"parent": before["selection_metric"], "child": after["selection_metric"]},
+        "evidence_mode": {"parent": before["evidence_mode"], "child": after["evidence_mode"]},
         "winner": {
             key: {"parent": before[key], "child": after[key]}
             for key in ("candidate_id", "family", "decision_threshold", "constraint_status")
@@ -911,7 +969,7 @@ def compare_experiments(db: Session, parent: Experiment, child: Experiment) -> d
 
 def _comparable_evidence(db: Session, experiments: Sequence[Experiment]) -> list[dict[str, Any]]:
     """The one comparability gate (ADR 0006 Rev 2): same workspace, same SplitPlan,
-    a locked winner with CV and final-holdout metrics on every side."""
+    a locked winner with CV metrics on every side, and final-holdout metrics on every scored side."""
 
     if len({row.workspace_id for row in experiments}) != 1:
         raise ExperimentComparisonError("not_comparable", "experiments belong to different workspaces")
@@ -921,8 +979,10 @@ def _comparable_evidence(db: Session, experiments: Sequence[Experiment]) -> list
             "split_plan_mismatch", "experiments do not share a split plan; their holdouts differ"
         )
     evidence = [winner_evidence(db, row) for row in experiments]
-    for side in evidence:
-        if not side["cv"] or not side["holdout"]:
+    for row, side in zip(experiments, evidence):
+        # ADR 0007 §6.1: a sealed improve try never has final-holdout metrics; it compares on CV only.
+        side["evidence_mode"] = row.evidence_mode
+        if not side["cv"] or (not side["holdout"] and row.evidence_mode != EVIDENCE_MODE_SEALED):
             raise ExperimentComparisonError(
                 "evidence_missing", "a locked winner has no CV aggregate or final-holdout metrics"
             )

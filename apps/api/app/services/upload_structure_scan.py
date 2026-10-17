@@ -34,34 +34,34 @@ def inspect_upload_structure(filename: str, path: Path, *, declared_mime: str | 
         or "/" in filename or "\\" in filename
         or any(ord(char) < 32 or ord(char) == 127 for char in filename)
     ):
-        raise OpenIngestError("This filename is not safe to upload.")
+        raise OpenIngestError("This filename is not safe to upload.", "unsafe_file_name")
     suffix = Path(filename).suffix.lower()
     if suffix == ".xls":
-        raise OpenIngestError("Legacy Excel files are not accepted; export as .xlsx or CSV.")
+        raise OpenIngestError("Legacy Excel files are not accepted; export as .xlsx or CSV.", "unsupported_type")
     if suffix not in _TEXT | {".parquet", ".pq", ".xlsx"}:
-        raise OpenIngestError("This file type is not supported yet.")
+        raise OpenIngestError("This file type is not supported yet.", "unsupported_type")
     mime = (declared_mime or "").split(";", 1)[0].strip().lower()
     allowed = _MIMES.get(suffix, {"text/plain"})
     if mime and mime not in allowed:
-        raise OpenIngestError("The file type does not match its declared content type.")
+        raise OpenIngestError("The file type does not match its declared content type.", "unsupported_type")
     with path.open("rb") as handle:
         head = handle.read(8)
         handle.seek(-min(path.stat().st_size, 8), 2)
         tail = handle.read(8)
     if suffix in _TEXT:
         if head.startswith(_EXECUTABLE_MAGIC) or head.startswith(b"PK\x03\x04"):
-            raise OpenIngestError("The file content does not match its extension.")
+            raise OpenIngestError("The file content does not match its extension.", "content_mismatch")
     elif suffix in {".parquet", ".pq"}:
         if not head.startswith(b"PAR1") or not tail.endswith(b"PAR1"):
-            raise OpenIngestError("The Parquet file signature is invalid.")
+            raise OpenIngestError("The Parquet file signature is invalid.", "content_mismatch")
     else:
         if not head.startswith(b"PK\x03\x04") or not zipfile.is_zipfile(path):
-            raise OpenIngestError("The Excel file signature is invalid.")
+            raise OpenIngestError("The Excel file signature is invalid.", "content_mismatch")
         try:
             with zipfile.ZipFile(path) as archive:
                 members = archive.infolist()
                 if len(members) > 2000:
-                    raise OpenIngestError("The Excel archive contains too many entries.")
+                    raise OpenIngestError("The Excel archive contains too many entries.", "unsafe_content")
                 seen: set[str] = set()
                 total_size = 0
                 for member in members:
@@ -77,7 +77,7 @@ def inspect_upload_structure(filename: str, path: Path, *, declared_mime: str | 
                         or member.file_size > 100 * max(member.compress_size, 1)
                         or total_size > 256 * 1024 * 1024
                     ):
-                        raise OpenIngestError("The Excel archive contains unsafe entries.")
+                        raise OpenIngestError("The Excel archive contains unsafe entries.", "unsafe_content")
                     seen.add(name)
         except (zipfile.BadZipFile, RuntimeError) as exc:
-            raise OpenIngestError("The Excel archive is invalid.") from exc
+            raise OpenIngestError("The Excel archive is invalid.", "unreadable_sheets") from exc

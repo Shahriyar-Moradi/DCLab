@@ -7,7 +7,7 @@ export { CodeBlock } from "./CodeBlock";
 export { CommandBar, type CommandBarProps, type CommandResult } from "./CommandBar";
 export { Crumbs, type Crumb } from "./Crumbs";
 export { DataTable, type Column, type DataTableProps } from "./DataTable";
-export { FlowBar, type FlowBarStep } from "./FlowBar";
+export { FlowBar, FlowTiles, type FlowBarStep, type FlowTileStep } from "./FlowBar";
 export { GlossaryTerm } from "./GlossaryTerm";
 export { GLOSSARY, glossaryEntry, type GlossaryEntry, type GlossaryKey } from "./glossary";
 export { EventList, type EventItem } from "./EventList";

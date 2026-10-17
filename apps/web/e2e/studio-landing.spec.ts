@@ -31,7 +31,7 @@ test("each role lands in its workspace after login", async ({ page }) => {
     ["dclab-developer@verification.invalid", /\/projects$/],
     ["business-developer-a@verification.invalid", /\/projects$/],
     ["business-admin-a@verification.invalid", /\/projects$/],
-    ["client-user@verification.invalid", /\/app\/labs$/],
+    ["client-user@verification.invalid", /\/outcomes$/], // P7.6-A: clients open the Business view
   ];
   for (const [email, expected] of landings) {
     await page.context().clearCookies();
@@ -56,7 +56,7 @@ test("the story page has one call to action and passes axe", async ({ page, cont
 
   await login(page, "client-user@verification.invalid");
   await page.goto("/");
-  await expect(page.getByTestId("home-cta")).toHaveAttribute("href", "/app/labs");
+  await expect(page.getByTestId("home-cta")).toHaveAttribute("href", "/outcomes");
 });
 
 test("marketing routes redirect to the story page, signed out and signed in", async ({ page, context }) => {
@@ -79,12 +79,12 @@ test("next= is honored for allowed internal routes only", async ({ page, context
   for (const bad of ["https://evil.example/x", "//evil.example", "/\\evil.example", "/app/..//evil.example", "javascript:alert(1)"]) {
     await context.clearCookies();
     await login(page, "client-user@verification.invalid", bad);
-    await expect(page).toHaveURL(/\/app\/labs$/);
+    await expect(page).toHaveURL(/\/outcomes$/); // the client's default landing (P7.6-A)
     expect(new URL(page.url()).hostname).not.toContain("evil");
   }
   await context.clearCookies();
   await login(page, "client-user@verification.invalid", "/projects"); // not allowed for this role
-  await expect(page).toHaveURL(/\/app\/labs$/);
+  await expect(page).toHaveURL(/\/outcomes$/);
   await context.clearCookies();
   await login(page, "client-user@verification.invalid", "/app/opportunities");
   await expect(page).toHaveURL(/\/app\/opportunities$/);

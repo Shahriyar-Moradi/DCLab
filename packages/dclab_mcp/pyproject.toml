@@ -2,12 +2,29 @@
 name = "dclab-mcp"
 dynamic = ["version"]
 description = "DCLab MCP server (stdio) over the /v1 SDK with a service token."
+readme = "README.md"
 requires-python = ">=3.12"
+keywords = ["dclab", "mcp", "machine-learning", "agents"]
+classifiers = [
+  # No license classifier on purpose: the license is undecided (docs/adr/0011-open-source-license.md).
+  # "Private :: Do Not Upload" makes PyPI refuse an accidental upload until it is decided.
+  "Private :: Do Not Upload",
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
+]
 dependencies = [
-  "dclab-client>=0.2",
-  # Official MCP Python SDK, pinned exactly (locked in the repo's requirements-mcp.lock,
-  # deliberately not in requirements.lock, which the API/worker images install).
-  "mcp==2.2.0",
+  # The SDK's minor version tracks the /v1 wire contract (0.x: a minor bump may break).
+  "dclab-client>=0.2,<0.3",
+  # Official MCP Python SDK: the tested 2.2 line. The repo still installs exactly 2.2.0
+  # (root pyproject `mcp` extra -> requirements-mcp.lock, deliberately not in
+  # requirements.lock, which the API/worker images install).
+  "mcp>=2.2.0,<2.3",
 ]
 
 [project.scripts]

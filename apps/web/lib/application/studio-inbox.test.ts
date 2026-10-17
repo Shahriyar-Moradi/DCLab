@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  actionRoute, answerLines, badgeText, comparableRunIds, disabledReason, evidenceLinks, inboxCompareHref, lookup, mapInboxError, questionHref, refVersionsFor, subjectLink, PROPOSED_BY_LABEL, type InboxItemLike,
+  DRIFT_STATS_NOTE, agreementPill, driftSentence, driftStats, monitoringHref, resolverPill,
+  actionRoute, answerLines, approvalNote, badgeText, comparableRunIds, disabledReason, evidenceLinks, inboxCompareHref, inboxTitle, lookup, mapInboxError, outcomeWords, questionHref, refVersionsFor, subjectLink, suggestedBy, INBOX_TABS, PROPOSED_BY_LABEL, type InboxItemLike,
 } from "./studio-inbox.ts";
 
 const P = "11111111-1111-4111-8111-111111111111";
@@ -54,6 +55,10 @@ test("write errors: owner_only is plain, 403/404/409/412/428 are mapped", () => 
   assert.match(mapInboxError(err(409, "invalid_decision_transition")).title, /Already decided/);
   assert.match(mapInboxError(err(412, "precondition_failed")).title, /changed/);
   assert.match(mapInboxError(err(428)).title, /out of date/);
+  // D8b: the server's message is never shown.
+  for (const e of [err(409, "invalid_decision_transition", "raw server words"), err(500, "", "raw server words"), err(400, "__proto__", "raw server words")]) {
+    assert.doesNotMatch(JSON.stringify(mapInboxError(e)), /raw server words/);
+  }
 });
 
 test("answers are shown as plain lines, summarised when nested, never raw JSON", () => {
@@ -102,9 +107,125 @@ test("428 ref_versions_required, owner_only (generic) and prototype-key lookups"
   assert.match(mapInboxError(err(428, "ref_versions_required")).detail, /versions currently in use/);
   assert.doesNotMatch(mapInboxError(err(403, "owner_only")).detail, /accept/);
   assert.equal(lookup(PROPOSED_BY_LABEL, "agent", "x"), "connected tool (access token)");
-  assert.equal(lookup(PROPOSED_BY_LABEL, "assistant", "x"), "the assistant");
+  assert.equal(lookup(PROPOSED_BY_LABEL, "assistant", "x"), "the assistant (Beta)");
   assert.equal(lookup(PROPOSED_BY_LABEL, "jev", "x"), "AI reviewer");
   for (const key of ["__proto__", "constructor", "toString", "hasOwnProperty"]) assert.equal(lookup(PROPOSED_BY_LABEL, key, "fallback"), "fallback", key);
   assert.equal(lookup(PROPOSED_BY_LABEL, null, "fallback"), "fallback");
-  assert.equal(evidenceLinks(item({ evidence_refs: [{ kind: "constructor", id: A }] }))[0].label, `constructor ${A.slice(0, 8)}`);
+  assert.equal(evidenceLinks(item({ evidence_refs: [{ kind: "constructor", id: A }] }))[0].label, "constructor");
+});
+
+test("evidence is named, never by a short id: runs by the caller's name, other kinds by kind", () => {
+  const links = evidenceLinks(item(), (id) => (id === A ? "Run 2" : "Run 3"));
+  assert.deepEqual(links.map((l) => l.label), ["Run 2", "Run 3", "AI agent run"]);
+  assert.equal(evidenceLinks(item({ evidence_refs: [{ kind: "decision_record", id: A }] }))[0].label, "History entry");
+  assert.equal(subjectLink(item(), () => "Run 2")!.label, "Run 2");
+  for (const link of evidenceLinks(item({ evidence_refs: [{ kind: "agent_run", id: B }, { kind: "semantic_answer", id: A }] }))) assert.doesNotMatch(link.label, /[0-9a-f]{8}/);
+});
+
+test("who suggested it: honest labels, access-token tools are never the assistant", () => {
+  assert.equal(suggestedBy("rule"), "Suggested by the rules");
+  assert.equal(suggestedBy("agent", "decision_proposal"), "Suggested by connected tool (access token)");
+  // A typed suggestion from an agent run: who started the run is unknown, so it is never "access token" nor "the assistant".
+  assert.equal(suggestedBy("agent", "agent_proposal"), "Suggested by an AI agent (review run)");
+  assert.equal(suggestedBy("assistant"), "Suggested by the assistant (Beta)"); // D6b: the assistant is a labelled beta
+  assert.equal(suggestedBy("jev"), "Suggested by AI reviewer");
+  assert.equal(suggestedBy("person"), "Suggested by a person");
+  assert.equal(suggestedBy("run"), "Raised by the run");
+  assert.equal(suggestedBy("future_kind"), "Suggested by future kind");
+  assert.equal(suggestedBy("__proto__"), "Suggested by proto");
+  assert.equal(suggestedBy(null), null);
+  assert.notEqual(PROPOSED_BY_LABEL.agent, PROPOSED_BY_LABEL.assistant);
+});
+
+test("titles are plain questions or sentences; unknown kinds are not hidden or guessed", () => {
+  const t = (over: object) => inboxTitle({ kind: "decision_proposal", subject: { kind: "experiment", id: A }, summary: "", status: "proposed", ...over } as Parameters<typeof inboxTitle>[0], "Run 3");
+  assert.equal(t({ decision_type: "champion_promoted" }), "Put this model in use?");
+  assert.equal(t({ decision_type: "__proto__" }), "Decision: proto");
+  assert.equal(t({ decision_type: "some_new_type" }), "Decision: some new type");
+  assert.equal(t({ kind: "agent_proposal", proposal_type: "SemanticReviewProposal" }), "A suggested column change");
+  assert.equal(t({ kind: "agent_proposal", proposal_type: "ImprovementActionProposal" }), "A suggested improvement");
+  assert.equal(t({ kind: "agent_proposal", proposal_type: "constructor" }), "A suggestion");
+  assert.equal(t({ kind: "question", summary: "Run needs a split confirmation" }), "Confirm how this run's test rows are chosen");
+  assert.equal(t({ kind: "question", summary: "Run needs a target column" }), "Choose the column this run predicts");
+  assert.equal(t({ kind: "run_finished", summary: "Run #3 completed" }), "Run 3 finished");
+  assert.equal(t({ kind: "run_finished", summary: "Run #3 failed" }), "Run 3 failed");
+  for (const type of ["ref_moved", "champion_promoted", "winner_locked", "split_plan_created", "ref_initialized"]) assert.doesNotMatch(t({ decision_type: type }), /champion|ref |holdout|proposal|decision point|record/i);
+});
+
+test("outcomes and approval notes say what happens, in plain words", () => {
+  assert.equal(outcomeWords("proposed"), "waiting for your decision");
+  assert.equal(outcomeWords("accepted"), "approved");
+  assert.equal(outcomeWords("applied"), "applied");
+  assert.equal(outcomeWords("reverted"), "undone");
+  assert.equal(outcomeWords("completed"), "finished");
+  assert.equal(outcomeWords("constructor"), "constructor");
+  const none = {};
+  assert.match(approvalNote(none, "ref_move_accept", "accept")!, /which version the project uses/);
+  assert.match(approvalNote(none, "decision_reject", "reject")!, /Nothing else changes/);
+  assert.equal(approvalNote(none, null, "accept"), null);
+  // Suggestion approvals say what the server does for that type, and nothing more.
+  const accept = (proposal_type: string) => approvalNote({ proposal_type }, "proposal_accept", "accept")!;
+  for (const type of ["ExperimentReviewProposal", "DatasetInvestigationProposal", "ImprovementActionProposal"]) assert.equal(accept(type), "Approving records that you read it; nothing changes.");
+  assert.match(accept("ExperimentPlanProposal"), /marks the plan accepted; a run uses it later/);
+  assert.match(accept("SemanticReviewProposal"), /starts a new run/);
+  assert.match(accept("ToolCallProposal"), /runs this action as you/);
+  assert.doesNotMatch(accept("constructor"), /starts|runs|applies/);
+  assert.doesNotMatch(approvalNote(none, "proposal_revert", "revert")!, /branch/);
+});
+
+test("tabs use the v7 names", () => {
+  assert.deepEqual(INBOX_TABS.map((x) => x.label), ["Needs your decision", "Applied automatically", "Done"]);
+});
+
+const BANNED = /\b(release|champion|ref|digest|holdout|manifest|package|slot|tick|revision|window|proposal)s?\b/i;
+
+test("UI-E drift alert: a plain title per tab, the week's numbers only, fixed sentences and a Monitoring link", () => {
+  const t = (tab: string) => inboxTitle({ kind: "drift_alert", subject: { kind: "model_version", id: A }, summary: "SERVER WORDS", status: "alert", tab });
+  // The item does not say whether drift or a floor raised the alert, so the title never calls it drift.
+  assert.equal(t("needs_decision"), "Alert on the model in use");
+  assert.equal(t("done"), "Alert on an earlier week or model");
+  const m = { window_start: "2026-10-05T00:00:00Z", max_psi: 0.314, prediction_psi: 0.05 };
+  assert.deepEqual(driftStats(m), [
+    { label: "Week (UTC)", value: "Mon, 5 Oct 2026" }, { label: "Largest input change of any column (PSI)", value: "0.31" }, { label: "Score change (PSI)", value: "0.05" },
+  ]);
+  assert.deepEqual(driftStats({ window_start: "bad", max_psi: Number.NaN, prediction_psi: null }), []);
+  assert.deepEqual(driftStats(null), []);
+  const open = driftSentence({ tab: "needs_decision", monitoring: m });
+  const done = driftSentence({ tab: "done", monitoring: m });
+  assert.match(open, /^Weekly monitoring marked the week of Mon, 5 Oct 2026 \(UTC\) as alert/);
+  assert.match(open, /look different from training \(drift\), or its real outcomes fell below a floor set for this project\. Monitoring says which\./);
+  assert.match(open, /does not mean the model is wrong, and nothing switched the model in use/);
+  assert.notEqual(open, done);
+  assert.match(done, /an earlier week, or a model that is no longer in use/);
+  assert.equal(outcomeWords("alert"), "alert");
+  assert.match(DRIFT_STATS_NOTE, /column by column\) is on Monitoring/);
+  assert.match(driftSentence({ tab: "done", monitoring: null }), /^Weekly monitoring marked a week as alert/);
+  assert.equal(monitoringHref(P), `/projects/${P}/monitoring`);
+  assert.equal(monitoringHref("../x"), null);
+  assert.equal(evidenceLinks(item({ evidence_refs: [{ kind: "model_version", id: A }] }))[0].href, `/projects/${P}/models/${A}`);
+  assert.equal(evidenceLinks(item({ evidence_refs: [{ kind: "model_version", id: A }] }))[0].label, "The model");
+  for (const text of [t("needs_decision"), t("done"), open, done, ...driftStats(m).map((x) => x.label), DRIFT_STATS_NOTE]) assert.doesNotMatch(text, BANNED, text);
+});
+
+test("UI-E agreement pills: as recorded, 'we asked you' only while it waits, hidden when AI is off or unknown values", () => {
+  assert.deepEqual(agreementPill("agree", "done", false), { label: "The rules and the AI agreed", tone: "ok" });
+  assert.equal(agreementPill("disagree", "needs_decision", null)!.label, "The rules and the AI disagreed: we asked you");
+  assert.equal(agreementPill("disagree", "done", false)!.label, "The rules and the AI disagreed");
+  assert.equal(agreementPill("abstain", "done", false)!.tone, "gray");
+  assert.equal(agreementPill("unavailable", "done", false)!.label, "No AI answer was available");
+  assert.equal(agreementPill("agree", "done", true), null);
+  assert.equal(agreementPill("__proto__", "done", false), null);
+  assert.equal(agreementPill("constructor", "done", false), null);
+  assert.equal(agreementPill(null, "done", false), null);
+});
+
+test("UI-E who closed a Done item: you, a person, the rules or an agent; nothing outside Done or when it expired", () => {
+  assert.equal(resolverPill({ kind: "person", is_you: true }, "done"), "Decided by you");
+  assert.equal(resolverPill({ kind: "person", is_you: false }, "done"), "Decided by a person");
+  assert.equal(resolverPill({ kind: "person" }, "done"), "Decided by a person");
+  assert.equal(resolverPill({ kind: "rule" }, "done"), "Settled by the rules");
+  assert.equal(resolverPill({ kind: "agent" }, "done"), "Settled by an AI agent or a connected tool");
+  assert.equal(resolverPill({ kind: "person", is_you: true }, "needs_decision"), null);
+  assert.equal(resolverPill(null, "done"), null);
+  assert.equal(resolverPill({ kind: "__proto__" }, "done"), null);
 });

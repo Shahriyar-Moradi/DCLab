@@ -1,4 +1,5 @@
-"""/v1 experiment resources (P3.1-B2): list, read, root run, branch, compare, cancel;
+"""/v1 experiment resources (P3.1-B2): list, read, root run, branch, compare, cancel; the
+comparison verdict with the split plan's test-set look count (P5.5-B-read);
 and the model versions they produce (P3.1-B3: ``GET /v1/model-versions/{id}``).
 
 Transport only; the services own every state change. Commands require
@@ -30,6 +31,7 @@ from app.api.v1_agent_views import (
     findings_view,
     model_card_view,
     model_version_view,
+    verdict_view,
 )
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
@@ -76,13 +78,19 @@ from app.domain.experiment_resources import (
     ExperimentPage,
     ExperimentDetailRead,
     ExperimentStatus,
+    FeatureContractRead,
+    MODEL_VERSION_PAGE_DEFAULT,
+    MODEL_VERSION_PAGE_MAX,
     ModelVersionResourceRead,
+    ProjectModelVersionPage,
 )
+from app.domain.experiment_verdict import ExperimentVerdictRead
 from app.domain.findings import ExperimentFindingsRead
 from app.domain.model_card import ModelCardRead
 from app.domain.idempotency import RESOURCE_EXPERIMENT
 from app.domain.operating_points import OperatingPointChoiceRead, OperatingPointChoiceRequest, OperatingPointsRead
 from app.services.experiment_branch_service import branch_experiment, compare_side_by_side
+from app.services.experiment_verdict_service import experiment_verdict
 from app.services.operating_point_service import choice_read, choose_operating_point, operating_points_read
 from app.services.experiment_service import (
     cancel_experiment,
@@ -90,7 +98,9 @@ from app.services.experiment_service import (
     experiment_read,
     experiments_for_compare,
     list_experiments,
+    list_project_model_versions,
     model_card_read,
+    model_feature_contract,
     model_version_read,
     start_root_experiment,
 )
@@ -124,7 +134,8 @@ def _read(db: Session, user: User, workspace_id: UUID, experiment_id: UUID, requ
 
     try:
         return experiment_view(
-            request, experiment_read(db, actor=user, workspace_id=workspace_id, experiment_id=experiment_id)
+            request, experiment_read(db, actor=user, workspace_id=workspace_id, experiment_id=experiment_id,
+                                     agent=is_agent(request))
         )
     except ExperimentNotFoundError as exc:
         raise _not_found("experiment not found") from exc
@@ -170,6 +181,7 @@ def read_experiments(
             db, actor=user, workspace_id=workspace_id, project_id=project_id, status=status,
             parent_id=parent_id, split_plan_id=split_plan_id, created_after=created_after,
             created_before=created_before, has_change_set=has_change_set, cursor=cursor, limit=limit,
+            agent=is_agent(request),
         )
     except IdentityError as exc:
         raise domain_error(exc) from exc
@@ -306,6 +318,60 @@ def read_operating_points(
         raise domain_error(exc) from exc
     set_etag(response, representation_etag(body))
     # Like findings and the model card: per-principal reads are never shared by caches.
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    return body
+
+
+@router.get(
+    "/experiments/{experiment_id}/verdict",
+    response_model=ExperimentVerdictRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}},
+)
+def read_experiment_verdict(
+    experiment_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+    against: UUID | None = Query(None, description="The experiment to compare with (default: the parent)."),
+) -> ExperimentVerdictRead:
+    """Does this experiment beat the other one beyond noise? Computed from the LOCKED per-fold
+    cross-validation scores of both winners on the shared ranking metric (``outcome_scope: "cv"``;
+    never a final-evaluation value): paired fold differences on the same folds, Nadeau-Bengio
+    corrected standard error, a one-sided margin ``t_{1-0.05/T, K-1} x se_NB`` and a minimum effect.
+    ``T = comparisons = max(1, new_candidates)``: the try's winner is the best of the new trained
+    candidates it added on the same folds (ADR 0007 §5). Per try the false "beats" rate is 5% when
+    fold scores correlate as the Nadeau-Bengio model assumes (rho = 1/K); about 10% at rho = 2/K.
+    Power at T = 1 for a true per-fold gain of 1 / 2 / 3 fold-delta SDs: K = 5 0.40 / 0.86 / 0.99,
+    K = 10 0.68 / 0.99 at 1 / 2 SDs. ``comparisons_on_plan`` counts the experiments on the split plan that
+    picked a winner or are still running; above 2 the ``message`` carries the best-of-N caveat.
+    ``verdict``: ``beats_the_noise | within_the_noise | worse | not_comparable`` with ``reason`` and a
+    plain ``message``; differences in the metric's own units (``sign_convention``). Time-ordered
+    folds and runs whose own trust checks fail target leakage or an implausible score are never
+    "beats" (``time_ordered_folds``, ``suspicious_result``). ``test_set_looks``: how many experiments
+    on the split plan count as a look at its final test set (conservative) and which look each of
+    the two is; counts only. Service tokens get the same body. ``against`` at most once (``422``).
+    Another workspace's experiment (either id): 404. ``If-None-Match`` is ignored (200 + ``ETag``),
+    like the sibling reads."""
+
+    if len(request.query_params.getlist("against")) > 1:
+        raise V1APIError(
+            422, "validation_failed", "request validation failed",
+            details={"errors": [{"loc": ["query", "against"], "msg": "at most one experiment UUID",
+                                 "type": "value_error"}]},
+        )
+    try:
+        body = experiment_verdict(
+            db, actor=user, workspace_id=request_workspace_id(request), experiment_id=experiment_id,
+            against_id=against,
+        )
+    except ExperimentNotFoundError as exc:
+        raise _not_found("experiment not found") from exc
+    except IdentityError as exc:
+        raise domain_error(exc) from exc
+    body = verdict_view(request, body)
+    set_etag(response, representation_etag(body))
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Vary"] = "Authorization, Cookie"
     return body
@@ -480,10 +546,18 @@ def cancel_experiment_v1(
     """Cancel a queued run (``200``, at once) or ask a running run to stop (``202``
     ``cancelling``; the worker stops between stages/candidates). Replay-safe by
     state: repeating it returns the same result. Terminal runs: ``409
-    not_cancellable``. ``If-Match`` (optional) must match before a transition."""
+    not_cancellable``. ``If-Match`` (optional) must match before a transition. A service token
+    may not cancel an improve loop's final run, nor a try of a loop it may not cancel itself
+    (``403 improve_run_owns_experiment``)."""
 
     del idempotency_key  # validated by the dependency; the state machine dedupes
     workspace_id = request_workspace_id(request)
+    if is_agent(request):
+        from app.services.improve.service import token_may_cancel_experiment
+
+        if not token_may_cancel_experiment(db, workspace_id, experiment_id, _token_id(request)):  # ADR 0007 §8
+            raise V1APIError(403, "improve_run_owns_experiment",
+                             "this run belongs to an improve loop a token may not cancel; cancel the loop instead")
 
     def precondition() -> None:
         if if_match is not None:
@@ -572,6 +646,77 @@ def read_model_card(
     body = model_card_view(request, body)  # second guard for service tokens
     set_etag(response, representation_etag(body))
     # The representation depends on the principal (final evaluation for humans only).
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    return body
+
+
+@router.get(
+    "/projects/{project_id}/model-versions",
+    response_model=ProjectModelVersionPage,
+    responses={200: {"headers": ETAG_HEADER_DOC}},
+)
+def read_project_model_versions(
+    project_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+    cursor: str | None = Query(None, max_length=256, description="Opaque `next_cursor` of the previous page."),
+    limit: int = Query(MODEL_VERSION_PAGE_DEFAULT, ge=1, le=MODEL_VERSION_PAGE_MAX),
+) -> ProjectModelVersionPage:
+    """V7 B2: the project's model versions, newest first, each with its locked winner's
+    cross-validation metrics (``cv``; binary fold means at the locked threshold in
+    ``cv_at_locked_threshold``; never a final-test value, for people and service tokens alike)
+    and its standing: ``in_use`` (the model in use), ``waiting_for_approval`` (an open proposal to
+    put it in use), ``approved_earlier`` or ``not_in_use``, plus whether a person approved the
+    model in use for scoring. Another workspace's project: 404."""
+
+    try:
+        body = list_project_model_versions(
+            db, actor=user, workspace_id=request_workspace_id(request), project_id=project_id, cursor=cursor,
+            limit=limit,
+        )
+    except ProjectNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
+    except InvalidCursorError as exc:
+        raise V1APIError(400, "invalid_cursor", str(exc)) from exc
+    except IdentityError as exc:
+        raise domain_error(exc) from exc
+    set_etag(response, representation_etag(body))
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    return body
+
+
+@router.get(
+    "/model-versions/{model_version_id}/feature-contract",
+    response_model=FeatureContractRead,
+    responses={200: {"headers": ETAG_HEADER_DOC}, **error_responses(409)},
+)
+def read_feature_contract(
+    model_version_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> FeatureContractRead:
+    """V7 B3: the columns a file must have to be scored by this model version, from its stored
+    feature manifest: name, role (numeric / categorical), training dtype, required, date flag.
+    Names and types only: allowed values, formats and every other value are never returned.
+    Extra columns and the target column are ignored when scoring. Models saved before the package
+    format: ``status: names_only``. ``409 feature_contract_unavailable`` without a readable
+    manifest. Another workspace's model version: 404."""
+
+    try:
+        body = model_feature_contract(
+            db, actor=user, workspace_id=request_workspace_id(request), model_version_id=model_version_id
+        )
+    except (IdentityError, ExperimentRequestError) as exc:
+        raise domain_error(exc) from exc
+    if body is None:
+        raise _not_found("model version not found")
+    set_etag(response, representation_etag(body))
     response.headers["Cache-Control"] = "private, no-store"
     response.headers["Vary"] = "Authorization, Cookie"
     return body

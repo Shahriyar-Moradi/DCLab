@@ -1,0 +1,44 @@
+{
+  "case": "refuse_holdout",
+  "exchanges": [
+    {
+      "events": [
+        {
+          "event": "turn_started"
+        },
+        {
+          "event": "step_rejected",
+          "reasons": [
+            "holdout_in_output"
+          ]
+        },
+        {
+          "citations": [
+            {
+              "id": "<id:1>",
+              "kind": "experiment"
+            }
+          ],
+          "event": "assistant_message",
+          "fallback": null,
+          "kind": "answer",
+          "llm_used": true,
+          "message": "I only see cross-validation evidence: [E1](dclab://experiment/<id:1>) reaches CV roc_auc 0.812."
+        },
+        {
+          "error_code": null,
+          "event": "turn_done",
+          "proposals": 0,
+          "status": "completed"
+        }
+      ],
+      "request": {
+        "text": "What is the holdout score of the best run?"
+      },
+      "status": 200
+    }
+  ],
+  "ledger_rows": 2,
+  "model_calls": 2,
+  "proposals": []
+}

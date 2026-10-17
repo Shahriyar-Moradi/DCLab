@@ -53,6 +53,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app import observability
 from app.agents.contracts import AgentRunResult, AgentRunSpec, Citation, ContextEnvelope, RunLimits, Untrusted
 from app.agents.gateway import redaction
 from app.agents.gateway.budget import AGENT_RUN_BUDGET_KIND
@@ -294,6 +295,12 @@ class AgentService:
         return self._create(db, spec, authorize(db, spec, settings=self._settings()), bind=bind).id
 
     def run(self, db: Session, spec: AgentRunSpec, *, heartbeat: Callable[[], None] | None = None) -> AgentRunResult:
+        with observability.agent_run(spec.kind) as observed:  # P8.5-A: kind and final status only
+            result = self._run(db, spec, heartbeat=heartbeat)
+            observed.status = result.status
+        return result
+
+    def _run(self, db: Session, spec: AgentRunSpec, *, heartbeat: Callable[[], None] | None = None) -> AgentRunResult:
         settings = self._settings()
         try:
             if spec.parent_run_id is not None and spec.kind == "lead" and spec.run_id is None:
@@ -849,7 +856,10 @@ class _Execution:
                          payload_digest: str, arguments: dict[str, Any], code: str | None,
                          reason: str) -> AgentProposal:
         key = definition.decision_point_key
+        cost, duration = (definition.estimate(arguments) if definition.estimate is not None
+                          and status == "proposed" else (None, None))
         row = AgentProposal(
+            estimated_cost_micros=cost, estimated_duration_s=duration,
             workspace_id=self.workspace_id, project_id=self.project_id, run_id=self.run_id, decision_point_key=key,
             level_at_proposal=1, answer_ceiling=max(1, answer_ceiling(key)), proposal_type="ToolCallProposal",
             schema_version=1, payload=payload, payload_digest=payload_digest, citations=[],
@@ -894,6 +904,13 @@ class _Execution:
             expires_at=datetime.now(UTC) + timedelta(days=self.ttl_days) if level else None, **self._subject(),
         )
         self.db.add(row)
+        if row.status == "proposed":  # P8.8-A: one "decision waiting" per run (deduped); never raises
+            from app.services.notification_service import notify_decision_needed
+
+            self.db.flush()
+            notify_decision_needed(self.db, workspace_id=self.workspace_id, project_id=self.project_id,
+                                   subject_kind="agent_run", subject_id=self.run_id,
+                                   dedupe_key=f"decision:agent_run:{self.run_id}")
         self.db.commit()
         self.ctx.proposal_ids.append(row.id)
         self.record("proposal_created", {"proposal_id": str(row.id), "type": draft.proposal_type,
@@ -1020,6 +1037,14 @@ def lead_spec(db: Session, *, workspace_id: UUID, project_id: UUID, user_id: UUI
         purpose=lead_runtime.PURPOSE, subject_kind="project" if turn is not None else "thread",
         prompt_release_id=release, user_id=user_id, outcome_scope="cv", tool_surface="assistant",
         may_propose=may_propose, parent_run_id=parent_run_id, limits=limits, turn=turn)
+
+
+def lead_model(policy: AiPolicyV1) -> str:
+    """The model the lead (the assistant) routes to under ``policy``: the router's own choice (D6a reads)."""
+
+    from app.agents.gateway.router import select_model
+
+    return select_model(policy, role=RUN_KIND_ROLE["lead"], agent_key=lead_runtime.AGENT_KEY, requested=None)
 
 
 def submit_review(db: Session, spec: AgentRunSpec, *, settings: Any = None,

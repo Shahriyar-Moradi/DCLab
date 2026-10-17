@@ -17,6 +17,10 @@ dependencies = [
   "pyarrow>=15,<30",
   "scikit-learn>=1.5,<2",
   "joblib>=1.4",
+  # P7.1-A model package: scikit-learn objects saved/loaded without pickle (explicit
+  # trusted-type allowlist). Imported only by the engine's package writer and the
+  # worker's package loader, never by the API process.
+  "skops>=0.16,<0.17",
   "pyyaml>=6.0",
   "python-multipart>=0.0.9",
   "pyjwt>=2.9,<3",
@@ -49,6 +53,10 @@ mcp = ["mcp==2.2.0"]
 # (API/worker images). Every test runs without it (fake Jev). nooa==0.0.10 is not
 # here yet: it needs litellm, whose openai<3 pin conflicts with openai>=3.6 above.
 agents = ["typesafe-sdk==0.7.2"]
+# P8.5-A OpenTelemetry SDK + OTLP/HTTP exporter, imported only by app/observability/otel.py when
+# OTEL_EXPORTER_OTLP_ENDPOINT or OBSERVABILITY_ENABLED is set. Not in requirements.lock: the base
+# install and every test run without it (telemetry is then a no-op).
+observability = ["opentelemetry-sdk>=1.30,<2", "opentelemetry-exporter-otlp-proto-http>=1.30,<2"]
 storage = [
   "boto3>=1.34",
   "google-cloud-storage>=2.14",

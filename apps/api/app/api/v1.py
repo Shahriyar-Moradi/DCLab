@@ -30,6 +30,7 @@ from app.api.deps import (
     principal_ref,
     request_service_token,
     request_workspace_id,
+    require_session_workspace_member,
     require_workspace_ml_execution,
     require_workspace_read,
 )
@@ -95,7 +96,7 @@ from app.domain.errors import (
     TargetIntentConflictError,
     TargetNotInDatasetError,
 )
-from app.domain.data_plane import DATASET_PURPOSE_TRAINING, DATASET_PURPOSES
+from app.domain.data_plane import DATASET_PURPOSE_TRAINING, DATASET_PURPOSES, uploaded_by
 from app.domain.execution_requests import (
     REQUEST_NEEDS_INPUT,
     SERVER_OWNED_REQUEST_SPEC_KEYS,
@@ -108,21 +109,30 @@ from app.domain.idempotency import (
     RESOURCE_PROBLEM_SPEC,
     RESOURCE_PROJECT,
 )
-from app.domain.home_reads import ACTIVITY_PAGE_DEFAULT, ACTIVITY_PAGE_MAX, ActivityPage, ProjectWithSummaryRead
+from app.domain.home_reads import (
+    ACTIVITY_PAGE_DEFAULT,
+    ACTIVITY_PAGE_MAX,
+    ActivityPage,
+    ProjectFlowRead,
+    ProjectWithSummaryRead,
+)
 from app.domain.inbox_reads import INBOX_PAGE_DEFAULT, INBOX_PAGE_MAX, InboxCounts, InboxPage, InboxTab
 from app.domain.model_build import PipelineModelBuildRead
 from app.domain.model_build_reproduction import ExperimentCodeRead
 from app.domain.observability import MlRunEventRead
-from app.domain.project_graph import GraphNodeKind, NodeImpactRead, ProjectGraphRead
+from app.domain.project_graph import GraphNodeKind, NodeImpactRead, ProjectGraphRead, SplitPlanRead
 from app.domain.state_graph import GRAPH_EXPERIMENT_WINDOW
 from app.domain.reproducibility import ArtifactRead
 from app.domain.dataset_profile import DatasetProfileRead, DatasetVersionRead
 from app.domain.technical_explorer import DatasetListItem
+from app.domain.usage import UsageRead
 from app.domain.workspace_identity import (
     ProblemSpecCreateRequest,
+    ProblemSpecDetailRead,
     ProblemSpecRead,
     ProjectCreateRequest,
     ProjectRead,
+    WorkspaceMembersRead,
     WorkspaceRead,
 )
 from app.services.artifact_service import list_artifacts
@@ -136,6 +146,7 @@ from app.services.execution_request_service import (
 )
 from app.services.decision_record_service import list_decisions, unique_violation
 from app.services.home_read_service import list_activity, project_summaries
+from app.services.project_flow_service import project_flow
 from app.services.inbox_read_service import inbox_counts, list_inbox
 from app.services.graph_service import impact, project_graph
 from app.services.model_build_reproduction_service import (
@@ -147,13 +158,21 @@ from app.services.observatory_query_service import list_run_events
 from app.services.audience_projection import artifact_read, event_read, public_diagnostic, public_failure
 from app.services import idempotency_service
 from app.services.client_lab_upload_service import ingest_dataset
+from app.services.upload_attempt_service import record_rejected
 from app.services.idempotency_service import IdempotencyKeyRaceError, KeyScope
-from app.services.problem_spec_service import create_problem_spec, get_problem_spec
+from app.services.problem_spec_service import (
+    create_problem_spec,
+    get_problem_spec,
+    get_problem_spec_detail,
+    list_problem_spec_details,
+)
+from app.services.split_plan_service import split_plan_read
 from app.services.project_service import create_project, get_project, list_projects
 from app.services.dataset_profile_service import DatasetNotFoundError, dataset_profile, dataset_read
 from app.services.technical_explorer_service import list_datasets
 from app.services.visualization_service import list_visualizations_for_pipeline_run
-from app.services.workspace_service import list_workspaces_for_actor
+from app.services.workspace_service import list_workspace_members, list_workspaces_for_actor
+from app.services.usage_service import usage_read
 from app.services.workspace_selection_service import principal_read, service_token_principal_read
 
 router = APIRouter(
@@ -238,6 +257,55 @@ def read_workspaces(
     return rows if token is None else [row for row in rows if row.id == token.workspace_id]
 
 
+@router.get("/workspaces/{workspace_id}/members", response_model=WorkspaceMembersRead)
+def read_workspace_members(
+    workspace_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_session_workspace_member),
+    db: Session = Depends(get_db),
+) -> WorkspaceMembersRead:
+    """People in the workspace (name, email, role, joined date, which one is the caller), oldest
+    first, capped at 200 (`more` says when there are others), plus what each role can do. Signed-in
+    people only (members' emails are never read by service tokens) and only owners and
+    administrators (403 `members_not_permitted`); another workspace is 404. Never cached."""
+
+    del workspace_id  # the path id was matched to the caller's selected workspace by the dependency
+    try:
+        body = list_workspace_members(db, actor=user, workspace_id=request_workspace_id(request))
+    except IdentityError as exc:
+        raise domain_error(exc, code="members_not_permitted" if exc.status_code == 403 else None) from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    return body
+
+
+@router.get("/workspaces/{workspace_id}/usage", response_model=UsageRead)
+def read_workspace_usage(
+    workspace_id: UUID,
+    request: Request,
+    response: Response,
+    user: User = Depends(require_session_workspace_member),
+    db: Session = Depends(get_db),
+) -> UsageRead:
+    """How much the workspace used (P8.4-A), measured from DCLab's own records (an estimate, not an
+    invoice): this month's and last month's totals per kind, the last 31 UTC days, the plan's limits
+    with `used` measured now (`warning` from 80%, `over` at the limit: new runs, scorings or uploads
+    of that kind are refused with 429 `quota_exceeded` until `resets_at`), and the AI spend against
+    the workspace's existing AI budget. No person ids, no per-user split, no file names. Signed-in
+    owners, administrators and ML engineers only (403 `usage_not_permitted`; any bearer 403
+    `session_required`); another workspace is 404. Never cached."""
+
+    del workspace_id  # the path id was matched to the caller's selected workspace by the dependency
+    try:
+        body = usage_read(db, actor=user, workspace_id=request_workspace_id(request))
+    except IdentityError as exc:
+        raise domain_error(exc, code="usage_not_permitted" if exc.status_code == 403 else None) from exc
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    return body
+
+
 @router.get("/projects", response_model=list[ProjectWithSummaryRead])
 def read_projects(
     request: Request,
@@ -254,7 +322,8 @@ def read_projects(
         rows = list_projects(db, actor=user, workspace_id=workspace_id)
     except IdentityError as exc:
         raise _identity_http(exc) from exc
-    summaries = project_summaries(db, workspace_id=workspace_id, project_ids=[row.id for row in rows])
+    summaries = project_summaries(db, workspace_id=workspace_id, project_ids=[row.id for row in rows], actor=user,
+                                  viewer_is_agent=is_agent(request))
     return [
         ProjectWithSummaryRead.model_validate(
             {**ProjectRead.model_validate(row).model_dump(), "summary": summaries[row.id]}
@@ -402,6 +471,12 @@ def _service_token_id(request: Request) -> UUID | None:
 
     token = request_service_token(request)
     return token.id if token is not None else None
+
+
+def _viewer_id(request: Request, user: User) -> UUID | None:
+    """The signed-in reader for ``is_you`` (V7 BE-C); None for a service token (never "you")."""
+
+    return None if request_service_token(request) is not None else user.id
 
 
 def _principal_id(request: Request, user: User) -> UUID:
@@ -580,6 +655,7 @@ def create_problem_spec_v1(
             workspace_id=workspace_id,
             project_id=project_id,
             created_by_service_token_id=_service_token_id(request),
+            record_goal="author",  # D3a: "who decided" entries for the target / metric / rule it sets
             **payload.model_dump(),
         )
         bind(spec.id)
@@ -609,6 +685,69 @@ def create_problem_spec_v1(
     return body
 
 
+@router.get("/projects/{project_id}/problem-specs", response_model=list[ProblemSpecDetailRead])
+def read_problem_specs(
+    project_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+) -> list[ProblemSpecDetailRead]:
+    """ProblemSpec versions of the project, newest first: task, target, unit, horizon, metric, objective,
+    constraints, status, whether it is current, and who made it (no user or token ids). Service tokens get
+    no constraint/criteria key matching holdout|final_test and a redacted objective."""
+
+    try:
+        return list_problem_spec_details(db, actor=user, workspace_id=request_workspace_id(request),
+                                         project_id=project_id, viewer_id=_viewer_id(request, user), limit=limit,
+                                         agent_reader=request_service_token(request) is not None)
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProjectNotFoundError as exc:
+        raise _not_found() from exc
+
+
+@router.get("/projects/{project_id}/problem-specs/{spec_id}", response_model=ProblemSpecDetailRead)
+def read_problem_spec(
+    project_id: UUID,
+    spec_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> ProblemSpecDetailRead:
+    """One ProblemSpec version of the project (same shape as the list)."""
+
+    try:
+        return get_problem_spec_detail(db, actor=user, workspace_id=request_workspace_id(request),
+                                       project_id=project_id, spec_id=spec_id, viewer_id=_viewer_id(request, user),
+                                       agent_reader=request_service_token(request) is not None)
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProblemSpecNotFoundError as exc:
+        raise _not_found() from exc
+
+
+@router.get("/split-plans/{split_plan_id}", response_model=SplitPlanRead)
+def read_split_plan(
+    split_plan_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> SplitPlanRead:
+    """How one SplitPlan tests models: strategy, folds and per-fold row counts (training partition), time
+    column, row counts, reason, locked_at and who made it. The final test set is a row count only: no dates,
+    rates or statistics of its rows. Service tokens get no reason text."""
+
+    try:
+        return split_plan_read(db, actor=user, workspace_id=request_workspace_id(request), split_plan_id=split_plan_id,
+                               viewer_id=_viewer_id(request, user),
+                               service_token=request_service_token(request) is not None)
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except GraphNodeNotFoundError as exc:
+        raise _not_found() from exc
+
+
 @router.get("/projects/{project_id}/graph", response_model=ProjectGraphRead)
 def read_project_graph(
     project_id: UUID,
@@ -636,6 +775,30 @@ def read_project_graph(
         raise _not_found(str(exc)) from exc
     except InvalidCursorError as exc:
         raise _bad_cursor(exc) from exc
+
+
+@router.get("/projects/{project_id}/flow", response_model=ProjectFlowRead)
+def read_project_flow(
+    project_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> ProjectFlowRead:
+    """The project's eight flow steps as typed facts (V7 BE-A): the training file (in use, newer file
+    uploaded), goal and test design, runs (count, running, best locked CV score on the current split
+    plan), branch runs, the model in use (family, locked threshold), scorings and the weekly schedule,
+    the newest monitoring week, and decision records; plus `stage` and the caller's waiting decisions.
+    CV figures only, never a final-test value. `data.file_name` and the goal texts are untrusted
+    data. Signed-in people only (service tokens are refused); another workspace's project is 404."""
+
+    workspace_id = request_workspace_id(request)
+    try:
+        return project_flow(db, actor=user, workspace_id=workspace_id, project_id=project_id,
+                            viewer_is_agent=is_agent(request))
+    except IdentityError as exc:
+        raise _identity_http(exc) from exc
+    except ProjectNotFoundError as exc:
+        raise _not_found(str(exc)) from exc
 
 
 @router.get("/projects/{project_id}/decisions", response_model=DecisionRecordPage)
@@ -721,7 +884,7 @@ def read_datasets(
 ) -> list[DatasetListItem]:
     workspace_id = request_workspace_id(request)
     try:
-        return list_datasets(db, user, workspace_id=workspace_id, limit=limit)
+        return list_datasets(db, user, workspace_id=workspace_id, limit=limit, viewer_id=_viewer_id(request, user))
     except IdentityError as exc:
         raise _identity_http(exc) from exc
 
@@ -736,7 +899,8 @@ def read_dataset(
     """One DatasetVersion with its ADR 0005 upload policy and AI data class (read-only)."""
 
     try:
-        return dataset_read(db, actor=user, workspace_id=request_workspace_id(request), dataset_id=dataset_id)
+        return dataset_read(db, actor=user, workspace_id=request_workspace_id(request), dataset_id=dataset_id,
+                            viewer_id=_viewer_id(request, user))
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     except DatasetNotFoundError as exc:
@@ -822,7 +986,12 @@ def _dataset_upload_read(db: Session, dataset: Any) -> DatasetUploadRead:
     ).all()
     return DatasetUploadRead.model_validate(
         {
-            **{key: getattr(dataset, key) for key in DatasetUploadRead.model_fields if key not in ("ingestion", "columns")},
+            **{
+                key: getattr(dataset, key)
+                for key in DatasetUploadRead.model_fields
+                if key not in ("ingestion", "columns", "uploaded_by")
+            },
+            "uploaded_by": uploaded_by(dataset.uploaded_by_service_token_id),
             "ingestion": DatasetIngestionRead.model_validate(run, from_attributes=True),
             "columns": [
                 {"name": c.name, "dtype": c.physical_dtype, "missing_fraction": c.missing_fraction} for c in columns
@@ -835,7 +1004,7 @@ def _dataset_upload_read(db: Session, dataset: Any) -> DatasetUploadRead:
     "/datasets",
     response_model=DatasetUploadRead,
     status_code=201,
-    responses={**_CREATED_RESPONSES, **error_responses(411, 413)},
+    responses={**_CREATED_RESPONSES, **error_responses(411, 413, 429)},
     openapi_extra={"requestBody": _DATASET_UPLOAD_BODY},
 )
 async def create_dataset_v1(
@@ -849,9 +1018,12 @@ async def create_dataset_v1(
     published for internal training (ADR 0005) through the Labs ingestion path.
     Synchronous; does not start training (that is ``POST /v1/experiments``).
     ``purpose=scoring`` marks rows to score (no target; refused as a run source).
-    Requires ``Idempotency-Key`` (bound to the file's sha256, filename, type,
+    A service token's upload is recorded as ``uploaded_by: connected_tool`` and is never picked
+    up by weekly scheduled scoring; an upload made with the person's own session or own API token
+    is ``person``. Requires ``Idempotency-Key`` (bound to the file's sha256, filename, type,
     project and a non-default purpose). Over the size limit: ``413``; no ``Content-Length``: ``411``;
-    a structurally invalid file: ``422 upload_rejected`` (nothing is kept).
+    a structurally invalid file: ``422 upload_rejected`` (nothing is kept); the workspace at its
+    storage limit: ``429 quota_exceeded`` (nothing is stored).
     """
 
     workspace_id = request_workspace_id(request)
@@ -884,6 +1056,11 @@ async def create_dataset_v1(
         if purpose not in DATASET_PURPOSES:
             raise _form_error("purpose", "purpose must be training or scoring", "literal_error")
         if upload.size is not None and upload.size > limit:
+            await run_in_threadpool(  # D3a upload log (only for a project of this workspace)
+                record_rejected, db, workspace_id=workspace_id, project_id=project_id, user=user,
+                service_token_id=_service_token_id(request), file_name=upload.filename, size_bytes=upload.size,
+                reason_code="too_large", source="v1_api",
+            )
             raise V1APIError(413, "payload_too_large", f"uploads are limited to {limit} bytes")
         filename = upload.filename or "upload"
         binding = idempotency_binding(
@@ -916,6 +1093,7 @@ async def create_dataset_v1(
                 declared_mime=upload.content_type,
                 before_commit=lambda dataset: bind(dataset.id),
                 purpose=purpose,
+                uploaded_by_service_token_id=_service_token_id(request),
             ).dataset
 
         try:
@@ -1094,11 +1272,14 @@ def confirm_execution_request_target(
             request_id=request_id,
             target_column=payload.target_column,
             service_token_id=_service_token_id(request),
+            rationale=payload.rationale,
         )
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     except (ExecutionNotWaitingError, TargetNotInDatasetError, TargetIntentConflictError) as exc:
         raise domain_error(exc) from exc
+    except InvalidDecisionRecordError as exc:  # the person's reason (secret-like text, control characters)
+        raise domain_error(exc, status_code=422, code="invalid_rationale") from exc
     except ExecutionRequestSpecError as exc:
         raise V1APIError(400, "invalid_request_spec", str(exc)) from exc
     body = _execution_request_read(row)
@@ -1138,11 +1319,14 @@ def confirm_execution_request_split(
                 if current.status == REQUEST_NEEDS_INPUT or spec.get("split_resolution") != payload.answer:
                     raise
         row = confirm_execution_split(db, actor=user, workspace_id=workspace_id, request_id=request_id,
-                                      answer=payload.answer, service_token_id=_service_token_id(request))
+                                      answer=payload.answer, service_token_id=_service_token_id(request),
+                                      rationale=payload.rationale)
     except IdentityError as exc:
         raise _identity_http(exc) from exc
     except ExecutionNotWaitingError as exc:
         raise domain_error(exc) from exc
+    except InvalidDecisionRecordError as exc:
+        raise domain_error(exc, status_code=422, code="invalid_rationale") from exc
     except ExecutionRequestSpecError as exc:
         raise V1APIError(400, "invalid_request_spec", str(exc)) from exc
     body = _execution_request_read(row)

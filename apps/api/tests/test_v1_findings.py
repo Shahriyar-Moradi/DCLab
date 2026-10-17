@@ -153,11 +153,13 @@ def test_planted_leak_and_duplicates_produce_findings(client, db_session, setup)
     agent = as_reader.json()
     assert [item["status"] for item in agent["checks"]] == [item["status"] for item in body["checks"]]
     assert not {key for key in _keys(agent) if HOLDOUT_KEY.search(key)}
+    # The bounds 0 and 1 (a perfect or empty score, e.g. a saturated train score vs a holdout
+    # top-k precision of 1.0) coincide by chance and identify nothing; every other value counts.
     holdout = {round(float(v), 6) for v in (experiment.result.get("test_metrics") or {}).values()
-               if isinstance(v, float)}
+               if isinstance(v, float)} - {0.0, 1.0}
     numbers = {round(float(v), 6) for item in agent["checks"] for v in item["evidence"].values()
                if isinstance(v, float)}
-    assert not (holdout & numbers) or not holdout
+    assert holdout and not (holdout & numbers)
 
     # Runs finished before P4.10-A: investigated false, no checks.
     result = dict(experiment.result)

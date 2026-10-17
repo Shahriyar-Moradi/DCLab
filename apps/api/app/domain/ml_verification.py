@@ -1,4 +1,4 @@
-"""Strict contracts for advisory OpenAI pipeline verification."""
+"""Strict contracts for advisory AI (LLM) pipeline verification."""
 
 from __future__ import annotations
 

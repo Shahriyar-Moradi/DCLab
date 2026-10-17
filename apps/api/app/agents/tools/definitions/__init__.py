@@ -1,6 +1,8 @@
-"""The catalog's tool definitions: the 16 read tools MCP registers (incl. ``get_impact``, ``list_proposals``,
-the MCP-only ``get_operating_points`` (P5.2-A) and the MCP-only ``accept_proposal`` hand-off) and the 7 write
-tools (proposals)."""
+"""The catalog's tool definitions: the 20 read tools MCP registers (incl. ``get_impact``, ``list_proposals``,
+the MCP-only ``get_improve_run`` (P5.4-A3),
+the MCP-only ``get_operating_points`` (P5.2-A), the MCP-only ``list_releases`` (P7.2-A), the MCP-only
+``get_scoring_schedule`` (weekly scoring), the MCP-only ``get_monitoring`` (P7.4-A) and the MCP-only
+``accept_proposal`` hand-off) and the 8 write tools (proposals; ``improve`` since P5.4-A3)."""
 
 from __future__ import annotations
 
@@ -25,11 +27,11 @@ def _read(name: str, description: str, schema: type, operations: tuple[str, ...]
 
 def _write(name: str, description: str, schema: type, operations: tuple[str, ...], services: tuple[str, ...],
            capability: tuple[str, ...], *, validator=None, notes: tuple[str, ...] = (),
-           surfaces=_WRITE_SURFACES) -> ToolDefinition:
+           surfaces=_WRITE_SURFACES, estimate=None) -> ToolDefinition:
     return ToolDefinition(
         name=name, effect="proposal", capability=capability, description=description, input_schema=schema,
         operations=operations, services=services, surfaces=surfaces, decision_point_key=f"lead.{name}",
-        validator=validator, notes=notes,
+        validator=validator, notes=notes, estimate=estimate,
     )
 
 
@@ -107,6 +109,28 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
           "the trust checks, data and split summary, LLM used yes/no. The final evaluation is always withheld.",
           r.ModelInput, ("GET /v1/model-versions/{model_version_id}/card",), (f"{_EXP}.model_card_read",),
           r._card_fetch, r._card_shape, aggregates=True),
+    _read("list_releases", "Approvals of a project's model in use (\"approved for scoring\"), newest first: model "
+          "version, previous approval, when, saved format, package manifest digest, whether it is current, and the "
+          "person's reason as untrusted text (never who). Read-only: only a person puts a model in use, in DCLab "
+          "Studio.", r.ListReleasesInput, ("GET /v1/projects/{project_id}/releases",),
+          ("app.services.model_release_service.list_releases",), r._releases_fetch, r._releases_shape,
+          surfaces=frozenset({"mcp"})),
+    _read("get_scoring_schedule", "A project's weekly scoring schedule, read-only: on / off / paused by the "
+          "platform, weekday and hour (UTC), next and last slot, whether the person it acts as can still score, "
+          "and the newest handled weeks (queued with the week's prediction, or why nothing was scored). Only a "
+          "person turns it on or off, in DCLab Studio.", r.ScoringScheduleInput,
+          ("GET /v1/projects/{project_id}/scoring-schedule",),
+          ("app.services.scoring_schedule_service.schedule_state",), r._scoring_schedule_fetch,
+          r._scoring_schedule_shape, surfaces=frozenset({"mcp"})),
+    _read("get_monitoring", "Monitoring of a project's model in use, read-only and deterministic: the latest weekly "
+          "status (ok / watch / alert / not_enough_data) and the last 12 weeks (Monday 00:00 UTC) with the largest "
+          "input drift (PSI vs the training rows), score drift, rows scored and, once a person linked real outcomes, "
+          "labelled rows, coverage and the primary metric on them; the project's thresholds in force (version, "
+          "precision / recall floors) and the alert finding code. "
+          "Drift means the inputs look different from training, not that the model is wrong; it never retrains or "
+          "switches a model.", r.MonitoringInput, ("GET /v1/projects/{project_id}/monitoring",),
+          ("app.services.monitoring_service.monitoring_overview",), r._monitoring_fetch, r._monitoring_shape,
+          surfaces=frozenset({"mcp"}), aggregates=True),
     _read("get_prediction", "Batch prediction: status, row counts, feature-contract check (required / "
           "missing / ignored columns), error code; never predicted rows or storage locations.", r.PredictionInput,
           ("GET /v1/predictions/{prediction_id}",), ("app.services.batch_prediction_service.batch_prediction_read",),
@@ -115,6 +139,12 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
           "experiments and model versions a change to it would affect (node references and counts by kind).",
           r.ImpactInput, ("GET /v1/nodes/{kind}/{node_id}/impact",), ("app.services.graph_service.impact",),
           r._impact_fetch, r._impact_shape),
+    _read("get_improve_run", "One improve loop: status, outcome and stop reason, goal and budget, and every try "
+          "(a sealed branch on the same folds) with its per-fold cross-validation verdict. Never a final-test value; "
+          "only a person accepts a try, in DCLab Studio.", r.ImproveRunInput,
+          ("GET /v1/improve-runs/{improve_run_id}", "GET /v1/experiments/{experiment_id}"),
+          ("app.services.improve.service.improve_run_read", f"{_EXP}.experiment_read"),
+          r._improve_run_fetch, r._improve_run_shape, surfaces=frozenset({"mcp"}), aggregates=True),
     # A hand-off to a human, never an accept; the lead agent never gets it.
     _read("accept_proposal", "Hand a decision proposal to a human. This NEVER accepts anything and performs no "
           "write: service tokens are propose-only, so it returns status 'requires_human_acceptance' with the "
@@ -144,6 +174,16 @@ DEFINITIONS: tuple[ToolDefinition, ...] = (
            "split plan and holdout.", w.BranchExperimentInput, ("POST /v1/experiments/{experiment_id}/branches",),
            ("app.services.experiment_branch_service.branch_experiment",), ("experiments:write",),
            validator=w._branch_validator),
+    _write("improve", "Start an improve loop on a completed run: a goal and a budget; each try is a sealed branch "
+           "on the same folds (the final test set is not used), judged per fold against noise. It never accepts a "
+           "try: only a person does, in DCLab Studio, and only then is the final test set scored once.",
+           w.ImproveInput, ("POST /v1/improve-runs",), ("app.services.improve.service.start_improve_run",),
+           ("experiments:write",), validator=w._improve_validator, estimate=w.improve_estimate,
+           # Not on the assistant surface until A5-A releases a lead prompt that lists it (the released
+           # lead prompt lists every assistant tool); the harness path it will use is tested now.
+           surfaces=frozenset({"mcp", "studio_forms"}),
+           notes=("A service token's budget is only lowered (at most 6 tries, 2 hours), 5 starts per hour, and no "
+                  "fresh split; the loop uses no AI.",)),
     _write("predict", "Score a dataset with a model version (the worker scores with the locked pipeline and "
            "threshold). Writes a predictions file only; no refs or decisions change.", w.PredictInput,
            ("POST /v1/model-versions/{model_version_id}/predictions",),

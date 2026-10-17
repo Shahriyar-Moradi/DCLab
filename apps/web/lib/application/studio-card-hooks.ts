@@ -47,7 +47,11 @@ export const FullModelCardSchema = z.object({
     train_rows: nullableNumber, evaluation_rows: nullableNumber, stratified: z.boolean().nullable().optional(), group_column: nullableString, time_column: nullableString,
   }),
   llm: z.object({ used: z.boolean(), purposes: z.array(z.string()).optional() }),
-  final_evaluation: z.object({ status: z.string(), label: nullableString, metric: nullableString, value: nullableNumber, metrics: numbers.optional(), decision_threshold: nullableNumber, note: nullableString }),
+  final_evaluation: z.object({
+    status: z.string(), label: nullableString, metric: nullableString, value: nullableNumber, metrics: numbers.optional(), decision_threshold: nullableNumber, note: nullableString,
+    /** V7 B1: the single final evaluation's binary 2x2 counts at the locked threshold (people only; null for connected tools). */
+    confusion: z.object({ tp: z.number(), fp: z.number(), fn: z.number(), tn: z.number(), rows: z.number() }).nullable().optional(),
+  }),
   markdown: z.string().optional(),
   untrusted_fields: z.array(z.string()).optional(),
 });

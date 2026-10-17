@@ -28,7 +28,20 @@ from app.db.models import (
     SplitPlan,
     UserRole,
 )
-from app.domain.model_build_reproduction import DATASET_PATH_ENV, SPLIT_ASSIGNMENT_PATH_ENV
+from app.domain.model_build_reproduction import (
+    DATASET_PATH_ENV,
+    SPLIT_ASSIGNMENT_PATH_ENV,
+    ModelBuildReproductionSpec,
+    ReproductionDataset,
+    ReproductionFinalHoldout,
+    ReproductionFinalRefit,
+    ReproductionHoldoutPlan,
+    ReproductionMetricPlan,
+    ReproductionSplitAssignment,
+    ReproductionTask,
+    ReproductionValidationPlan,
+    ReproductionWinner,
+)
 from app.engine.modeling.validation_planner import (
     KFOLD,
     TIME_SERIES_SPLIT,
@@ -44,6 +57,8 @@ from app.engine.evaluation.metrics import (
     regression_metrics,
 )
 from app.engine.experiments.runner import _predict
+from app.engine.validation.split_assignment import POOL_ORDER_SOURCE_ROW, canonical_pool_order
+from app.engine.validation.splits import SOURCE_ROW_COLUMN
 from app.engine.models.registry import (
     applied_hyperparameters,
     available_families,
@@ -53,10 +68,14 @@ from app.engine.models.registry import (
 from app.services.model_build_codegen import (
     _METRIC_SOURCES,
     _PREDICT_SOURCES,
+    CANONICAL_POOL_ORDER_SOURCE,
     SPLIT_ASSIGNMENT_HELPERS,
     _estimator_factory,
     _estimator_params,
+    _pool_order_lines,
 )
+from app.services.model_build_reproduction_service import reproduction_spec_digest
+from app.services.scientific_lineage_service import content_digest
 from app.services.split_plan_service import load_assignment
 from app.services.workspace_service import create_business_workspace
 from dclab_client import DCLabClient
@@ -157,8 +176,11 @@ def _assert_rows_follow_map(db, experiment: Experiment, ns: dict) -> None:
         expected = {row for row, fold in assignment.train_folds.items() if fold == number}
         assert set(train_sources[val_idx]) == expected == by_fold[number]
         assert set(train_sources[train_idx]) == set(assignment.train_folds) - expected
-    # Same row order as the run's training pool.
-    assert [int(r) for r in train_sources] == [int(r) for r in experiment.result["split"]["train_source_rows"]]
+    # Same row order as the run's training pool: the partition's order, which a run with a stored
+    # map then put in canonical (source-row) order (ADR 0007 §5) and recorded so.
+    split = experiment.result["split"]
+    assert split.get("pool_order") == POOL_ORDER_SOURCE_ROW
+    assert [int(r) for r in train_sources] == sorted(int(r) for r in split["train_source_rows"])
 
 
 def _assert_holdout_isolated(script: str) -> None:
@@ -189,13 +211,13 @@ def _assert_safe(body: dict, experiment: Experiment) -> None:
 
 
 def test_root_and_branch_scripts_reproduce_cv_on_the_stored_map(
-    auth_client, db_session, client_user, monkeypatch, tmp_path
+    engineer_client, db_session, engineer_user, monkeypatch, tmp_path
 ):
     db = db_session
-    parent = _parent(auth_client, db, client_user, monkeypatch)
+    parent = _parent(engineer_client, db, engineer_user, monkeypatch)
     child = _branch(
         db,
-        client_user,
+        engineer_user,
         parent,
         [
             {"kind": "hyperparameter_override", "family": "random_forest", "parameters": {"n_estimators": 37}},
@@ -209,7 +231,7 @@ def test_root_and_branch_scripts_reproduce_cv_on_the_stored_map(
     )
     plan = db.get(SplitPlan, parent.split_plan_id)
     for experiment in (parent, child):
-        body = _code(auth_client, experiment)
+        body = _code(engineer_client, experiment)
         _assert_safe(body, experiment)
         assert body["generator_version"].endswith(".v2")
         assert body["split_plan_id"] == str(plan.id)
@@ -217,15 +239,16 @@ def test_root_and_branch_scripts_reproduce_cv_on_the_stored_map(
         assert assignment_input["content_digest"] == plan.assignment_digest
         assert assignment_input["artifact_id"] == str(plan.assignment_artifact_id)
         assert "cv.split(" not in body["script"]["source"]  # folds come from the stored map
+        assert CANONICAL_POOL_ORDER_SOURCE in body["script"]["source"]  # the runner's own pool order
         _assert_holdout_isolated(body["script"]["source"])
         data, assignment = _materialize(db, experiment, tmp_path)
         ns = _execute(body["script"]["source"], data, assignment, monkeypatch)
         _assert_rows_follow_map(db, experiment, ns)
         _assert_reproduces_cv(db, experiment, body, ns)
 
-    parent_ns_mode = _code(auth_client, parent)["script"]["source"]
+    parent_ns_mode = _code(engineer_client, parent)["script"]["source"]
     assert "PARTITIONED_BY = 'holdout_plan_resplit'" in parent_ns_mode
-    body = _code(auth_client, child)
+    body = _code(engineer_client, child)
     script = body["script"]["source"]
     assert body["is_branch"] is True and body["parent_experiment_id"] == str(parent.id)
     assert "PARTITIONED_BY = 'split_plan_assignment'" in script
@@ -259,10 +282,10 @@ def test_root_and_branch_scripts_reproduce_cv_on_the_stored_map(
 
 
 def test_sdk_returns_code_and_route_hides_other_tenants(
-    client, auth_client, db_session, client_user, client_token, monkeypatch, tmp_path
+    client, engineer_client, db_session, engineer_user, client_token, monkeypatch, tmp_path
 ):
     db = db_session
-    parent = _parent(auth_client, db, client_user, monkeypatch)
+    parent = _parent(engineer_client, db, engineer_user, monkeypatch)
     api = DCLabClient(
         base_url=str(client.base_url), token=client_token, workspace_id=parent.workspace_id, http=client
     )
@@ -298,7 +321,7 @@ def test_sdk_returns_code_and_route_hides_other_tenants(
 
 
 def test_legacy_run_without_split_plan_still_exports_and_reproduces(
-    auth_client, db_session, client_user, monkeypatch, tmp_path
+    engineer_client, db_session, engineer_user, monkeypatch, tmp_path
 ):
     def unavailable(*_args, **_kwargs):
         raise split_plan_service.SplitPlanUnavailable("forced plan-less run")
@@ -306,8 +329,8 @@ def test_legacy_run_without_split_plan_still_exports_and_reproduces(
     db = db_session
     with monkeypatch.context() as patch:
         patch.setattr("app.services.auto_train.split_plan.require_partition_source", unavailable)
-        legacy = _parent_without_plan(auth_client, db, client_user, monkeypatch)
-    body = _code(auth_client, legacy)
+        legacy = _parent_without_plan(engineer_client, db, engineer_user, monkeypatch)
+    body = _code(engineer_client, legacy)
     _assert_safe(body, legacy)
     assert body["split_plan_id"] is None
     assert [item["name"] for item in body["inputs"]] == ["dataset"]
@@ -318,13 +341,13 @@ def test_legacy_run_without_split_plan_still_exports_and_reproduces(
     _assert_reproduces_cv(db, legacy, body, ns)
 
 
-def _parent_without_plan(auth_client, db, client_user, monkeypatch) -> Experiment:
+def _parent_without_plan(engineer_client, db, engineer_user, monkeypatch) -> Experiment:
     """``_parent``'s upload + auto-train, for a run that ends without a SplitPlan."""
 
     from app.db.models import ClientLabUpload
 
     with pytest.raises(AssertionError):  # _parent insists on a split plan
-        _parent(auth_client, db, client_user, monkeypatch)
+        _parent(engineer_client, db, engineer_user, monkeypatch)
     upload = db.scalars(select(ClientLabUpload).order_by(ClientLabUpload.created_at.desc())).first()
     experiment = db.get(Experiment, upload.experiment_id)
     assert upload.pipeline_status == "completed" and experiment.status == "COMPLETED"
@@ -360,6 +383,38 @@ def _exec_source(source: str, **namespace) -> dict:
     namespace = {"np": np, **namespace}
     exec(source, namespace)  # noqa: S102
     return namespace
+
+
+def test_pool_order_is_the_runners_helper_and_only_for_runs_that_recorded_it():
+    """ADR 0007 §5 (D4c): the script applies the runner's own canonical_pool_order, and only to a run
+    that recorded it; a run trained before keeps its partition's row order and its spec digest."""
+
+    rng = np.random.default_rng(5)
+    pool = pd.DataFrame({SOURCE_ROW_COLUMN: rng.permutation(40), "x": rng.random(40)}, index=rng.permutation(40))
+    ns = _exec_source(CANONICAL_POOL_ORDER_SOURCE, pd=pd, SOURCE_ROW_COLUMN=SOURCE_ROW_COLUMN)
+    pd.testing.assert_frame_equal(ns["canonical_pool_order"](pool), canonical_pool_order(pool))
+    assert canonical_pool_order(pool)[SOURCE_ROW_COLUMN].tolist() == list(range(40))
+
+    split = ReproductionSplitAssignment(
+        split_plan_id=uuid4(), assignment_digest="a" * 64, row_count=50, train_row_count=40,
+        holdout_row_count=10, source_row_column=SOURCE_ROW_COLUMN, partitioned_by="holdout_plan_resplit",
+    )
+    spec = ModelBuildReproductionSpec(
+        generator_version="g", spec_digest="", workspace_id=uuid4(), pipeline_run_id=uuid4(),
+        dataset=ReproductionDataset(dataset_id=uuid4(), source_type="csv", version="1"),
+        task=ReproductionTask(seed=42), holdout_plan=ReproductionHoldoutPlan(),
+        validation_plan=ReproductionValidationPlan(), metric_plan=ReproductionMetricPlan(),
+        winner=ReproductionWinner(), final_refit=ReproductionFinalRefit(),
+        final_holdout=ReproductionFinalHoldout(), split_assignment=split,
+    )
+    assert _pool_order_lines(spec) == []
+    before = spec.model_dump(mode="json", exclude={"spec_digest", "stage_code", "holdout_sealed"})
+    del before["split_assignment"]["pool_order"]  # the spec as hashed before the field existed
+    assert reproduction_spec_digest(spec) == content_digest(before)
+    ordered = spec.model_copy(update={"split_assignment": split.model_copy(update={"pool_order": "source_row"})})
+    lines = _pool_order_lines(ordered)
+    assert lines[-1] == "train_frame = canonical_pool_order(train_frame)" and CANONICAL_POOL_ORDER_SOURCE in lines
+    assert reproduction_spec_digest(ordered) != reproduction_spec_digest(spec)
 
 
 def test_emitted_metric_and_predict_helpers_match_the_engine():

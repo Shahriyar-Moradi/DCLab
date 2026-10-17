@@ -1373,6 +1373,8 @@ class PipelineVerifier:
         selection = _as_dict(report.get("selection"))
         final_fit = _as_dict(report.get("final_fit"))
         final_test = _as_dict(report.get("final_test_evaluation"))
+        # ADR 0007 §6.1: a sealed improve try has no final fit, final test, prediction or model file.
+        sealed = _as_dict(report.get("holdout")).get("scored") is False
         predictions = _as_list(report.get("prediction_evidence"))
         artifacts = _as_dict(report.get("artifacts"))
 
@@ -1786,10 +1788,10 @@ class PipelineVerifier:
             if decision_threshold.get("constraints"):
                 # Two checks, so the holdout-derived status can be withheld from AI evidence
                 # (ADR 0008 §2b): out-of-fold CV status, then the holdout status.
-                for check_id, status_value, where in (
-                    ("objective_constraints_met", decision_threshold.get("status"), "out-of-fold predictions"),
-                    (HOLDOUT_CONSTRAINTS_CHECK, decision_threshold.get("holdout_status"), "the holdout"),
-                ):
+                rows = [("objective_constraints_met", decision_threshold.get("status"), "out-of-fold predictions")]
+                if not sealed:  # a sealed improve try has no holdout status to verify (ADR 0007 §6.1)
+                    rows.append((HOLDOUT_CONSTRAINTS_CHECK, decision_threshold.get("holdout_status"), "the holdout"))
+                for check_id, status_value, where in rows:
                     if status_value in {"unsatisfiable", "not_satisfied"}:
                         add(check_id, "model_selection", CHECK_WARN, f"The declared metric constraints are not met on {where}; see decision_threshold.constraints.", "decision_threshold.constraints")
                     elif status_value == "not_verifiable" or (check_id == HOLDOUT_CONSTRAINTS_CHECK and not status_value):
@@ -1797,7 +1799,8 @@ class PipelineVerifier:
                         add(check_id, "model_selection", CHECK_NOT_VERIFIABLE, f"A declared constraint metric was not measured on {where}.", "decision_threshold.constraints")
                     else:
                         add(check_id, "model_selection", CHECK_PASS, f"Declared metric constraints hold on {where}.", "decision_threshold.constraints")
-                checks[-1]["outcome_scope"] = "holdout"
+                if not sealed:
+                    checks[-1]["outcome_scope"] = "holdout"
             selection_metric = str(selection.get("selection_metric") or "")
             if (
                 selection_metric in {"f1", "accuracy", "balanced_accuracy"}
@@ -1810,7 +1813,13 @@ class PipelineVerifier:
         fit_started = _timestamp(final_fit.get("started_at"))
         fit_ended = _timestamp(final_fit.get("ended_at"))
         test_started = _timestamp(final_test.get("started_at"))
-        if not all((locked_at, fit_started, fit_ended, test_started)):
+        sealed_clean = sealed and not final_fit and not final_test.get("evaluation_count") and not predictions
+        if sealed:
+            add("final_fit_after_lock", "final_fit", CHECK_PASS if sealed_clean else CHECK_FAIL,
+                "Sealed improve try: the winner was not refit and the final test set was not used."
+                if sealed_clean else "A sealed improve try carries final-fit, final-test or prediction evidence.",
+                "holdout", "final_fit", "final_test_evaluation")
+        elif not all((locked_at, fit_started, fit_ended, test_started)):
             add("final_fit_after_lock", "final_fit", CHECK_NOT_VERIFIABLE, "Final-fit or lock timestamps are missing.", "selection", "final_fit", "final_test_evaluation")
         elif (
             not (locked_at <= fit_started <= fit_ended <= test_started)
@@ -1824,7 +1833,14 @@ class PipelineVerifier:
 
         winner_rows = [row for row in trained_candidates if row.get("candidate_id") == winner_id]
         rejected_with_test = [row.get("candidate_id") for row in trained_candidates if row.get("candidate_id") != winner_id and row.get("test_metrics") is not None]
-        if not winner_rows or final_test.get("evaluation_count") != 1:
+        if sealed:
+            scored_rows = [row.get("candidate_id") for row in trained_candidates if row.get("test_metrics")]
+            add("winner_only_final_test", "final_test_evaluation",
+                CHECK_PASS if sealed_clean and not scored_rows else CHECK_FAIL,
+                "Sealed improve try: no candidate has final-test metrics." if sealed_clean and not scored_rows
+                else f"A sealed improve try has final-test evidence: {scored_rows}.",
+                "candidate_models", "final_test_evaluation")
+        elif not winner_rows or final_test.get("evaluation_count") != 1:
             add("winner_only_final_test", "final_test_evaluation", CHECK_NOT_VERIFIABLE, "Final winner evaluation evidence is missing.", "final_test_evaluation")
         elif (
             rejected_with_test
@@ -1869,7 +1885,11 @@ class PipelineVerifier:
                     )
                     if not matched:
                         prediction_truth_mismatches.append(source_row)
-        if (
+        if sealed:
+            add("prediction_provenance_complete", "prediction_persistence", CHECK_PASS if sealed_clean else CHECK_FAIL,
+                "Sealed improve try: no final-test predictions exist." if sealed_clean
+                else "A sealed improve try persisted final-test predictions.", "prediction_evidence", "holdout")
+        elif (
             not predictions
             or len(prediction_rows) != len(predictions)
             or any(value is None for value in prediction_sources)
@@ -1901,7 +1921,9 @@ class PipelineVerifier:
             "prediction_persistence",
             "artifact_persistence",
         }
-        timing_rows = [row for row in _as_list(report.get("stage_timings")) if isinstance(row, dict)]
+        if sealed:
+            required_timing_stages -= {"final_fit", "final_test_evaluation", "prediction_persistence", "artifact_persistence"}
+        timing_rows =[row for row in _as_list(report.get("stage_timings")) if isinstance(row, dict)]
         timing_by_stage = {str(row.get("stage")): row for row in timing_rows}
         missing_timing_stages = sorted(required_timing_stages - set(timing_by_stage))
         invalid_timing_stages = sorted(
@@ -1920,7 +1942,7 @@ class PipelineVerifier:
         else:
             add("stage_timings_complete", "pipeline", CHECK_PASS, "All required stages have real timing and status evidence.", "stage_timings")
 
-        artifact_keys = ("model", "result", "predictions")
+        artifact_keys = ("result",) if sealed else ("model", "result", "predictions")
         missing_artifacts = [key for key in artifact_keys if not artifacts.get(key)]
         absent_artifacts = [
             key
@@ -1932,7 +1954,7 @@ class PipelineVerifier:
         elif absent_artifacts:
             add("model_artifacts_persisted", "artifact_persistence", CHECK_FAIL, f"Persisted artifacts do not exist: {absent_artifacts}.", "artifacts")
         else:
-            add("model_artifacts_persisted", "artifact_persistence", CHECK_PASS, "Model, result, and prediction artifacts exist.", "artifacts")
+            add("model_artifacts_persisted", "artifact_persistence", CHECK_PASS, "Sealed improve try: the result artifact exists (no model or prediction files by design)." if sealed else "Model, result, and prediction artifacts exist.", "artifacts")
 
         if db is not None:
             _verify_split_plan_lineage(add, report, db)

@@ -79,7 +79,7 @@ def specialist_answer(ac: Any, agent_key: str) -> dict[str, Any]:
 
 def gateway_for(provider: FakeProvider, settings: Any, *, providers: dict | None = None,
                 limits: GatewayLimits | None = None) -> GatewayService:
-    return GatewayService(providers=providers or {"openai": provider}, limits=limits or GatewayLimits(),
+    return GatewayService(providers=providers or {"anthropic": provider}, limits=limits or GatewayLimits(),
                           settings=lambda: settings)
 
 

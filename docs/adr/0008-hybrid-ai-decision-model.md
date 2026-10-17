@@ -1,6 +1,7 @@
 # ADR 0008 — The hybrid AI decision model
 
 **Status:** Accepted (founder, 2026-10-04; decisions recorded in § Founder decisions)  
+**Superseded in part (2026-10-16, founder):** every model moved to Claude Sonnet 5.5 (`claude-sonnet-5-5` on Anthropic) for every role, Jev included: the Jev purpose releases are pinned to it as version 2 (levels restart at L0) and run through the gateway's Anthropic adapter instead of TypeSafe `system_one`, only when the platform sets `JEV_ENABLED=true` (paid traffic never starts with `AI_ENABLED` alone); batches are packed by token budget and each holds its own worst case. The OpenAI `gpt-6.1-sol` / `gpt-6-luna` and TypeSafe `jev-1.13.0` choices below are history; their adapters stay in the tree, inactive (`AI_LEGACY_PROVIDERS_ENABLED`), and their ids are commented out of the routing tables.  
 **Date:** 2026-10-04  
 **Prompt:** P6.1-A (design only; P6.2-A … P6.11-A implement)  
 **Depends on:** [0005-upload-policy.md](0005-upload-policy.md) (`llm_exposure_policy`),

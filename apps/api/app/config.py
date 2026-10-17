@@ -1,8 +1,9 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from uuid import UUID
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # apps/api/app/config.py → repository root
@@ -84,6 +85,17 @@ class Settings(BaseSettings):
     # decision agent and the advisory auditor run whenever AI_ENABLED is on, governed by
     # kill switches (``agent:<key>`` / ``purpose:<key>`` rows) and decision-point levels.
     ai_enabled: bool = False
+    # LEGACY (switched to Anthropic 2026-10-16; kept for now): also register the OpenAI and
+    # TypeSafe gateway adapters. Their model ids are out of the router, allowlist and prices,
+    # so this alone routes nothing to them. Never a key: keys stay out of Settings.
+    ai_legacy_providers_enabled: bool = False
+    # Jev (semantic decisions on Claude since 2026-10-16) is paid traffic on every pipeline run:
+    # it needs its own platform flag on top of AI_ENABLED and the switches. Default off.
+    jev_enabled: bool = False
+    # Operator-only (platform env, never per tenant): JSON {"model": [input, output]} micro-USD per
+    # 1M tokens. It can only RAISE the code's price table (gateway.budget.price); a lower or
+    # unknown entry is ignored.
+    ai_price_overrides: dict[str, tuple[int, int]] = Field(default_factory=dict)
     # P6.8-A: the one platform evaluation workspace a live R3 run may ask Jev inside
     # (benchmark datasets registered there); unset = no live R3 run anywhere.
     r3_eval_workspace_id: UUID | None = None
@@ -117,6 +129,30 @@ class Settings(BaseSettings):
     legacy_marketing_pages_enabled: bool = False
     # Zip training-engine source into object storage as a CodeSnapshot artifact.
     reproducible_code_export_enabled: bool = True
+    # P7.1-A: model versions saved before the safe package format (joblib/pickle) are
+    # quarantined. Loaded only when this is true, or when unset AND the DCLAB_ENV variable is
+    # a development value (fail safe: unset, staging, a typo or APP_ENV/ENVIRONMENT refuse).
+    legacy_pickle_models_enabled: bool | None = None
+    # P7.1-A: limits of the child processes that rebuild and probe native boosters (address
+    # space in bytes, wall-clock seconds; CPU time is the timeout + 10 s). Validated on macOS
+    # only: tune per image if a limit breaks a library import there.
+    model_probe_memory_bytes: int = 6 << 30
+    model_probe_timeout_seconds: int = 120
+    # P7.7-A: batch scoring appends per-row reasons (reason_1..reason_3: the input columns that
+    # moved the model's score for the row) to the predictions file. Off: no reason columns and
+    # the prediction read says reasons are turned off. A failure to explain never fails scoring.
+    batch_reasons_enabled: bool = True
+    # Wall-clock limit of the reasons step (seconds); it stops at a chunk / column boundary and
+    # the read notes how many rows were explained (none in time: reasons unavailable).
+    batch_reasons_deadline_seconds: float = 120.0
+    # P7.4-A monitoring: kill switch (no new window jobs, links refused; reads still answer) and
+    # the minimums below which a window is ``not_enough_data`` / outcomes ``not_enough_labels``.
+    monitoring_enabled: bool = True
+    monitoring_min_rows: int = 500
+    monitoring_min_labels: int = 100
+    monitoring_min_per_class: int = 10
+    # A burst of scorings / links collapses into one recompute per window at most this often.
+    monitoring_debounce_minutes: float = 10.0
     # Durable ML jobs. Production default persists a row and returns; a worker
     # process claims with FOR UPDATE SKIP LOCKED. `inline` / `thread` are local
     # adapters only — they must be set explicitly and are not the default.
@@ -124,6 +160,58 @@ class Settings(BaseSettings):
     ml_job_max_attempts: int = 3
     ml_job_heartbeat_timeout_seconds: float = 300.0
     ml_job_poll_seconds: float = 1.0
+    # P8.5-A observability. OpenTelemetry traces and metrics stay a no-op (nothing imported, nothing
+    # sent) unless OTEL_EXPORTER_OTLP_ENDPOINT is set or OBSERVABILITY_ENABLED=true; the SDK is the
+    # optional `[observability]` extra. LOG_FORMAT=json: one redacted JSON object per log line.
+    observability_enabled: bool = False
+    otel_exporter_otlp_endpoint: str = ""
+    otel_service_name: str = "dclab"
+    log_format: str = "text"
+    log_level: str = "INFO"
+    # GET /health/ready: a worker unseen for longer than this is "stale" (degraded, not a 503).
+    worker_heartbeat_stale_seconds: float = 120.0
+    # GET /health/ready is unauthenticated: its checks run at most once per this many seconds per process.
+    readiness_cache_seconds: float = 5.0
+    # Weekly scheduled scoring: the worker checks for due schedules every tick. false is the
+    # platform kill switch: schedules still save, every run waits ("paused by the platform").
+    scoring_schedule_enabled: bool = True
+    scoring_schedule_tick_seconds: float = 60.0
+    # D5a retrain on newest data: the worker compares finished retrains and applies each project's
+    # retrain policy (ask / auto) every tick. false is the kill switch: no question, no automatic
+    # start, no comparison (a person can still start a retrain; it compares when switched back on).
+    retrain_enabled: bool = True
+    retrain_tick_seconds: float = 60.0
+    # P8.4-A usage metering: the worker aggregates usage_records from the existing ledgers every
+    # tick (false: no new records; reads still answer, limits are still measured live).
+    usage_metering_enabled: bool = True
+    usage_metering_tick_seconds: float = 300.0
+    # P8.4-A plan limits refuse new runs, scorings and uploads with 429 quota_exceeded when reached.
+    # false: limits are shown but never refuse work (a process restart applies a change).
+    quotas_enforced: bool = True
+    # P8.8-A notifications. NOTIFICATIONS_ENABLED=false is the kill switch: nothing is enqueued or
+    # sent (read at process start). EMAIL_PROVIDER: none (default: rows are recorded
+    # skipped_disabled, nothing is sent) | smtp (STARTTLS required) | postmark (HTTPS API).
+    # Credentials come from the environment only, never the database, and are never logged.
+    notifications_enabled: bool = True
+    notifications_tick_seconds: float = 30.0
+    email_provider: str = "none"
+    email_from_address: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    postmark_server_token: SecretStr = SecretStr("")
+    # Links in emails and webhook payloads ("https://studio.example.com"); empty: no links.
+    public_base_url: str = ""
+    # Webhook signing secrets are derived from this key (>= 32 characters); empty: webhooks cannot
+    # be created or delivered (fail closed). Changing it changes every endpoint's secret.
+    webhook_secret_key: SecretStr = SecretStr("")
+    # Destination ports webhooks may use (comma-separated); 443 only by default.
+    webhook_allowed_ports: str = "443"
+    webhook_max_deliveries_per_minute: int = 60
+
+
+EMAIL_PROVIDERS = frozenset({"none", "smtp", "postmark"})
 
 
 def is_production_env(settings: Settings) -> bool:
@@ -134,6 +222,35 @@ def publication_enforced(settings: Settings) -> bool:
     if settings.dataset_publication_enforced is not None:
         return settings.dataset_publication_enforced
     return is_production_env(settings)
+
+
+def dclab_env_is_development() -> bool:
+    """``DCLAB_ENV`` in the process environment names a development environment. Only that
+    variable counts (not ``APP_ENV``/``ENVIRONMENT``, not ``.env``, not the settings default):
+    an unset variable, staging or a typo is treated as production (fail safe)."""
+
+    from app.agents.governance.platform_default import is_development_env
+
+    return is_development_env(os.environ.get("DCLAB_ENV", ""))
+
+
+def legacy_pickle_models_allowed(settings: Settings) -> bool:
+    if settings.legacy_pickle_models_enabled is not None:
+        return settings.legacy_pickle_models_enabled
+    return dclab_env_is_development()
+
+
+# P7.1-A: ``dclab worker run`` marks its process; outside an explicit development
+# environment only a marked process loads models (``package_loader.load_model``).
+_PROCESS_ROLE = {"worker": False}
+
+
+def mark_worker_process() -> None:
+    _PROCESS_ROLE["worker"] = True
+
+
+def is_worker_process() -> bool:
+    return _PROCESS_ROLE["worker"]
 
 
 def cookie_secure(settings: Settings) -> bool:
@@ -183,6 +300,8 @@ def validate_runtime_settings(settings: Settings) -> None:
     same_site = settings.session_cookie_samesite.strip().lower()
     if same_site not in {"lax", "strict", "none"}:
         problems.append("SESSION_COOKIE_SAMESITE must be lax, strict, or none")
+    if settings.email_provider.strip().lower() not in EMAIL_PROVIDERS:
+        problems.append("EMAIL_PROVIDER must be none, smtp or postmark")
     if not is_production_env(settings):
         if problems:
             raise RuntimeError(

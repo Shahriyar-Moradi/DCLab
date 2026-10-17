@@ -27,6 +27,8 @@ import { checkLabel, findingStatusLabel, findingTone } from "@/lib/application/s
 import { modelName } from "@/lib/application/studio-names";
 import { plainWords } from "@/lib/application/studio-model";
 import { taskLabel } from "@/lib/application/studio-goal";
+import { knownLimits } from "@/lib/application/studio-model-detail";
+import { useFeatureContract } from "@/lib/application/studio-model-detail-hooks";
 import { ApiError } from "@/lib/infrastructure/api-client";
 
 const TERMS = {
@@ -55,6 +57,7 @@ const say = (value: string | null | undefined, max: number) => plainText(value, 
 export function ModelCard({ projectId, modelVersionId }: { projectId: string; modelVersionId: string }) {
   const read = useFullModelCard(modelVersionId);
   const operating = useOperatingPoints(read.data?.experiment_id, !!read.data);
+  const contract = useFeatureContract(modelVersionId);
   if (read.isError) {
     if (read.error instanceof ApiError && read.error.status === 409) {
       return <Banner tone="warn">The card is not available yet. It is built once the run&apos;s results are saved and locked.</Banner>;
@@ -181,6 +184,9 @@ export function ModelCard({ projectId, modelVersionId }: { projectId: string; mo
       </Card>
 
       <Card title="Known limits and risks" aside={<Pill tone={risks.state === "attention" ? "warn" : risks.state === "clean" ? "ok" : "gray"}>{risks.state === "attention" ? `${risks.attention} need attention` : risks.state === "clean" ? "all checks passed" : "trust checks not run"}</Pill>}>
+        <ul className="plain-list tight v7-model-limits" aria-label="Known limits of this model">
+          {knownLimits({ taskType: t.task_type, contract: contract.data ?? null }).map((line) => <li key={line}>{line}</li>)}
+        </ul>
         <p>{risks.text}</p>
         {risks.items.length ? (
           <ul className="plain-list" aria-label="Trust check results">

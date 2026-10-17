@@ -102,6 +102,44 @@ class DatasetProfileColumnRead(BaseModel):
     leakage_reason: str | None = Field(description="Recorded leakage reason (may quote column names).")
 
 
+class DatasetProfileTimeRangeRead(BaseModel):
+    """Earliest and latest value of the time column over the TRAINING rows only (V7 BE-C)."""
+
+    column: str = Field(description=_USER_DATA)
+    start: datetime
+    end: datetime
+
+
+UploadCheckCode = Literal["duplicate_rows", "missing_values", "date_parsing", "id_like_columns", "constant_columns"]
+UPLOAD_CHECK_COLUMNS_MAX = 20
+
+
+class UploadCheckColumnRead(BaseModel):
+    name: str = Field(description=_USER_DATA)
+    count: int | None = None
+    share: float | None = None
+
+
+class UploadCheckRead(BaseModel):
+    code: UploadCheckCode
+    status: Literal["ok", "warn"]
+    count: int | None = Field(description="Duplicate rows for `duplicate_rows`; the number of columns otherwise.")
+    share: float | None = Field(description="Share of rows (duplicates) or of cells (missing values); else null. "
+                                "Per column: missing / date-parse failures (of the first 500 values) / unique share.")
+    columns: list[UploadCheckColumnRead] = Field(description=f"At most {UPLOAD_CHECK_COLUMNS_MAX} columns.")
+    columns_truncated: bool = False
+
+
+class UploadChecksRead(BaseModel):
+    """D3a: fast checks run once on the whole uploaded file, before any split exists. They never use
+    the target (it is not known at upload) and feed no run; leakage checks run inside each run."""
+
+    scope: Literal["whole_upload"] = "whole_upload"
+    ran_at: datetime
+    row_count: int
+    checks: list[UploadCheckRead]
+
+
 class DatasetProfileRead(BaseModel):
     dataset_id: UUID
     project_id: UUID | None
@@ -111,3 +149,25 @@ class DatasetProfileRead(BaseModel):
     experiment: DatasetProfileExperimentRead | None
     importance_method: str | None
     columns: list[DatasetProfileColumnRead]
+    # V7 BE-C: summary of the same training rows (null in `upload` scope or when not determinable).
+    entity_column: str | None = Field(
+        default=None,
+        description="Column counted as the entity: the split plan's group column, else the only column the rule "
+        "reads as an identifier (null when there is none or more than one). " + _USER_DATA,
+    )
+    entity_count: int | None = Field(default=None, description="Distinct non-missing values of `entity_column`.")
+    time_range: DatasetProfileTimeRangeRead | None = Field(
+        default=None,
+        description="Time span of the training rows: the split plan's time column, else the only column the rule "
+        "reads as a date. With a time-ordered split it ends before the final test period, which is never read.",
+    )
+    target_rate: float | None = Field(
+        default=None,
+        description="Yes/no targets only: share of training rows whose target is the positive answer (the engine's "
+        "0/1 mapping). Never counts a final-test row.",
+    )
+    upload_checks: UploadChecksRead | None = Field(
+        default=None,
+        description="D3a: checked on upload (whole file; duplicates, missing values, dates, ID-like and constant "
+        "columns); null for files uploaded before these checks or whose grid could not be read.",
+    )

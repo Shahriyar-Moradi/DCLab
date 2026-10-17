@@ -7,17 +7,19 @@ not schema. Scientific tables are not duplicated here.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.data_plane import UPLOADED_BY_DESCRIPTION
 from app.domain.observability import LlmInvocationRead
 from app.domain.reproducibility import (
     ArtifactRead,
     CodeSnapshotRead,
     RuntimeEnvironmentRead,
 )
+from app.domain.workspace_identity import CreatorRead
 
 
 class WorkspaceListItem(BaseModel):
@@ -53,6 +55,11 @@ class DatasetListItem(BaseModel):
     row_count: int
     column_count: int
     purpose: str = "training"
+    uploaded_by: Literal["person", "connected_tool"] = Field(description=UPLOADED_BY_DESCRIPTION)
+    uploader: CreatorRead = Field(
+        description="Who uploaded it, for display (V7 BE-C): `person` with `is_you` when the reader uploaded it, or "
+        "`connected_tool` (no token id or name). Derived training datasets show the person who started the run."
+    )
     created_at: datetime
 
 

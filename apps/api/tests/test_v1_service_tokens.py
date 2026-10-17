@@ -148,7 +148,7 @@ def test_lifecycle_secret_once_hashed_replay_audit_and_revoke(client, db_session
     assert any('"created"' in line for line in audit) and any('"revoked"' in line for line in audit)
     failed = [r.getMessage() for r in caplog.records if "service_token_auth_failed" in r.getMessage()]
     assert failed and f"token_id={body['id']}" in failed[-1] and "reason=revoked" in failed[-1]
-    assert raw not in caplog.text and raw.rsplit("_", 1)[1] not in caplog.text and PASSWORD not in caplog.text
+    assert raw not in caplog.text and raw[len("dclab_st_") + 33:] not in caplog.text and PASSWORD not in caplog.text
 
 
 def test_create_requires_reauthentication_ml_write_membership_and_valid_input(client, db_session, st, monkeypatch):

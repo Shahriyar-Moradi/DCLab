@@ -194,9 +194,10 @@ def assert_runtime_lineage(
     assert model_version.dataset_id == experiment.dataset_id
     assert model_version.workspace_id == upload.workspace_id
     artifact_root = Path(model_version.artifact_uri or experiment.artifact_dir or "")
-    assert (artifact_root / "model.joblib").exists()
+    assert (artifact_root / "model_package.zip").exists()  # P7.1-A: no pickle is written
     assert (artifact_root / "test_predictions.csv").exists()
-    assert (artifact_root / f"members/{selected.candidate_key}.joblib").exists()
+    assert not (artifact_root / "model.joblib").exists()
+    assert not (artifact_root / f"members/{selected.candidate_key}.joblib").exists()
     published = db_session.scalars(
         select(ModelVersion).where(ModelVersion.pipeline_run_id == experiment.id)
     ).all()

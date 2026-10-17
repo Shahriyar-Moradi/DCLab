@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, BinaryIO, TypeVar
@@ -18,6 +19,8 @@ from dclab_client.types import (
     AgentRunPage,
     Artifact,
     BatchPrediction,
+    BusinessOutcomes,
+    BusinessOutcomesProjectList,
     Dataset,
     DatasetProfile,
     DatasetUpload,
@@ -30,28 +33,50 @@ from dclab_client.types import (
     ExperimentCode,
     ExperimentComparison,
     ExperimentFindings,
+    FeatureContract,
     OperatingPointChoice,
     OperatingPoints,
+    ExperimentVerdict,
     ExperimentPage,
     Governance,
+    GovernanceIncident,
     GovernanceSwitch,
     InboxCounts,
     InboxPage,
     ModelBuild,
     ModelCard,
+    ModelReleaseList,
     ModelVersion,
     NodeImpact,
     PolicyChange,
+    PredictionRowsPage,
     Principal,
     ProblemSpec,
+    ProblemSpecDetail,
     Project,
     ProjectGraph,
+    ProjectModelVersionPage,
     ProjectRef,
     ProjectRefList,
     Proposal,
     ProposalPage,
     RefMoveResult,
     Replay,
+    MonitoringOverview,
+    MonitoringThresholdSettings,
+    MonitoringWindow,
+    OutcomeSet,
+    OutcomeSetList,
+    RetrainPolicy,
+    RetrainStatus,
+    ImproveRun,
+    ImproveRunPage,
+    ScoringScheduleRunPage,
+    ScoringScheduleState,
+    SplitPlan,
+    GoalDecisions,
+    TargetByPeriod,
+    UploadAttemptPage,
     Visualization,
     Workspace,
     _Versioned,
@@ -208,6 +233,37 @@ class ProjectsClient:
         )
         return _versioned(ProblemSpec, payload, headers)
 
+    def problem_specs(
+        self, project_id: UUID | str, *, limit: int | None = None, request_id: str | None = None
+    ) -> list[ProblemSpecDetail]:
+        """ProblemSpec versions of the project, newest first (no user ids; ``creator`` says who)."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/problem-specs", params={"limit": limit}, request_id=request_id
+        )
+        return [ProblemSpecDetail.model_validate(row) for row in payload]
+
+    def problem_spec(
+        self, project_id: UUID | str, spec_id: UUID | str, *, request_id: str | None = None
+    ) -> ProblemSpecDetail:
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/problem-specs/{_id(spec_id)}", request_id=request_id
+        )
+        return ProblemSpecDetail.model_validate(payload)
+
+    def outcomes(self, project_id: UUID | str, *, request_id: str | None = None) -> BusinessOutcomes:
+        """The Business view (P7.6-A): the model in use, its final test in plain sentences (service
+        tokens get ``headline.status == "withheld"``), how it was built, the latest list and its limits."""
+
+        payload = self._transport.request("GET", f"/v1/projects/{_id(project_id)}/outcomes", request_id=request_id)
+        return BusinessOutcomes.model_validate(payload)
+
+    def outcome_projects(self, *, request_id: str | None = None) -> BusinessOutcomesProjectList:
+        """Projects of the workspace with a model in use (id and name only, newest first, at most 50)."""
+
+        payload = self._transport.request("GET", "/v1/outcomes/projects", request_id=request_id)
+        return BusinessOutcomesProjectList.model_validate(payload)
+
     def graph(
         self,
         project_id: UUID | str,
@@ -225,6 +281,32 @@ class ProjectsClient:
             request_id=request_id,
         )
         return ProjectGraph.model_validate(payload)
+
+    def flow(self, project_id: UUID | str, *, request_id: str | None = None) -> dict[str, Any]:
+        """The Studio flow bar's typed facts per step (V7 BE-A; CV figures only). People only: a user
+        token works, a service token gets 403 ``service_token_not_permitted`` (use the underlying reads)."""
+
+        return self._transport.request("GET", f"/v1/projects/{_id(project_id)}/flow", request_id=request_id)
+
+    def upload_attempts(
+        self, project_id: UUID | str, *, cursor: str | None = None, limit: int | None = None,
+        request_id: str | None = None,
+    ) -> UploadAttemptPage:
+        """The project's upload log (D3a), newest first: accepted and rejected uploads with a plain
+        reason; metadata only, kept 90 days. File names are untrusted text."""
+
+        params = {key: value for key, value in (("cursor", cursor), ("limit", limit)) if value is not None}
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/upload-attempts", params=params or None, request_id=request_id)
+        return UploadAttemptPage.model_validate(payload)
+
+    def goal_decisions(self, project_id: UUID | str, *, request_id: str | None = None) -> GoalDecisions:
+        """Who decided the goal (D3a): target, test design, ranking metric and business rule, each with
+        who suggested and who confirmed it (no ids; ``why`` is untrusted text)."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/goal/decisions", request_id=request_id)
+        return GoalDecisions.model_validate(payload)
 
     def decisions(
         self,
@@ -719,6 +801,16 @@ class GovernanceClient:
             request_id=request_id, idempotency_key=idempotency_key)
         return _versioned(GovernanceSwitch, payload, headers)
 
+    def resolve_incident(self, incident_id: UUID | str, *, resolution: str, idempotency_key: str | None = None,
+                         request_id: str | None = None) -> GovernanceIncident:
+        """Resolve an open incident of the workspace (owner/admin, a person: a service token is refused). It never
+        restores a level or re-enables a switch."""
+
+        payload, headers = self._transport.request_with_headers(
+            "POST", f"/v1/governance/incidents/{_id(incident_id)}/resolve", json={"resolution": resolution},
+            request_id=request_id, idempotency_key=idempotency_key)
+        return _versioned(GovernanceIncident, payload, headers)
+
 
 REVIEW_AGENTS = frozenset({"experiment_critic", "dataset_investigator", "experiment_planner"})
 
@@ -774,6 +866,261 @@ class ModelVersionsClient:
         )
         return ModelCard.model_validate(payload)
 
+    def list_for_project(
+        self, project_id: UUID | str, *, cursor: str | None = None, limit: int | None = None,
+        request_id: str | None = None,
+    ) -> ProjectModelVersionPage:
+        """V7 B2: the project's model versions, newest first, CV metrics only, with their standing."""
+
+        params = {key: value for key, value in (("cursor", cursor), ("limit", limit)) if value is not None}
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/model-versions", params=params or None, request_id=request_id
+        )
+        return ProjectModelVersionPage.model_validate(payload)
+
+    def feature_contract(self, model_version_id: UUID | str, *, request_id: str | None = None) -> FeatureContract:
+        """V7 B3: the columns a file must have to be scored (names and types only, never values)."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/model-versions/{_id(model_version_id)}/feature-contract", request_id=request_id
+        )
+        return FeatureContract.model_validate(payload)
+
+
+class ReleasesClient:
+    """Approvals of the model in use (P7.2-A), read-only: a person approves by putting a model in
+    use in DCLab Studio (``projects.move_ref`` of ``champion_model`` with a user token); service
+    tokens cannot."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def list(self, project_id: UUID | str, *, request_id: str | None = None) -> ModelReleaseList:
+        """Newest first; ``current_release_id`` is the approval of the model in use (or None)."""
+
+        payload = self._transport.request("GET", f"/v1/projects/{_id(project_id)}/releases", request_id=request_id)
+        return ModelReleaseList.model_validate(payload)
+
+
+class ScoringSchedulesClient:
+    """A project's weekly scoring schedule. Any token reads it; ``set`` is a person's act (a user
+    token with ML-write): service tokens get 403 ``service_token_not_permitted``."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def get(self, project_id: UUID | str, *, request_id: str | None = None) -> ScoringScheduleState:
+        """The schedule (``schedule`` None when never set), its status and the newest 10 handled weeks."""
+
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/projects/{_id(project_id)}/scoring-schedule", request_id=request_id)
+        return _versioned(ScoringScheduleState, payload, headers)
+
+    def set(
+        self, project_id: UUID | str, *, weekday: int, hour_utc: int, enabled: bool = True,
+        rationale: str | None = None, idempotency_key: str | None = None, request_id: str | None = None,
+    ) -> ScoringScheduleState:
+        """Turn weekly scoring on (``weekday`` 0 = Monday, ``hour_utc``) or off (``enabled=False``)."""
+
+        body: dict[str, Any] = {"weekday": weekday, "hour_utc": hour_utc, "enabled": enabled}
+        if rationale is not None:
+            body["rationale"] = rationale
+        payload, headers = self._transport.request_with_headers(
+            "PUT", f"/v1/projects/{_id(project_id)}/scoring-schedule", json=body, request_id=request_id,
+            idempotency_key=idempotency_key)
+        return _versioned(ScoringScheduleState, payload, headers)
+
+    def runs(
+        self, project_id: UUID | str, *, cursor: str | None = None, limit: int | None = None,
+        request_id: str | None = None,
+    ) -> ScoringScheduleRunPage:
+        """Every handled week, newest first (``next_cursor`` pages)."""
+
+        params = {key: value for key, value in (("cursor", cursor), ("limit", limit)) if value is not None}
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/scoring-schedule/runs", params=params or None,
+            request_id=request_id)
+        return ScoringScheduleRunPage.model_validate(payload)
+
+
+class MonitoringClient:
+    """Monitoring of a project's model in use (P7.4-A): weekly windows, drift (PSI vs the training
+    rows) and real performance once outcomes are linked. Any token reads it; ``link_outcomes`` is a
+    person's act (a user token with ML-write): service tokens get 403 ``service_token_not_permitted``.
+    Deterministic and read-only: it never retrains or switches a model."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def get(
+        self, project_id: UUID | str, *, model_version_id: UUID | str | None = None, request_id: str | None = None,
+    ) -> MonitoringOverview:
+        """Latest status and the last 12 weeks, newest first (``model_version_id``: another version)."""
+
+        params = {"model_version_id": _id(model_version_id)} if model_version_id is not None else None
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/monitoring", params=params, request_id=request_id)
+        return MonitoringOverview.model_validate(payload)
+
+    def window(
+        self, project_id: UUID | str, window_start: str, *, model_version_id: UUID | str | None = None,
+        request_id: str | None = None,
+    ) -> MonitoringWindow:
+        """One week in detail; ``window_start`` is its Monday as ``YYYY-MM-DD`` (UTC)."""
+
+        day = str(window_start).strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            raise DCLabClientError("window_start must be a date YYYY-MM-DD")
+        params = {"model_version_id": _id(model_version_id)} if model_version_id is not None else None
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/monitoring/windows/{day}", params=params, request_id=request_id)
+        return MonitoringWindow.model_validate(payload)
+
+    def outcomes(self, project_id: UUID | str, *, request_id: str | None = None) -> OutcomeSetList:
+        """Linked files of real outcomes, newest first."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/projects/{_id(project_id)}/monitoring/outcomes", request_id=request_id)
+        return OutcomeSetList.model_validate(payload)
+
+    def link_outcomes(
+        self, project_id: UUID | str, *, dataset_id: UUID | str, key_column: str, outcome_column: str,
+        idempotency_key: str | None = None, request_id: str | None = None,
+    ) -> OutcomeSet:
+        """Link an uploaded file of real outcomes (its key column holds the scored rows' entity values)."""
+
+        body = {"dataset_id": _id(dataset_id), "key_column": key_column, "outcome_column": outcome_column}
+        payload, headers = self._transport.request_with_headers(
+            "POST", f"/v1/projects/{_id(project_id)}/monitoring/outcomes", json=body, request_id=request_id,
+            idempotency_key=idempotency_key)
+        return _versioned(OutcomeSet, payload, headers)
+
+    def thresholds(self, project_id: UUID | str, *, request_id: str | None = None) -> MonitoringThresholdSettings:
+        """D5b: the project's PSI watch / alert lines and precision / recall floors in force."""
+
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/projects/{_id(project_id)}/monitoring-thresholds", request_id=request_id)
+        return _versioned(MonitoringThresholdSettings, payload, headers)
+
+    def set_thresholds(
+        self, project_id: UUID | str, *, psi_watch: float, psi_alert: float, precision_floor: float | None,
+        recall_floor: float | None, rationale: str, if_match: str, idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> MonitoringThresholdSettings:
+        """Owners and administrators (a user token), within the fixed bounds; a floor of ``None`` is off.
+        ``if_match``: the thresholds' ``etag`` (``'"0"'`` when never changed). Applies to later weeks."""
+
+        body = {"psi_watch": psi_watch, "psi_alert": psi_alert, "precision_floor": precision_floor,
+                "recall_floor": recall_floor, "rationale": rationale}
+        payload, headers = self._transport.request_with_headers(
+            "PUT", f"/v1/projects/{_id(project_id)}/monitoring-thresholds", json=body, request_id=request_id,
+            idempotency_key=idempotency_key, if_match=if_match)
+        return _versioned(MonitoringThresholdSettings, payload, headers)
+
+
+class RetrainClient:
+    """Retrain on newest data (D5a). Any token reads the policy and the state; ``start`` (ML-write)
+    and ``set_policy`` (owners and administrators, with a reason and If-Match) are a person's acts
+    (a user token): service tokens get 403 ``service_token_not_permitted``. Automatic retraining only
+    starts a retrain; switching the model in use is always a person accepting the proposal."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def status(self, project_id: UUID | str, *, request_id: str | None = None) -> RetrainStatus:
+        payload = self._transport.request("GET", f"/v1/projects/{_id(project_id)}/retrain-status",
+                                          request_id=request_id)
+        return RetrainStatus.model_validate(payload)
+
+    def policy(self, project_id: UUID | str, *, request_id: str | None = None) -> RetrainPolicy:
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/projects/{_id(project_id)}/retrain-policy", request_id=request_id)
+        return _versioned(RetrainPolicy, payload, headers)
+
+    def set_policy(
+        self, project_id: UUID | str, *, policy: str, rationale: str, if_match: str,
+        idempotency_key: str | None = None, request_id: str | None = None,
+    ) -> RetrainPolicy:
+        """``policy``: off, ask or auto; ``if_match``: the policy's ``etag`` (``'"0"'`` when never set)."""
+
+        payload, headers = self._transport.request_with_headers(
+            "PUT", f"/v1/projects/{_id(project_id)}/retrain-policy", json={"policy": policy, "rationale": rationale},
+            request_id=request_id, idempotency_key=idempotency_key, if_match=if_match)
+        return _versioned(RetrainPolicy, payload, headers)
+
+    def start(
+        self, project_id: UUID | str, *, dataset_id: UUID | str, idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> RetrainStatus:
+        """Retrain the model in use on a newer labelled file of the project (a new root run)."""
+
+        payload = self._transport.request(
+            "POST", f"/v1/projects/{_id(project_id)}/retrain", json={"dataset_id": _id(dataset_id)},
+            request_id=request_id, idempotency_key=idempotency_key)
+        return RetrainStatus.model_validate(payload)
+
+
+class ImproveRunsClient:
+    """Improve loops (P5.4-A3, ADR 0007). ``start`` and ``cancel`` take ``experiments:write`` (a service
+    token's budget is only lowered, 5 starts per hour; it cancels only a queued or running loop);
+    ``accept`` is a person's act (a user token): service tokens get 403. Reads never carry a
+    final-test value."""
+
+    def __init__(self, transport: V1Transport) -> None:
+        self._transport = transport
+
+    def start(
+        self, *, from_experiment_id: UUID | str, goal: dict[str, Any], budget: dict[str, Any] | None = None,
+        idempotency_key: str | None = None, request_id: str | None = None,
+    ) -> ImproveRun:
+        """Start a loop on a completed run (``goal``: ``{"plain": {"metric": ...}}`` or ``{"objective": ...}``)."""
+
+        body: dict[str, Any] = {"start": {"from_experiment_id": _id(from_experiment_id)}, "goal": goal}
+        if budget is not None:
+            body["budget"] = budget
+        payload, headers = self._transport.request_with_headers(
+            "POST", "/v1/improve-runs", json=body, request_id=request_id, idempotency_key=idempotency_key)
+        return _versioned(ImproveRun, payload, headers)
+
+    def get(self, improve_run_id: UUID | str, *, request_id: str | None = None) -> ImproveRun:
+        payload, headers = self._transport.request_with_headers(
+            "GET", f"/v1/improve-runs/{_id(improve_run_id)}", request_id=request_id)
+        return _versioned(ImproveRun, payload, headers)
+
+    def list(self, project_id: UUID | str, *, limit: int = 20, request_id: str | None = None) -> ImproveRunPage:
+        payload = self._transport.request("GET", f"/v1/projects/{_id(project_id)}/improve-runs",
+                                          params={"limit": limit}, request_id=request_id)
+        return ImproveRunPage.model_validate(payload)
+
+    def cancel(
+        self, improve_run_id: UUID | str, *, if_match: str, idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> ImproveRun:
+        """Stop a loop (``if_match``: the loop's ``etag``); its live try is cancelled, the best so far kept."""
+
+        payload, headers = self._transport.request_with_headers(
+            "POST", f"/v1/improve-runs/{_id(improve_run_id)}/cancel", request_id=request_id,
+            idempotency_key=idempotency_key, if_match=if_match)
+        return _versioned(ImproveRun, payload, headers)
+
+    def accept(
+        self, improve_run_id: UUID | str, *, if_match: str, iteration: int | None = None,
+        keep_current: bool = False, rationale: str | None = None, idempotency_key: str | None = None,
+        request_id: str | None = None,
+    ) -> ImproveRun:
+        """A person accepts one try that beat the noise (its final run scores the final test set once),
+        or keeps the current model."""
+
+        body: dict[str, Any] = {"keep_current": keep_current}
+        if iteration is not None:
+            body["iteration"] = iteration
+        if rationale is not None:
+            body["rationale"] = rationale
+        payload, headers = self._transport.request_with_headers(
+            "POST", f"/v1/improve-runs/{_id(improve_run_id)}/accept", json=body, request_id=request_id,
+            idempotency_key=idempotency_key, if_match=if_match)
+        return _versioned(ImproveRun, payload, headers)
+
 
 class NodesClient:
     def __init__(self, transport: V1Transport) -> None:
@@ -790,6 +1137,13 @@ class NodesClient:
             request_id=request_id,
         )
         return NodeImpact.model_validate(payload)
+
+    def split_plan(self, split_plan_id: UUID | str, *, request_id: str | None = None) -> SplitPlan:
+        """The test design of one SplitPlan: strategy, folds with per-fold row counts, row counts, reason
+        (null for service tokens) and who made it. The final test set is a row count only."""
+
+        payload = self._transport.request("GET", f"/v1/split-plans/{_id(split_plan_id)}", request_id=request_id)
+        return SplitPlan.model_validate(payload)
 
 
 class DatasetsClient:
@@ -821,6 +1175,15 @@ class DatasetsClient:
             "GET", f"/v1/datasets/{_id(dataset_id)}/profile", request_id=request_id
         )
         return DatasetProfile.model_validate(payload)
+
+    def target_by_period(self, dataset_id: UUID | str, *, request_id: str | None = None) -> TargetByPeriod:
+        """Monthly target rate of the current split plan's training rows (D3a); the final test is a
+        sealed span until it was run for the model in use (always sealed for service tokens)."""
+
+        payload = self._transport.request(
+            "GET", f"/v1/datasets/{_id(dataset_id)}/target-by-period", request_id=request_id
+        )
+        return TargetByPeriod.model_validate(payload)
 
     def upload(
         self,
@@ -1171,6 +1534,21 @@ class ExperimentsClient:
         )
         return OperatingPoints.model_validate(payload)
 
+    def verdict(
+        self, experiment_id: UUID | str, *, against: UUID | str | None = None, request_id: str | None = None
+    ) -> ExperimentVerdict:
+        """Does this experiment beat ``against`` (default: its parent) beyond noise? Paired locked
+        per-fold CV scores, Nadeau-Bengio corrected margin for the new candidates the try added
+        (P5.5-B-read), and the split plan's test-set look count (counts only)."""
+
+        payload = self._transport.request(
+            "GET",
+            f"/v1/experiments/{_id(experiment_id)}/verdict",
+            params={"against": _id(against)} if against is not None else None,
+            request_id=request_id,
+        )
+        return ExperimentVerdict.model_validate(payload)
+
     def choose_operating_point(
         self,
         experiment_id: UUID | str,
@@ -1252,6 +1630,25 @@ class PredictionsClient:
             Path(to).write_bytes(content)
         return content
 
+    def rows(
+        self, prediction_id: UUID | str, *, order: str = "score", limit: int | None = None,
+        cursor: str | None = None, request_id: str | None = None,
+    ) -> PredictionRowsPage:
+        """V7 B6: one capped page (at most 200 rows; the first 10,000 of an ordering) of a completed
+        predictions file, ``order`` = ``score`` (highest first) or ``row``."""
+
+        if order not in {"score", "row"}:
+            raise DCLabClientError("order must be one of: row, score")
+        params: dict[str, Any] = {"order": order}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor is not None:
+            params["cursor"] = cursor
+        payload = self._transport.request(
+            "GET", f"/v1/predictions/{_id(prediction_id)}/rows", params=params, request_id=request_id
+        )
+        return PredictionRowsPage.model_validate(payload)
+
 
 class VisualizationsClient:
     def __init__(self, transport: V1Transport) -> None:
@@ -1332,6 +1729,11 @@ class DCLabClient:
         self.agent_reviews = AgentReviewsClient(self._transport)
         self.governance = GovernanceClient(self._transport)
         self.model_versions = ModelVersionsClient(self._transport)
+        self.releases = ReleasesClient(self._transport)
+        self.scoring_schedules = ScoringSchedulesClient(self._transport)
+        self.monitoring = MonitoringClient(self._transport)
+        self.retrain = RetrainClient(self._transport)
+        self.improve_runs = ImproveRunsClient(self._transport)
         self.predictions = PredictionsClient(self._transport)
         self.visualizations = VisualizationsClient(self._transport)
         self.artifacts = ArtifactsClient(self._transport)

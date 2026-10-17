@@ -17,9 +17,20 @@ decision-record shape, cleaning ownership, AI-off semantics) and
 [ADR 0009](../adr/0009-ai-governance-gateway-harness-assistant.md) (tables and
 columns, governance policy schema, gateway contract, harness lifecycle and
 hooks, tool catalog, threads API and `AssistantStep`, data exposure, pins). Both
-were accepted by the founder on 2026-10-04 (models: OpenAI `gpt-6.1-sol` for
-complex roles, `gpt-6-luna` for simple roles); where this overview and an ADR
-differ, the ADR wins.
+were accepted by the founder on 2026-10-04 (models then: OpenAI `gpt-6.1-sol` for
+complex roles, `gpt-6-luna` for simple roles; since 2026-10-16 every role, Jev included,
+runs on Anthropic Claude Sonnet 5.5 `claude-sonnet-5-5`, OpenAI / TypeSafe kept inactive);
+where this overview and an ADR differ, the ADR wins.
+
+**Provider since 2026-10-16 (operators and DPAs).** Agent and Jev traffic goes to Anthropic
+(previously OpenAI / TypeSafe). What is sent is the gateway's redacted envelope: column names as
+untrusted text, dtypes, banded statistics (ratio / cardinality bands) and aggregates, never raw
+rows or holdout values; tenant notices and DPAs that name the AI processor need that update. Jev
+needs `JEV_ENABLED=true` in addition to `AI_ENABLED=true`. Key delivery: set
+`DCLAB_ANTHROPIC_API_KEY` (preferred; `ANTHROPIC_API_KEY` is accepted) in the process environment;
+`make run` / `make worker` source `.env` for it and `docker-compose.base44.yml` passes it to the
+`api` and `worker` services. Settings never hold the key. Prices in `gateway/budget.py` are an
+unverified conservative bound until checked against Anthropic's pricing page.
 
 ## 1. Where agents sit
 
@@ -129,7 +140,7 @@ apps/api/app/agents/                      (authoritative layout: ADR 0009 §1)
     limits.py         #   rate limits, circuit breakers
     ledger.py         #   one llm_invocations row per call, cache hits and refusals included
     switches.py       #   kill switches: global → workspace → agent → purpose → provider
-    providers/        #   the ONLY modules importing OpenAI / LiteLLM / TypeSafe SDKs (+ fake)
+    providers/        #   the ONLY modules calling a provider (Anthropic; legacy OpenAI / TypeSafe) (+ fake)
   harness/            # THE ONLY WAY TO RUN AN AGENT
     service.py        #   AgentService.run(spec): the lifecycle below; job handler agents.run
     context.py        #   ContextEnvelope from read-only services (metadata, aggregates, no raw rows)

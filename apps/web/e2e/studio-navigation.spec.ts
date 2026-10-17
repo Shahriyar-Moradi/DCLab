@@ -42,10 +42,12 @@ test("Studio: sidebar, project pages, empty states, command bar and access", asy
 
   await page.goto("/home");
   const sidebar = page.getByRole("navigation", { name: "Studio" });
-  await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Good (morning|afternoon|evening)/, level: 1 })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Projects" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Inbox" })).toBeVisible();
-  for (const hidden of ["Settings", "AI settings", "Governance", "Agents & tools"]) await expect(sidebar.getByRole("link", { name: hidden })).toHaveCount(0);
+  await expect(sidebar.getByRole("link", { name: "AI settings" })).toHaveAttribute("href", "/governance"); // D6b (Beta)
+  for (const hidden of ["Governance", "Agents & tools"]) await expect(sidebar.getByRole("link", { name: hidden })).toHaveCount(0);
+  await expect(sidebar.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Connect" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Experiments" })).toHaveCount(0); // outside a project
   expect(await axeViolations(page)).toEqual([]);
@@ -55,11 +57,12 @@ test("Studio: sidebar, project pages, empty states, command bar and access", asy
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/experiments$`));
   await expect(page.getByRole("heading", { name: "Experiments", level: 1 })).toBeVisible();
   await expect(page.getByRole("region", { name: "Project" })).toContainText(name);
-  // A new project has no test design and no model in use yet, so Goal & test design and Predictions are not listed.
-  for (const label of ["Data", "Experiments", "Model", "History"]) {
+  // A new project has no model yet, so Predictions is not listed; Goal & test design opens the project-level Goal page (V7 UI-C).
+  for (const label of ["Data", "Experiments", "Improve", "Model", "Monitoring", "History"]) {
     await expect(sidebar.getByRole("link", { name: label, exact: true })).toBeVisible();
   }
-  for (const hidden of ["Lab (chat)", "Pipeline", "Graph", "Improve", "Monitoring", "Goal & test design", "Predictions"]) {
+  await expect(sidebar.getByRole("link", { name: "Goal & test design", exact: true })).toHaveAttribute("href", `/projects/${projectId}/goal`);
+  for (const hidden of ["Lab (chat)", "Pipeline", "Graph", "Predictions"]) {
     await expect(sidebar.getByRole("link", { name: hidden, exact: true })).toHaveCount(0);
   }
   await expect(sidebar.getByText("Project · " + name)).toBeVisible();
@@ -68,18 +71,18 @@ test("Studio: sidebar, project pages, empty states, command bar and access", asy
   await expect(flow.getByRole("link", { name: "Data" })).toHaveAttribute("href", `/projects/${projectId}/data`);
   await expect(flow.getByRole("link", { name: "Experiments" })).toHaveAttribute("aria-current", "step");
   await expect(flow.getByText("Goal & test design")).toBeVisible();
-  await expect(flow.getByRole("link", { name: "Goal & test design" })).toHaveCount(0); // no test design yet
+  await expect(flow.getByRole("link", { name: /Goal & test design/ })).toHaveAttribute("href", `/projects/${projectId}/goal`); // no test design yet: the goal page
   await expect(sidebar.getByRole("link", { name: "Experiments" })).toHaveAttribute("aria-current", "page");
   expect(await axeViolations(page)).toEqual([]);
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await axeViolations(page)).toEqual([]);
   await page.goto("/home");
-  await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Good (morning|afternoon|evening)/, level: 1 })).toBeVisible();
   expect(await axeViolations(page)).toEqual([]);
   await page.emulateMedia({ colorScheme: "light" });
 
   await page.goto(`/projects/${projectId}/monitoring`);
-  await expect(page.getByText("Monitoring arrives with releases.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Monitoring", level: 1 })).toBeVisible();
   await page.goto(`/projects/${projectId}/decisions`);
   await expect(page.getByRole("heading", { name: "History", level: 1 })).toBeVisible();
   await page.goto("/inbox");

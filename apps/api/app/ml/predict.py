@@ -45,13 +45,20 @@ def load_model(model_dir: Path | None = None):
         raise ModelNotTrainedError(
             f"No trained model found at {artifact}. Run `python -m app.ml.train` first."
         )
+    # QUARANTINED legacy format (P7.1-A): the frozen M1 decision layer unpickles the
+    # operator-owned MODEL_DIR artifacts it trained itself (never tenant uploads). Member
+    # paths from metadata.json must stay inside that directory.
     recipe = joblib.load(artifact)
     metadata = json.loads(meta_path.read_text())
     members = {}
     member_meta = metadata.get("members") or recipe.get("members") or []
     if member_meta:
+        root = directory.resolve()
         for row in member_meta:
-            members[row["id"]] = joblib.load(directory / row["artifact"])
+            member_path = (directory / str(row["artifact"])).resolve()
+            if not member_path.is_relative_to(root):
+                raise ModelNotTrainedError("model member path points outside the model directory")
+            members[row["id"]] = joblib.load(member_path)
         bundle = {
             "kind": "factory",
             "fusion": metadata.get("fusion") or recipe.get("fusion"),

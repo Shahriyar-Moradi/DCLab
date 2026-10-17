@@ -93,6 +93,8 @@ class ToolDefinition:
     fetch: Callable[[Any, BaseModel], Any] | None = None
     shaper: Callable[[Any], Shaped] | None = None
     notes: tuple[str, ...] = field(default=())
+    # Proposals: ``estimate(arguments) -> (cost_micros, duration_s)`` for the proposal card (ADR 0007 §10).
+    estimate: Callable[[dict[str, Any]], tuple[int | None, int | None]] | None = None
 
     @property
     def read_only(self) -> bool:

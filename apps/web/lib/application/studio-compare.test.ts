@@ -23,6 +23,10 @@ test("a refused comparison is explained in plain words", () => {
   assert.match(compareRefusal(err(409, "split_plan_mismatch")) ?? "", /split differently/);
   assert.match(compareRefusal(err(409, "evidence_missing")) ?? "", /no locked winner/);
   assert.equal(compareRefusal(err(500, "boom")), null);
+  // D8b: an unknown 409 code gets the fixed sentence, never the server's message; `__proto__` is not a table key.
+  assert.equal(compareRefusal(err(409, "something_new", "raw server words")), "These runs cannot be compared.");
+  assert.equal(compareRefusal(err(409, "__proto__", "raw server words")), "These runs cannot be compared.");
+  assert.equal(compareRefusal(err(500, "__proto__")), null);
 });
 
 test("metric rows use the shared CV metrics; delta is last minus first", () => {
@@ -59,10 +63,15 @@ test("branch builder shapes the typed change and leaves rules to the API", () =>
   assert.deepEqual(buildBranchBody(" why ", [{ ...emptyDraft(4, "family_include"), family: "lightgbm" }]), { intent: "why", changes: [{ kind: "family_include", family: "lightgbm" }] });
 });
 
-test("the API's change-set refusal is shown with its reason and path", () => {
+test("the API's change-set refusal is shown by its reason code and path, never its message (D8b)", () => {
   const e = branchProblem(err(422, "invalid_change_set", "family not available", { reason: "unknown_family", path: "changes[0].family" }));
-  assert.match(e.detail, /unknown_family/);
+  assert.match(e.detail, /not installed for this kind of answer/);
   assert.match(e.detail, /changes\[0\]\.family/);
+  assert.doesNotMatch(e.detail, /family not available|unknown_family/);
+  const odd = branchProblem(err(422, "invalid_change_set", "raw <b>words</b>", { reason: "__proto__", path: "<script>" }));
+  assert.equal(odd.detail, "Nothing was started.");
+  const blocked = branchProblem(err(409, "experiment_not_branchable", "raw words"));
+  assert.doesNotMatch(blocked.detail, /raw words/);
 });
 
 test("ref and decision conflicts have explicit wording", () => {
@@ -70,6 +79,10 @@ test("ref and decision conflicts have explicit wording", () => {
   assert.match(mapActionError(err(409, "champion_split_plan_mismatch"), "champion").title, /Not comparable/);
   assert.match(mapActionError(err(409, "invalid_decision_transition", "already accepted"), "decision").title, /already resolved/);
   assert.match(mapActionError(err(403, "forbidden"), "decision").title, /cannot do this/);
+  assert.match(mapActionError(err(403, "forbidden", "raw server words"), "decision").title, /cannot do this/);
+  for (const e of [err(409, "champion_missing", "raw server words"), err(409, "invalid_decision_transition", "raw server words"), err(400, "x", "raw server words")]) {
+    assert.doesNotMatch(JSON.stringify(mapActionError(e, "champion")), /raw server words/);
+  }
 });
 
 test("proposed ref moves are accepted through the refs endpoint", () => {

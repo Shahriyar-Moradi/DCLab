@@ -31,6 +31,7 @@ from app.agents.tools.shaping import (
     cv_only,
     cv_record,
     data_text,
+    holdout_free_text,
     sample_text,
     text,
     withhold_card_risks,
@@ -50,6 +51,15 @@ OPERATING_POINT_KEYS = ("threshold", "tp", "fp", "fn", "tn", "precision", "recal
 OPERATING_NOTE = ("Out-of-fold training-fold figures (optimistic when picked from many thresholds); never a "
                   "final-evaluation value. Choosing a point is a person's act in DCLab Studio.")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
+SCHEDULE_NOTE = ("Read-only: only a person turns weekly scoring on or off, in DCLab Studio. Each week it scores the "
+                 "newest file a person uploaded for scoring with the model in use approved for scoring; files a "
+                 "connected tool uploaded with a service token (like this one) are never scored, while uploads "
+                 "made with a person's own sign-in or own API token count as that person's. It never retrains "
+                 "and never fetches data.")
+MONITORING_NOTE = ("Read-only and deterministic: drift means the inputs look different from training, not that the "
+                   "model is wrong; outcome metrics are real results of scored rows (never the final test set) and "
+                   "appear only after a person links them in DCLab Studio. Monitoring never retrains or switches a "
+                   "model.")
 GraphKind = Literal["problem_spec", "dataset_version", "split_plan", "feature_recipe", "experiment", "model_version"]
 
 Id = Annotated[UUID, Field(description="Resource UUID.")]
@@ -101,6 +111,22 @@ class InspectGovernanceInput(BaseModel):  # no arguments (no docstring: it would
 
 class ModelInput(BaseModel):
     model_version_id: Id
+
+
+class ListReleasesInput(BaseModel):
+    project_id: Id
+
+
+class ImproveRunInput(BaseModel):
+    improve_run_id: Id
+
+
+class ScoringScheduleInput(BaseModel):
+    project_id: Id
+
+
+class MonitoringInput(BaseModel):
+    project_id: Id
 
 
 class PredictionInput(BaseModel):
@@ -186,7 +212,7 @@ class ServiceReads:
     def experiments(self, project_id: UUID, limit: int) -> Any:
         from app.services.experiment_service import list_experiments
 
-        return list_experiments(self.db, **self._who, project_id=project_id, limit=limit)
+        return list_experiments(self.db, **self._who, project_id=project_id, limit=limit, agent=True)
 
     def datasets(self, limit: int) -> list[Any]:
         from app.services.technical_explorer_service import list_datasets
@@ -206,7 +232,7 @@ class ServiceReads:
     def experiment(self, experiment_id: UUID) -> Any:
         from app.services.experiment_service import experiment_read
 
-        return experiment_read(self.db, **self._who, experiment_id=experiment_id)
+        return experiment_read(self.db, **self._who, experiment_id=experiment_id, agent=True)
 
     def compare(self, experiment_ids: list[UUID]) -> Any:
         from app.domain.experiment_resources import ExperimentComparisonRead
@@ -250,6 +276,28 @@ class ServiceReads:
         from app.services.decision_record_service import list_decisions
 
         return list_decisions(self.db, **self._who, project_id=project_id, **filters)
+
+    def releases(self, project_id: UUID) -> Any:
+        from app.services.model_release_service import list_releases
+
+        # The agent view (as /v1 for service tokens): no approving person's id, no holdout-naming rationale.
+        return list_releases(self.db, **self._who, project_id=project_id, agent=True)
+
+    def improve_run(self, improve_run_id: UUID) -> Any:
+        from app.services.improve.service import improve_run_read
+
+        # The agent view (as /v1 for service tokens): no person ids, no key naming the holdout.
+        return improve_run_read(self.db, **self._who, run_id=improve_run_id, agent=True)
+
+    def scoring_schedule(self, project_id: UUID) -> Any:
+        from app.services.scoring_schedule_service import schedule_state
+
+        return schedule_state(self.db, **self._who, project_id=project_id, agent=True)  # no user ids
+
+    def monitoring(self, project_id: UUID) -> Any:
+        from app.services.monitoring_service import monitoring_overview
+
+        return monitoring_overview(self.db, **self._who, project_id=project_id)  # aggregates only, no user ids
 
     def decision(self, decision_id: UUID) -> Any:
         from app.services import decision_record_service as drs
@@ -322,6 +370,7 @@ def _experiment(e: Any) -> dict[str, Any]:
         "failure_reason": data_text(e.failure_reason, 500), "lineage": e.lineage.model_dump(mode="json"),
         "change_set": data_text(e.change_set, 2000), "metrics": cv_record(e.metrics),
         "diff_vs_parent": bound(cv_only(e.diff_vs_parent), max_items=20),
+        "evidence_mode": code(e.evidence_mode),  # sealed: an improve try, the final test set not used
     }
 
 
@@ -367,6 +416,20 @@ def prediction_summary(p: Any) -> dict[str, Any]:
         "download": output and {"human_api": f"GET /v1/predictions/{p.id}/download",
                                 "cli": f"dclab-cli predict download {p.id} -o FILE",
                                 "note": "Predicted rows are never returned to agents."},
+    }
+
+
+def release_summary(r: Any) -> dict[str, Any]:
+    """An approval of the model in use (P7.2-A) for an agent reader: ids, codes, digest and the
+    person's reason as untrusted data text (withheld when it names the final holdout); never who
+    approved it."""
+
+    return {
+        "id": r.id, "model_version_id": r.model_version_id, "model_version": code(r.model_version),
+        "previous_release_id": r.previous_release_id, "decision_record_id": r.decision_record_id,
+        "approved_at": r.approved_at, "saved_format": code(r.saved_format),
+        "package_manifest_digest": r.package_manifest_digest, "is_current": r.is_current,
+        "rationale": data_text(holdout_free_text(r.rationale)),
     }
 
 
@@ -745,6 +808,105 @@ def _prediction_shape(raw: dict[str, Any]) -> Shaped:
     return Shaped({"prediction": prediction_summary(p)}, data_class="aggregates", outcome_scope="cv",
                   source_datasets=_ids(p.input_dataset_id, raw["model"].lineage.source_dataset_id),
                   aggregates=("prediction.decision_threshold",))  # locked on out-of-fold training rows
+
+
+def _releases_fetch(reads: Any, a: ListReleasesInput) -> Any:
+    return reads.releases(a.project_id)
+
+
+def _releases_shape(page: Any) -> Shaped:
+    return Shaped({"current_release_id": page.current_release_id,
+                   "releases": [release_summary(r) for r in page.items[:LIST_LIMIT]]})
+
+
+IMPROVE_NOTE = ("Each try is a sealed branch on the same folds, judged per fold against noise on cross-validation; "
+                "the final test set is scored once, only after a person accepts a try in DCLab Studio (an agent "
+                "never accepts).")
+
+
+def _improve_run_fetch(reads: Any, a: ImproveRunInput) -> dict[str, Any]:
+    run = reads.improve_run(a.improve_run_id)
+    return {"run": run, "start": reads.experiment(run.start_experiment_id)}
+
+
+def improve_run_summary(r: Any) -> dict[str, Any]:
+    """Codes, ids and CV numbers only (shared with ``dclab_mcp``'s ``get_improve_run``)."""
+
+    tries = [{"seq": it.seq, "kind": code(it.kind), "status": code(it.status), "reason": code(it.reason),
+              "action": bound(it.action), "experiment_id": it.experiment_id,
+              "incumbent_experiment_id": it.incumbent_experiment_id,
+              "planned_candidate_ids": [code(c) for c in it.planned_candidate_ids[:LIST_LIMIT]],
+              "comparison": bound(cv_only(it.comparison)), "training_seconds": it.training_seconds}
+             for it in r.iterations[:LIST_LIMIT]]
+    return {"id": r.id, "project_id": r.project_id, "split_plan_id": r.split_plan_id,
+            "start_experiment_id": r.start_experiment_id, "incumbent_experiment_id": r.incumbent_experiment_id,
+            "final_experiment_id": r.final_experiment_id, "status": code(r.status), "outcome": code(r.outcome),
+            "stop_reason": code(r.stop_reason), "stop_detail": code(r.stop_detail), "goal": bound(r.goal),
+            "budget": bound(r.budget), "planned_comparisons": r.planned_comparisons,
+            "validation_folds": r.validation_folds, "sealed_set_label": code(r.sealed_set_label),
+            "final_attempts": r.final_attempts, "accepted_iteration_seq": r.accepted_iteration_seq,
+            "started_by": code(r.started_by), "ai": code(r.ai), "training_seconds_spent": r.training_seconds_spent,
+            "created_at": r.created_at, "finished_at": r.finished_at, "iterations": tries}
+
+
+def _improve_run_shape(raw: dict[str, Any]) -> Shaped:
+    return _cv_shaped({"improve_run": improve_run_summary(raw["run"]), "note": IMPROVE_NOTE}, raw["start"],
+                      "improve_run.iterations")
+
+
+def _scoring_schedule_fetch(reads: Any, a: ScoringScheduleInput) -> Any:
+    return reads.scoring_schedule(a.project_id)
+
+
+def _scoring_schedule_shape(state: Any) -> Shaped:
+    """Codes, slots and ids only (no people, no free text): the server's plain-word messages
+    are not passed on; the note says what an agent may not do."""
+
+    s = state.schedule
+    schedule = s and {"id": s.id, "weekday": s.weekday, "weekday_name": code(s.weekday_name), "hour_utc": s.hour_utc,
+                      "timezone": code(s.timezone), "enabled": s.enabled, "next_planned_for": s.next_planned_for,
+                      "last_planned_for": s.last_planned_for, "owner_can_score": s.owner_can_score}
+    runs = [{"id": r.id, "planned_for": r.planned_for, "outcome": code(r.outcome), "reason_code": code(r.reason_code),
+             "batch_prediction_id": r.batch_prediction_id, "model_version_id": r.model_version_id,
+             "model_release_id": r.model_release_id, "input_dataset_id": r.input_dataset_id}
+            for r in state.recent_runs[:LIST_LIMIT]]
+    return Shaped({"project_id": state.project_id, "status": code(state.status), "schedule": schedule,
+                   "recent_runs": runs, "note": SCHEDULE_NOTE})
+
+
+def _monitoring_fetch(reads: Any, a: MonitoringInput) -> Any:
+    return reads.monitoring(a.project_id)
+
+
+def _monitoring_shape(view: Any) -> Shaped:
+    """Codes, dates, counts and numbers only: no summaries or finding text (they carry the
+    user's column names) and no feature names; PSI and outcome metrics are aggregates of the
+    workspace's scored and outcome files (real production outcomes, never the final test set)."""
+
+    windows = [{"window_start": w.window_start, "window_end": w.window_end, "revision": w.revision,
+                "model_version_id": w.model_version_id, "model_release_id": w.model_release_id,
+                "status": code(w.status), "summary_code": code(w.summary_code), "n_rows": w.n_rows,
+                "n_batch_predictions": w.n_batch_predictions, "max_psi": w.max_psi, "prediction_psi": w.prediction_psi,
+                "outcomes_status": code(w.outcomes_status or None), "n_labelled": w.n_labelled, "coverage": w.coverage,
+                "outcome_metric": code(w.outcome_metric), "outcome_metric_value": w.outcome_metric_value}
+               for w in view.windows[:LIST_LIMIT]]
+    t = view.thresholds
+    thresholds = {"psi_watch": t.psi_watch, "psi_alert": t.psi_alert, "significance_level": t.significance_level,
+                  "flagged_share_relative_watch": t.flagged_share_relative_watch,
+                  "flagged_share_absolute_watch": t.flagged_share_absolute_watch, "min_rows": t.min_rows,
+                  "min_labels": t.min_labels, "min_per_class": t.min_per_class,
+                  # D5b: the project's floors (null = off) and the thresholds' version (0 = defaults).
+                  "precision_floor": t.precision_floor, "recall_floor": t.recall_floor, "version": t.version}
+    # Scope: outcome metrics are real production labels, neither CV nor holdout. The catalog and the
+    # gateway know only "none" / "cv" (holdout never enters), so they ride under "cv", the scope
+    # below holdout; the tool is MCP-only (never in an in-app AI call). A distinct "production"
+    # scope is a follow-up for the gateway contract.
+    return Shaped({"project_id": view.project_id, "enabled": view.enabled, "status": code(view.status),
+                   "model_version_id": view.model_version_id, "model_version": code(view.model_version),
+                   "model_release_id": view.model_release_id,
+                   "finding": code(view.finding.code if view.finding is not None else None),
+                   "thresholds": thresholds, "windows": windows, "note": MONITORING_NOTE},
+                  data_class="aggregates", outcome_scope="cv", aggregates=("windows",))
 
 
 def _proposal_fetch(reads: Any, a: ProposalInput) -> Any:

@@ -6,18 +6,24 @@ import json
 from dataclasses import replace
 import logging
 import time
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import joblib
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline as SkPipeline
 
-from app.domain.lab_run_stages import CROSS_VALIDATION, EVALUATING, PREDICTING, SPLITTING, TRAINING
+from app.engine.experiments.stages import CROSS_VALIDATION, EVALUATING, PREDICTING, SPLITTING, TRAINING
 from app.engine.data.quality import quality_report
+from app.engine.evaluation.comparability import (
+    FOLD_TOLERANCE,
+    RunEvidence,
+    SelectionMismatchError,
+    evidence_from_records,
+    selection_mismatch,
+)
 from app.engine.evaluation.metrics import (
     LOWER_IS_BETTER,
     aggregate_fold_metrics,
@@ -37,6 +43,20 @@ from app.engine.lab.auto_prepare import (
     split_column_roles,
 )
 from app.engine.models.registry import make_model
+from app.engine.serving.model_package import (
+    PACKAGE_FILENAME,
+    PACKAGE_NOT_SAVED,
+    PACKAGE_UNSAFE_CATEGORY,
+    PARITY_ROWS,
+    PUBLIC_PACKAGE_FAILURES,
+    ModelPackageError,
+    build_package,
+    failure_chain,
+    read_package,
+    sha256_hex,
+    unsafe_category_types,
+    verification_summary,
+)
 from app.engine.search.tuning import tune
 from app.engine.modeling.objective import (
     DEFAULT_THRESHOLD,
@@ -74,7 +94,11 @@ from app.engine.modeling.validation_planner import (
 from app.engine.schema.profiler import profile_frame
 from app.engine.search.generator import DUMMY_FAMILIES, assemble_candidates
 from app.engine.types import Candidate, ExperimentStatus, SearchConfig, TaskSpec, is_classification
-from app.engine.validation.split_assignment import folds_for_pool
+from app.engine.validation.split_assignment import (
+    POOL_ORDER_SOURCE_ROW,
+    canonical_pool_order,
+    folds_for_pool,
+)
 from app.engine.validation.splits import (
     SOURCE_ROW_COLUMN,
     split_holdout_by_assignment,
@@ -518,6 +542,7 @@ def _lock_decision_threshold(
     *,
     primary_metric: str | None = None,
     last_fold_only: bool = False,
+    goal_metric: str | None = None,
 ) -> dict[str, Any]:
     """Choose the winner's decision threshold from its out-of-fold CV scores only.
 
@@ -531,7 +556,8 @@ def _lock_decision_threshold(
     if task_type == "binary":
         scores = np.concatenate(fold_scores) if fold_scores else np.asarray([], dtype=float)
         decision = select_decision_threshold(
-            y_pool[index], scores, objective, cv_metrics=cv_metrics, primary_metric=primary_metric
+            y_pool[index], scores, objective, cv_metrics=cv_metrics, primary_metric=primary_metric,
+            goal_metric=goal_metric,
         )
         decision["oof_folds"] = "last_fold" if last_fold_only else "all_folds"
         all_folds = list(zip(oof[0], oof[1])) if oof else []
@@ -877,6 +903,148 @@ def _winner_feature_importance(
     )
 
 
+def _training_reference(
+    pipeline: Any,
+    pool: pd.DataFrame,
+    task: TaskSpec,
+    oof: tuple[list[np.ndarray], list[np.ndarray]] | None,
+    threshold: float | None,
+    class_labels: list[Any] | None,
+    *,
+    target_original: pd.Series | None = None,
+    target_labels: Mapping[str, Any] | None = None,
+    last_fold_only: bool = False,
+    importance: dict[str, Any] | None = None,
+    time_columns: Sequence[str] = (),
+) -> dict[str, Any] | None:
+    """P7.4-A monitoring reference: distributions of the TRAINING partition (``pool``) and the
+    locked winner's out-of-fold CV scores (time-ordered CV: only the last fold, the rows the
+    threshold was locked on); never a holdout row. Dates (the epoch feature action, and the
+    task's / holdout's / validation's time column when it is a numeric input) are marked so
+    monitoring shows them but never counts them. Binary: the pool's positive rate and the
+    target's label VOCABULARY (which spellings mean 1 and 0; nothing is fitted): from
+    auto-train cleaning (``target_labels``, read from the uploaded column like the 0/1 rule
+    itself), else from the pool rows' values before coercion (``target_original``); a target
+    that was only 0 / 1 records none. Advisory: on failure it is left out and the run goes on."""
+
+    from app.engine.serving.batch_scoring import _pipeline_contract
+    from app.engine.serving.model_package import _date_plan
+    from app.engine.serving.monitoring import build_reference, informative_spellings, target_spellings
+
+    try:
+        features, numeric, categorical, _categories = _pipeline_contract(pipeline)
+        actions = (task.feature_engineering or {}).get("feature_engineering_actions") or []
+        target = None
+        if task.task_type == "binary":
+            coded = pool[task.target]
+            spellings = informative_spellings(target_labels)
+            if spellings is None and target_original is not None and SOURCE_ROW_COLUMN in pool.columns:
+                spellings = informative_spellings(target_spellings(pool[SOURCE_ROW_COLUMN].map(target_original), coded))
+            target = {**(spellings or {"positive": [], "negative": []}),
+                      "positive_rate": round(float(pd.to_numeric(coded, errors="coerce").mean()), 6)}
+        scores = list(oof[1]) if oof else []
+        times = {str(name) for name in (*time_columns, task.prediction_time_column) if name} & set(numeric)
+        return build_reference(
+            pool.loc[:, features], numeric=numeric, categorical=categorical, task_type=task.task_type,
+            oof_scores=scores[-1:] if last_fold_only else scores, threshold=threshold, class_labels=class_labels,
+            date_columns=sorted(set(_date_plan(actions, features)) | times),
+            priority=[str(row.get("column")) for row in (importance or {}).get("features") or []
+                      if isinstance(row, dict)],
+            target=target, folds="last" if last_fold_only else "all",
+        )
+    except Exception as exc:  # noqa: BLE001 - monitoring reference is advisory
+        logger.warning("monitoring reference skipped: %s", failure_chain(exc))
+        return None
+
+
+def _saved_package(
+    pipeline: Any,
+    row: dict[str, Any],
+    task: TaskSpec,
+    pool: pd.DataFrame,
+    selection_metric: str | None,
+    *,
+    classifier: bool,
+    n_classes: int | None,
+    decision_threshold: float | None = None,
+    reference_summary: dict[str, Any] | None = None,
+    verification: dict[str, Any] | None = None,
+) -> bytes:
+    """The fitted winner as a model package (skops + native booster formats, manifest with
+    the feature contract, CV metrics and the locked decision threshold), loaded back with the
+    worker's loader and checked to reproduce the in-memory predictions on training rows.
+    ``verification`` (V7 B4) is filled with the summary of those checks once they pass.
+    Raises ``ModelPackageError`` with one of the plain sentences in ``PUBLIC_PACKAGE_FAILURES``
+    (shown to the user); the cause chain goes to the server log."""
+
+    try:
+        return _verified_package(pipeline, row, task, pool, selection_metric, classifier=classifier,
+                                 n_classes=n_classes, decision_threshold=decision_threshold,
+                                 reference_summary=reference_summary, verification=verification)
+    except (ModelPackageError, TypeError, MemoryError, OSError) as exc:  # serializers, temp files
+        logger.warning("model package for candidate %s refused: %s", row.get("candidate_id"), failure_chain(exc))
+        if isinstance(exc, ModelPackageError) and str(exc) in PUBLIC_PACKAGE_FAILURES:
+            raise
+        raise ModelPackageError(PACKAGE_NOT_SAVED) from exc
+
+
+def _verified_package(
+    pipeline: Any,
+    row: dict[str, Any],
+    task: TaskSpec,
+    pool: pd.DataFrame,
+    selection_metric: str | None,
+    *,
+    classifier: bool,
+    n_classes: int | None,
+    decision_threshold: float | None = None,
+    reference_summary: dict[str, Any] | None = None,
+    verification: dict[str, Any] | None = None,
+) -> bytes:
+    package = build_package(
+        pipeline,
+        family=str(row.get("model_family") or ""),
+        task_type=task.task_type,
+        candidate_id=str(row["candidate_id"]),
+        training_dtypes={str(name): str(dtype) for name, dtype in pool.dtypes.items()},
+        feature_actions=(task.feature_engineering or {}).get("feature_engineering_actions") or [],
+        target=task.target,
+        cv={
+            "metric": selection_metric,
+            "strategy": row.get("cv_strategy"),
+            "folds": row.get("n_folds"),
+            "mean": row.get("cv_mean"),
+            "std": row.get("cv_std"),
+        },
+        decision_threshold=decision_threshold,
+        reference_summary=reference_summary,
+    )
+    from app.engine.serving.batch_scoring import ScoringError
+    from app.engine.serving.package_loader import load_model_package
+
+    contents = read_package(package)  # structure + every member's SHA-256 against the manifest
+    try:
+        loaded = load_model_package(package, manifest_digest=sha256_hex(contents.manifest_bytes))
+    except ScoringError as exc:
+        raise ModelPackageError("the saved model could not be loaded back") from exc
+    # Parity: the first PARITY_ROWS rows of the training partition (deterministic order; never a
+    # test row), scored by the fitted pipeline and by the loaded package. Exact match required:
+    # every family reproduces bit for bit, so the tolerance is zero.
+    sample = pool.loc[:, list(row["features"])].head(PARITY_ROWS)
+    fitted = _predict(pipeline, sample, classifier, n_classes)
+    reloaded = _predict(loaded.pipeline, sample, classifier, n_classes)
+    if not np.array_equal(fitted, reloaded, equal_nan=True):
+        raise ModelPackageError("the saved model does not reproduce the trained model's predictions")
+    if verification is not None:
+        output = ("class_probabilities" if classifier and n_classes
+                  else "positive_class_probability" if classifier else "prediction")
+        gap = np.abs(np.asarray(fitted, dtype=float) - np.asarray(reloaded, dtype=float))
+        verification.update(verification_summary(  # NaN only where both are NaN (equal above)
+            contents.manifest, rows=len(sample), output=output,
+            max_abs_difference=float(np.nanmax(gap)) if gap.size and not np.isnan(gap).all() else 0.0))
+    return package
+
+
 def _fit_and_score_holdout(
     row: dict[str, Any],
     pool: pd.DataFrame,
@@ -889,6 +1057,7 @@ def _fit_and_score_holdout(
     threshold: float = DEFAULT_THRESHOLD,
     selection_metric: str | None = None,
     validation_plan: ValidationPlan | None = None,
+    before_test: Callable[[Any], None] | None = None,
 ) -> tuple[
     Any,
     dict[str, Any],
@@ -899,7 +1068,10 @@ def _fit_and_score_holdout(
     dict[str, Any],
     dict[str, Any],
 ]:
-    """Fit on the full training pool and score train + untouched test. Not used for ranking."""
+    """Fit on the full training pool and score train + untouched test. Not used for ranking.
+
+    ``before_test`` gets the fitted pipeline after the final fit and before any test row is
+    read (P7.1-A: the model package is saved there, so a failure does not spend the look)."""
     cols = list(row["features"])
     X_train = pool.loc[:, cols]
     y_train = pool[task.target].to_numpy()
@@ -969,6 +1141,8 @@ def _fit_and_score_holdout(
         fit_row_count=int(len(X_train)),
         duration_ms=final_fit["duration_ms"],
     )
+    if before_test is not None:
+        before_test(pipeline)
     X_test = test.loc[:, cols]
     y_test = test[task.target].to_numpy()
     if on_stage:
@@ -1040,8 +1214,25 @@ def _run_open_ingest_candidates(
     class_labels: list[Any] | None = None,
     objective: dict[str, Any] | None = None,
     outer_fold_assignment: Mapping[int, int] | None = None,
+    target_original: pd.Series | None = None,
+    target_labels: Mapping[str, Any] | None = None,
+    time_columns: Sequence[str] = (),
+    score_holdout: bool = True,
+    expected_selection: RunEvidence | None = None,
+    threshold_goal: str | None = None,
 ) -> dict[str, Any]:
     """ColumnTransformer + planned K-fold on train only; test is scored after the winner is locked.
+
+    ``expected_selection`` (a pinned final run, ADR 0007 §6.2): the selection must reproduce the
+    probe's evidence at the winner lock, else ``SelectionMismatchError`` before any final-test step.
+
+    ``score_holdout=False`` (a sealed improve try, ADR 0007 §6.1): the run ends after the
+    winner lock, its importance and curve -- no final fit, package, test score or prediction.
+
+    ``target_original``: the binary target as given to the runner, by source row (P7.4-A
+    monitoring reads the pool rows' label spellings from it); ``target_labels``: the uploaded
+    spellings when the target was coded before the runner (auto-train cleaning), preferred;
+    ``time_columns``: the holdout's time column (monitoring shows it as a date, never counts it).
 
     ``outer_fold_assignment`` (source row -> fold) is a stored SplitPlan's fold
     map: when given, the outer folds are taken from it instead of re-derived.
@@ -1052,6 +1243,11 @@ def _run_open_ingest_candidates(
     selection_metric = primary_metric or task.evaluation_metric
     # Val is empty for the 80/20 holdout path; never concatenate test.
     pool = pd.concat([train, val], ignore_index=True) if len(val) else train
+    pool_order: str | None = None
+    if outer_fold_assignment is not None and SOURCE_ROW_COLUMN in pool.columns:
+        # ADR 0007 §5 (D4c): one canonical pool order whichever path partitioned the rows; recorded
+        # so reproduction applies the same helper (and only to runs that fitted it).
+        pool, pool_order = canonical_pool_order(pool), POOL_ORDER_SOURCE_ROW
     y_pool = pool[task.target].to_numpy()
     fold_splits = (
         folds_for_pool(validation_plan, pool, outer_fold_assignment)
@@ -1066,6 +1262,14 @@ def _run_open_ingest_candidates(
     oof_scores: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] = {}
     stage_timings: list[dict[str, Any]] = []
 
+    # P7.1-A: a categorical input whose values the model package cannot store (Decimal,
+    # date or Timestamp objects from Parquet) fails here, before any fit or holdout look.
+    used = {column for candidate in candidates for column in candidate.features}
+    for column in (task.column_roles or {}).get("categorical", []):
+        unsafe = unsafe_category_types(pool[column].dropna().unique()) if column in pool.columns and column in used else []
+        if unsafe:
+            logger.warning("categorical column %r holds %s values; refusing the run", column, ", ".join(unsafe))
+            raise ValueError(PACKAGE_UNSAFE_CATEGORY)
     if on_stage:
         on_stage(CROSS_VALIDATION)
     cv_started = datetime.now(UTC)
@@ -1481,6 +1685,7 @@ def _run_open_ingest_candidates(
             parsed_objective,
             primary_metric=selection_metric,
             last_fold_only=validation_plan.strategy == _TIME_SERIES_SPLIT,
+            goal_metric=threshold_goal,
         )
         if decision_threshold.get("value") is not None:
             threshold = float(decision_threshold["value"])
@@ -1505,6 +1710,14 @@ def _run_open_ingest_candidates(
         )
 
     feature_importance: dict[str, Any] | None = None
+    saved: dict[str, Any] = {}  # the model package bytes and its build-time verification summary
+    if expected_selection is not None:
+        # ADR 0007 §6.2: a pinned re-run aborts here (no checkpoint, no final fit, no look) unless it
+        # reproduced its probe: same winner, candidates, fingerprints, per-fold metrics and trials.
+        mismatch = selection_mismatch(
+            expected_selection, evidence_from_records(records, best_single["candidate_id"] if best_single else None))
+        if mismatch is not None:
+            raise SelectionMismatchError(mismatch)
     # Persist the CV-only selection checkpoint before the holdout is touched.
     if best_single is not None:
         best_single["locked"] = True
@@ -1539,6 +1752,36 @@ def _run_open_ingest_candidates(
         stage_timings.append(
             _timing("feature_importance", importance_started, importance_timer, status=feature_importance["status"])
         )
+
+    final_fit: dict[str, Any] = {}
+    if best_single is not None and score_holdout:  # a sealed try never fits on or touches the test rows
+
+        def _save_package(fitted: Any) -> None:
+            started, timer = datetime.now(UTC), time.perf_counter()
+            binary_threshold = threshold if task.task_type == "binary" else None
+            reference = _training_reference(  # P7.4-A: training rows + out-of-fold scores only
+                fitted, pool, task, oof_scores.get(best_single["candidate_id"]), binary_threshold, class_labels,
+                target_original=target_original, target_labels=target_labels, importance=feature_importance,
+                last_fold_only=validation_plan.strategy == _TIME_SERIES_SPLIT,
+                time_columns=[name for name in (*time_columns, validation_plan.time_column) if name],
+            )
+            verification: dict[str, Any] = {}
+            saved["package"] = _saved_package(
+                fitted, best_single, task, pool, selection_metric, classifier=classifier, n_classes=n_classes,
+                decision_threshold=binary_threshold, reference_summary=reference, verification=verification,
+            )
+            saved["verification"] = verification or None
+            stage_timings.append(_timing("model_packaging", started, timer))
+            _emit_event(  # also a heartbeat: packaging a large model can take a while
+                on_event,
+                "model_package_saved",
+                stage="model_packaging",
+                status="completed",
+                candidate_id=best_single.get("candidate_id"),
+                size_bytes=len(saved["package"]),
+                duration_ms=stage_timings[-1]["duration_ms"],
+            )
+
         (
             winner_pipeline,
             train_metrics,
@@ -1560,6 +1803,7 @@ def _run_open_ingest_candidates(
             threshold=threshold,
             selection_metric=selection_metric,
             validation_plan=validation_plan,
+            before_test=_save_package,
         )
         stage_timings.extend([final_fit, {key: value for key, value in final_test_evaluation.items() if key != "metrics"}])
         if decision_threshold is not None:
@@ -1593,18 +1837,9 @@ def _run_open_ingest_candidates(
         )
         artifact_started = datetime.now(UTC)
         artifact_timer = time.perf_counter()
-        joblib.dump(winner_pipeline, members_dir / f"{best_single['candidate_id']}.joblib")
-        joblib.dump(
-            {
-                "fusion": None,
-                "members": selected_ids,
-                "weights": {},
-                "task_id": task.id,
-                # Scoring a positive needs probability >= decision_threshold (binary).
-                "decision_threshold": (decision_threshold or {}).get("value"),
-            },
-            artifact_dir / "model.joblib",
-        )
+        # P7.1-A: the model package built before the final test (no pickle is written; the
+        # decision threshold and selected ids live in the result).
+        (artifact_dir / PACKAGE_FILENAME).write_bytes(saved["package"])
         pd.DataFrame(test_predictions).to_csv(artifact_dir / "test_predictions.csv", index=False)
         stage_timings.append(_timing("artifact_persistence", artifact_started, artifact_timer))
         _emit_event(
@@ -1613,7 +1848,7 @@ def _run_open_ingest_candidates(
             stage="artifact_persistence",
             status="completed",
             candidate_id=best_single.get("candidate_id"),
-            artifact_names=["model.joblib", "test_predictions.csv"],
+            artifact_names=[PACKAGE_FILENAME, "test_predictions.csv"],
             duration_ms=stage_timings[-1]["duration_ms"],
         )
 
@@ -1627,13 +1862,15 @@ def _run_open_ingest_candidates(
         "selected_ids": selected_ids,
         "selection": selection,
         "final_test_evaluation": final_test_evaluation,
-        "final_fit": final_fit if best_single is not None else {},
+        "final_fit": final_fit,
         "stage_timings": stage_timings,
         "baseline_comparison": baseline_comparison,
         "decision_threshold": decision_threshold,
         "feature_importance": feature_importance,
         "oof_evidence": oof_summary,
         "operating_curve": operating_curve,
+        "package_verification": saved.get("verification"),
+        "pool_order": pool_order,
     }
 
 
@@ -1652,6 +1889,10 @@ def _run_open_ingest_experiment(
     on_event: RunEventCallback | None,
     outer_fold_assignment: Mapping[int, int] | None = None,
     holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
+    target_labels: Mapping[str, Any] | None = None,
+    score_holdout: bool = True,
+    expected_selection: RunEvidence | None = None,
+    threshold_goal: str | None = None,
 ) -> dict[str, Any]:
     """Leakage-safe open-ingest experiment with an early locked holdout."""
     profile = profile_frame(frame)
@@ -1662,7 +1903,10 @@ def _run_open_ingest_experiment(
     if task.target not in work.columns:
         raise ValueError(f"Frame is missing target {task.target!r}")
     class_labels: list[Any] | None = None
+    target_original: pd.Series | None = None
     if task.task_type == "binary":
+        # P7.4-A: the uploaded spellings by source row; monitoring reads them for pool rows only.
+        target_original = pd.Series(work[task.target].to_numpy(), index=work[SOURCE_ROW_COLUMN].to_numpy())
         work[task.target] = coerce_binary_target(work[task.target])
         work = work.dropna(subset=[task.target])
         work[task.target] = work[task.target].astype(int)
@@ -1784,8 +2028,16 @@ def _run_open_ingest_experiment(
         class_labels=class_labels,
         objective=config.objective,
         outer_fold_assignment=outer_fold_assignment,
+        target_original=target_original,
+        target_labels=target_labels,
+        time_columns=[name for name in (holdout_plan.time_column,) if name],
+        score_holdout=score_holdout,
+        expected_selection=expected_selection,
+        threshold_goal=threshold_goal,
     )
     funnel.update(outcome["funnel"])
+    if outcome.get("pool_order"):
+        split_meta["pool_order"] = outcome["pool_order"]
     records = outcome["records"]
     best_single = outcome["best_single"]
     feature_report = dict(task.feature_engineering or {})
@@ -1887,7 +2139,14 @@ def _run_open_ingest_experiment(
         "oof_evidence": outcome.get("oof_evidence"),
         # P5.2-A: the winner's out-of-fold operating curve (aggregate counts; no rows, no scores).
         "operating_curve": outcome.get("operating_curve"),
+        # V7 B4: what the worker checked on the model package before the final test (training rows only).
+        "package_verification": outcome.get("package_verification"),
     }
+    if not score_holdout:  # ADR 0007 §6.1: the final test rows stay sealed for this improve try
+        result["holdout"] = {"scored": False, "reason": "improve_probe", "rows": split_meta.get("n_test")}
+    if expected_selection is not None:  # ADR 0007 §6.2: reached only when the pinned selection reproduced
+        result["pinned_selection"] = {"reproduced": True, "candidate_id": expected_selection.winner,
+                                      "tolerance": FOLD_TOLERANCE}
     result = _json_safe(result)
     (artifact_dir / "result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")
     from app.engine.reporting.report import render_markdown
@@ -1911,8 +2170,18 @@ def run_experiment(
     model_development_plan: Any = None,
     outer_fold_assignment: Mapping[int, int] | None = None,
     holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
+    target_labels: Mapping[str, Any] | None = None,
+    score_holdout: bool = True,
+    expected_selection: RunEvidence | None = None,
+    threshold_goal: str | None = None,
 ) -> dict[str, Any]:
     """Train, filter, select, and report. Returns a JSON-serializable result dict.
+
+    ``score_holdout`` is service-only (never a SearchConfig field): ``execute_experiment``
+    derives it from the run's insert-only ``evidence_mode`` (ADR 0007 §6.1).
+
+    ``target_labels`` (binary): the uploaded spellings of 1 and 0 when the frame's target was
+    coded before (auto-train cleaning); recorded in the monitoring reference only.
 
     ``holdout_partition`` (holdout rows, train rows) and ``outer_fold_assignment``
     come from a stored SplitPlan (ADR 0006 §3); the run then applies them
@@ -1948,6 +2217,10 @@ def run_experiment(
         on_event=on_event,
         outer_fold_assignment=outer_fold_assignment,
         holdout_partition=holdout_partition,
+        target_labels=target_labels,
+        score_holdout=score_holdout,
+        expected_selection=expected_selection,
+        threshold_goal=threshold_goal,
     )
 
 

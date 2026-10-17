@@ -30,6 +30,7 @@ import { changeSentences, familyLabel, selectionScore, statusWords } from "@/lib
 import { useProjectExperiments } from "@/lib/application";
 import { designLabels, dataVersionName, modelName, runOrdinals } from "@/lib/application/studio-names";
 import { modelSentence, runRef, usedAsWords } from "@/lib/application/studio-model";
+import { approvalLine } from "@/lib/application/studio-releases";
 import { useDatasetProfile, useDatasetVersion, useExperimentFindings, useProjectGraph, type StudioGraph, type StudioGraphNode } from "@/lib/application/studio-data-hooks";
 import {
   candidateRows, featureReason, featureRows, foldRows, foldSizes, formatNumber, experimentUsing, inspectorPath, investigationView, metricNames,
@@ -40,6 +41,7 @@ import {
   type StudioExperimentCode, type StudioExperimentDetail,
 } from "@/lib/application/studio-inspect-hooks";
 import { kindLabel, shortId } from "@/lib/application/studio-graph";
+import { readErrorSentence } from "@/lib/application/api-error-text";
 
 const TERMS = {
   cv: "Cross-validation (CV): the training rows are split into folds; each fold is held out once while the model trains on the others. Models are compared on these CV scores only.",
@@ -97,7 +99,7 @@ function CodeActions({ filename, source, label }: { filename: string; source: st
 
 function CodeTab({ code, error, pending }: { code?: StudioExperimentCode; error: unknown; pending: boolean }) {
   if (pending) return <p role="status">Loading the code…</p>;
-  if (!code) return <Banner tone="warn">Code to reproduce this run is not available{error instanceof Error ? ` (${error.message})` : ""}. Runs from before the code generator, or runs that are still going, have none.</Banner>;
+  if (!code) return <Banner tone="warn">Code to reproduce this run is not available{error ? ` (${readErrorSentence(error, "code").replace(/\.$/, "")})` : ""}. Runs from before the code generator, or runs that are still going, have none.</Banner>;
   return (
     <>
       <p className="muted">
@@ -507,6 +509,7 @@ export function ModelInspector({ projectId, modelVersionId }: { projectId: strin
         <KeyValue items={[
           { key: "ver", label: "Model", value: `${modelName(plainText(m.version, 40))} · ${m.algorithm ? plainText(familyLabel(m.family || m.algorithm) ?? m.algorithm, 60) : "kind not recorded"}` },
           { key: "refs", label: "Used as", value: usedAsWords(m.ref_kinds, m.is_champion) },
+          { key: "approved", label: "Approved for scoring", value: approvalLine(m.release, m.is_champion, formatWhen) },
           { key: "created", label: "Trained", value: formatWhen(m.created_at) },
           { key: "metric", label: "Score used to choose it", value: scoreName && score !== null ? <>{scoreName} = {formatNumber(score)} <span className="muted">(cross-validation)</span></> : "Not recorded" },
         ]} />

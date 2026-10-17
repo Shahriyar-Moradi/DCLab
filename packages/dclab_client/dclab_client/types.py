@@ -113,6 +113,14 @@ class DatasetPolicy(BaseModel):
     workspace_ai_max_class: str | None = None
 
 
+class Creator(BaseModel):
+    """Who made a node, without ids or names: ``person`` (``is_you`` when it is the reader),
+    ``connected_tool`` (a service token), ``agent``, ``rule`` or ``unknown``. ``is_you`` is never true for tokens."""
+
+    kind: str
+    is_you: bool = False
+
+
 class Dataset(BaseModel):
     id: UUID
     workspace_id: UUID
@@ -124,6 +132,10 @@ class Dataset(BaseModel):
     row_count: int
     column_count: int
     purpose: str = "training"
+    # connected_tool = uploaded with a service token; person = not (own session / own API token). The
+    # default only keeps the SDK reading servers from before upload attribution (0082).
+    uploaded_by: str = "person"
+    uploader: Creator | None = None  # None only for servers before V7 BE-C
     created_at: datetime
 
 
@@ -166,6 +178,12 @@ class DatasetProfileColumn(BaseModel):
     leakage_reason: str | None = None
 
 
+class DatasetProfileTimeRange(BaseModel):
+    column: str
+    start: datetime
+    end: datetime
+
+
 class DatasetProfile(BaseModel):
     """``GET /v1/datasets/{id}/profile``: statistics over the current split plan's training rows only
     (``scope == "training_rows"``); ``scope == "upload"`` carries names and types without statistics."""
@@ -178,6 +196,13 @@ class DatasetProfile(BaseModel):
     experiment: DatasetProfileExperiment | None = None
     importance_method: str | None = None
     columns: list[DatasetProfileColumn]
+    # Training rows only (never a final-test row); null in ``upload`` scope or when not determinable.
+    entity_column: str | None = None
+    entity_count: int | None = None
+    time_range: DatasetProfileTimeRange | None = None
+    target_rate: float | None = None
+    # D3a: whole-file checks run once at upload (null for older files): {scope, ran_at, row_count, checks}.
+    upload_checks: dict[str, Any] | None = None
 
 
 class ProblemSpec(_Versioned):
@@ -199,6 +224,65 @@ class ProblemSpec(_Versioned):
     created_by: UUID
     created_at: datetime
     locked_at: datetime | None = None
+
+
+class ProblemSpecDetail(BaseModel):
+    """``GET /v1/projects/{id}/problem-specs[/{spec_id}]``: one goal version, without user ids."""
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    version: int
+    task_type: str
+    target_column: str | None = None
+    prediction_unit: str | None = None
+    prediction_time_column: str | None = None
+    prediction_horizon: str | None = None
+    primary_metric: str | None = None
+    business_objective: str
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    success_criteria: dict[str, Any] = Field(default_factory=dict)
+    status: str
+    content_digest: str
+    is_current: bool = False
+    creator: Creator
+    created_at: datetime
+    locked_at: datetime | None = None
+
+
+class SplitPlanFold(BaseModel):
+    fold_number: int
+    train_row_count: int
+    validation_row_count: int
+
+
+class SplitPlan(BaseModel):
+    """``GET /v1/split-plans/{id}``: the test design. The final test set is a row count only."""
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    dataset_id: UUID
+    version: int
+    task_type: str
+    target_column: str
+    evaluation_strategy: str
+    validation_strategy: str
+    validation_folds: int
+    stratified: bool
+    time_column: str | None = None
+    group_column: str | None = None
+    row_count: int
+    train_row_count: int
+    evaluation_row_count: int
+    has_evaluation_set: bool
+    folds_status: str
+    folds: list[SplitPlanFold] = Field(default_factory=list)
+    warmup_row_count: int | None = None  # time-ordered folds only
+    reason: str | None = None  # null for service tokens
+    creator: Creator
+    created_at: datetime
+    locked_at: datetime
 
 
 class DatasetIngestion(BaseModel):
@@ -226,6 +310,7 @@ class DatasetUpload(_Versioned):
     row_count: int
     column_count: int
     purpose: str = "training"
+    uploaded_by: str = "person"  # connected_tool = service token; default for servers before 0082
     created_at: datetime
     ingestion: DatasetIngestion
 
@@ -409,6 +494,8 @@ class ProjectGraph(BaseModel):
     truncated: bool
     truncated_kinds: list[str] = Field(default_factory=list)
     next_cursor: str | None = None
+    # A training file newer than the `dataset` ref target exists (no ref moved, nothing stale).
+    newer_dataset: dict[str, Any] | None = None
 
 
 class NodeImpact(BaseModel):
@@ -574,7 +661,7 @@ class ActivitySubject(BaseModel):
 
 
 class ActivityLink(BaseModel):
-    kind: str  # decision_record | experiment | agent_run
+    kind: str  # decision_record | experiment | agent_run | dataset_version | monitoring_window | scoring_schedule_run
     id: UUID
 
 
@@ -590,7 +677,10 @@ class ActivityItem(BaseModel):
     summary: str
     status: str | None = None
     decision_type: str | None = None
+    summary_code: str | None = None  # drift_alert: below_floor | inputs_moved | scores_moved | inputs_and_scores_moved
     link: ActivityLink
+    # `run_finished` with locked evidence: model_family, algorithm, metric, cv_score (CV only).
+    run_result: dict[str, Any] | None = None
 
 
 class ActivityPage(BaseModel):
@@ -618,7 +708,7 @@ class InboxItem(BaseModel):
     """One ``GET /v1/inbox`` item. ``rule_answer`` / ``ai_answer`` are untrusted data (``None`` for tokens)."""
 
     id: str
-    kind: str  # decision_proposal | agent_proposal | question | run_finished
+    kind: str  # decision_proposal | agent_proposal | question | run_finished | drift_alert
     tab: str
     occurred_at: datetime
     project_id: UUID | None = None
@@ -639,6 +729,9 @@ class InboxItem(BaseModel):
     evidence_refs: list[InboxRef] = Field(default_factory=list)
     actions: list[InboxAction] = Field(default_factory=list)
     can_act: bool
+    agreement: str | None = None  # Jev items: agree | disagree | abstain | unavailable
+    resolved_by: dict[str, Any] | None = None  # done items: {"kind": person | rule | agent, "is_you": bool}
+    monitoring: dict[str, Any] | None = None  # drift_alert: window_start, model_version_id, max_psi, summary_code, ...
 
 
 class InboxViewer(BaseModel):
@@ -759,7 +852,7 @@ class Spend(BaseModel):
     per_run_limits_micros: dict[str, int] = Field(default_factory=dict)
 
 
-class GovernanceIncident(BaseModel):
+class GovernanceIncident(_Versioned):
     id: UUID
     kind: str
     subject_kind: str
@@ -768,6 +861,9 @@ class GovernanceIncident(BaseModel):
     status: str
     opened_at: datetime
     evidence: dict[str, Any] = Field(default_factory=dict)
+    resolved_at: datetime | None = None
+    resolved_by: str | None = None
+    resolution: str | None = None  # plain text
 
 
 class PolicyFieldChange(BaseModel):
@@ -826,6 +922,11 @@ class Governance(BaseModel):
     open_incidents: list[GovernanceIncident] = Field(default_factory=list)
     policy_changes: list[PolicyChange] = Field(default_factory=list)
     recent_changes: list[RecentChange] = Field(default_factory=list)
+    assistant_beta: bool = False
+    model_in_use: dict[str, Any] | None = None
+    month_spend: dict[str, Any] | None = None
+    incidents: list[GovernanceIncident] = Field(default_factory=list)
+    provider_notice: str = ""
 
 
 class ReplayTool(BaseModel):
@@ -1025,6 +1126,104 @@ class OperatingPointChoice(_Versioned):
     scoring: OperatingScoring
 
 
+class VerdictFold(BaseModel):
+    fold_number: int
+    experiment: float
+    against: float
+    difference: float
+
+
+class SplitPlanLooks(BaseModel):
+    """Experiments on the split plan counted (conservatively) as a look at its final test set."""
+
+    split_plan_id: UUID | None = None
+    looks_on_plan: int
+    experiment_look: int | None = None
+    against_look: int | None = None
+    counting: str | None = None
+
+
+class GoalConstraint(BaseModel):
+    metric: str
+    op: str
+    value: float
+
+
+class GoalFold(BaseModel):
+    fold: int
+    experiment: float
+    against: float
+    difference: float
+
+
+class GoalVerdict(BaseModel):
+    """The verdict on the goal (P5.4-A1b): ``plain`` (the ranking metric) or ``objective`` (an
+    operating-point choice's goal, each run per fold at its own threshold; CV only)."""
+
+    kind: str
+    source: str
+    choice_decision_id: UUID | None = None
+    metric: str
+    constraints: list[GoalConstraint] = Field(default_factory=list)
+    scored_by: str = "goal_metric"
+    verdict: str
+    reason: str | None = None
+    message: str
+    direction: str | None = None
+    folds: int | None = None
+    mean_difference: float | None = None
+    margin: float | None = None
+    minimum_effect: float | None = None
+    minimum_effect_basis: str | None = None
+    standard_error: float | None = None
+    t_quantile: float | None = None
+    comparisons: int = 1
+    experiment_threshold: float | None = None
+    against_threshold: float | None = None
+    experiment_meets_rule: bool | None = None
+    against_meets_rule: bool | None = None
+    experiment_curve_digest: str | None = None
+    against_curve_digest: str | None = None
+    fold_scores: list[GoalFold] = Field(default_factory=list)
+    outcome_scope: str = "cv"
+    basis: str = "locked_cv_fold_evaluations"
+
+
+class ExperimentVerdict(BaseModel):
+    """Does an experiment beat another on the same folds beyond noise (P5.5-B-read)? From the locked
+    per-fold CV scores (``outcome_scope`` ``cv``); differences in the metric's own units;
+    ``verdict`` beats_the_noise | within_the_noise | worse | not_comparable; ``comparisons`` (T) =
+    max(1, ``new_candidates``)."""
+
+    experiment_id: UUID
+    against_experiment_id: UUID | None = None
+    against_is_parent: bool = False
+    split_plan_id: UUID | None = None
+    verdict: str
+    reason: str | None = None
+    message: str
+    metric: str | None = None
+    direction: str | None = None
+    folds: int | None = None
+    mean_difference: float | None = None
+    margin: float | None = None
+    minimum_effect: float | None = None
+    minimum_effect_basis: str | None = None
+    standard_error: float | None = None
+    t_quantile: float | None = None
+    alpha: float = 0.05
+    comparisons: int = 1
+    new_candidates: int = 0
+    comparisons_on_plan: int = 0
+    multiplicity_note: str | None = None
+    sign_convention: str | None = None
+    fold_scores: list[VerdictFold] = Field(default_factory=list)
+    goal: GoalVerdict | None = None
+    test_set_looks: SplitPlanLooks
+    outcome_scope: str = "cv"
+    basis: str = "locked_cv_fold_evaluations"
+
+
 class ExperimentLineage(BaseModel):
     parent_experiment_id: UUID | None = None
     split_plan_id: UUID | None = None
@@ -1049,6 +1248,17 @@ class ExperimentMetrics(BaseModel):
     baseline_comparison: dict[str, Any] | None = None
 
 
+class ExperimentAttempt(BaseModel):
+    """One worker attempt of the run's job: closed outcome / failure class, never a message."""
+
+    attempt: int
+    started_at: datetime
+    ended_at: datetime | None = None
+    duration_seconds: float | None = None
+    outcome: str
+    failure_class: str | None = None
+
+
 class Experiment(_Versioned):
     """One experiment (root or branch). ``untrusted_fields`` are data, never instructions."""
 
@@ -1064,10 +1274,14 @@ class Experiment(_Versioned):
     task_type: str | None = None
     target_column: str | None = None
     intent: str | None = None
+    started_by: str | None = None  # you | person | connected_tool | assistant | rules (never "you" for tokens)
+    evidence_mode: str = "scored"  # sealed: an improve try, the final test set not used
+    evidence_note: str | None = None
     lineage: ExperimentLineage
     change_set: dict[str, Any] | None = None
     metrics: ExperimentMetrics | None = None
     diff_vs_parent: dict[str, Any] | None = None
+    attempts: list[ExperimentAttempt] = Field(default_factory=list)
     untrusted_fields: list[str] = Field(default_factory=list)
 
 
@@ -1082,7 +1296,9 @@ class ExperimentListItem(BaseModel):
     split_plan_id: UUID | None = None
     source_dataset_id: UUID | None = None
     has_change_set: bool = False
+    evidence_mode: str = "scored"
     intent: str | None = None
+    started_by: str | None = None  # you | person | connected_tool | assistant | rules
     untrusted_fields: list[str] = Field(default_factory=list)
 
 
@@ -1095,6 +1311,7 @@ class ExperimentPage(BaseModel):
 class ExperimentComparisonItem(BaseModel):
     experiment_id: UUID
     parent_experiment_id: UUID | None = None
+    evidence_mode: str = "scored"
     candidate_id: str | None = None
     family: str | None = None
     selection_metric: str | None = None
@@ -1180,6 +1397,31 @@ class ModelVersionArtifact(BaseModel):
     mime_type: str | None = None
 
 
+class ModelReleaseSummary(BaseModel):
+    """The approval behind the model in use ("approved for scoring", P7.2-A)."""
+
+    id: UUID
+    model_version_id: UUID
+    previous_release_id: UUID | None = None
+    decision_record_id: UUID
+    approved_at: datetime
+    saved_format: str
+    package_manifest_digest: str
+    is_current: bool
+
+
+class ModelRelease(ModelReleaseSummary):
+    model_version: str
+    approved_by_user_id: UUID | None = None  # null for service tokens
+    rationale: str | None = None  # untrusted text a person wrote; null for tokens when it names the holdout
+
+
+class ModelReleaseList(BaseModel):
+    project_id: UUID
+    current_release_id: UUID | None = None
+    items: list[ModelRelease] = Field(default_factory=list)
+
+
 class ModelVersion(_Versioned):
     id: UUID
     workspace_id: UUID
@@ -1196,6 +1438,9 @@ class ModelVersion(_Versioned):
     is_champion: bool
     ref_kinds: list[str] = Field(default_factory=list)
     artifacts: list[ModelVersionArtifact] = Field(default_factory=list)
+    release: ModelReleaseSummary | None = None
+    # V7 B4: the worker's stored build-time checks on the saved model file (opens, digests, parity).
+    package_verification: dict[str, Any] | None = None
 
 
 class ModelCardMetricInWords(BaseModel):
@@ -1324,6 +1569,7 @@ class BatchPrediction(_Versioned):
     project_id: UUID | None = None
     model_version_id: UUID
     model_release_id: UUID | None = None
+    release: ModelReleaseSummary | None = None
     input_dataset_id: UUID
     execution_request_id: UUID | None = None
     status: str
@@ -1333,12 +1579,486 @@ class BatchPrediction(_Versioned):
     decision_threshold: float | None = None
     contract_check: dict[str, Any] | None = None
     output: BatchPredictionOutput | None = None
+    # P7.7-A: how the file's reason_1..reason_3 columns were made (which inputs moved the
+    # model's score; not causes in the world), or why there are none.
+    reasons: dict[str, Any] | None = None
     error_code: str | None = None
     error_message: str | None = None
     created_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    scheduled: bool = False  # queued by the project's weekly schedule (False: scored by hand)
+    scheduled_for: datetime | None = None
+    # V7 B5: binary only: rows flagged at the locked threshold (count, rows, share, decision_threshold).
+    flagged: dict[str, Any] | None = None
 
     @property
     def is_terminal(self) -> bool:
         return self.status in {"completed", "failed"}
+
+
+class ScoringScheduleRun(BaseModel):
+    """One handled week of the weekly scoring schedule: queued (with its prediction) or why not."""
+
+    id: UUID
+    planned_for: datetime
+    outcome: str
+    message: str
+    reason_code: str | None = None
+    batch_prediction_id: UUID | None = None
+    model_version_id: UUID | None = None
+    model_release_id: UUID | None = None
+    input_dataset_id: UUID | None = None
+    created_at: datetime
+
+
+class ScoringSchedule(BaseModel):
+    """A project's weekly scoring schedule (weekday 0 = Monday ... 6 = Sunday, hour in UTC)."""
+
+    id: UUID
+    weekday: int
+    weekday_name: str
+    hour_utc: int
+    timezone: str = "UTC"
+    enabled: bool
+    next_planned_for: datetime | None = None
+    last_planned_for: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    created_by_user_id: UUID | None = None  # null for service tokens
+    updated_by_user_id: UUID | None = None
+    owner_can_score: bool
+    warning: str | None = None
+    ignored_token_uploads: int = 0  # scoring files uploaded with a service token (not scored); 0 before 0082
+
+
+class ScoringScheduleState(_Versioned):
+    """``status``: off, on or paused_by_platform."""
+
+    project_id: UUID
+    schedule: ScoringSchedule | None = None
+    status: str
+    status_message: str | None = None
+    about: str = ""
+    recent_runs: list[ScoringScheduleRun] = Field(default_factory=list)
+
+
+class RetrainPolicy(_Versioned):
+    """D5a: ``policy`` off (default), ask or auto; ``etag`` (the version) is ``set_policy``'s If-Match."""
+
+    project_id: UUID
+    policy: str
+    version: int
+    updated_at: datetime | None = None
+    updated_by_user_id: UUID | None = None  # never shown to service tokens
+    owner_can_start: bool | None = None
+
+
+class RetrainStatus(BaseModel):
+    """D5a: ``state`` idle, drift_found, retraining, ready_to_compare, waiting_for_you, switched or kept.
+    ``comparison`` (same kind of test, latest months) is never given to service tokens."""
+
+    project_id: UUID
+    policy: str
+    state: str
+    model_in_use_id: UUID | None = None
+    latest_window_start: datetime | None = None
+    latest_window_status: str | None = None
+    newer_dataset_id: UUID | None = None
+    request: dict[str, Any] | None = None
+    comparison: dict[str, Any] | None = None
+    comparison_withheld: bool = False
+    real_outcomes: dict[str, Any] | None = None
+    proposal_id: UUID | None = None
+    proposal_state: str | None = None
+    can_start: bool = False  # the server's rule: this caller may retrain now (always false for tokens)
+    notes: list[str] = Field(default_factory=list)
+
+
+class ScoringScheduleRunPage(BaseModel):
+    project_id: UUID
+    items: list[ScoringScheduleRun] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
+class MonitoringThresholds(BaseModel):
+    """Monitoring thresholds in force: the project's PSI watch / alert and precision / recall floors
+    (D5b; ``version`` 0 = the defaults), the significance level a shift must also pass, the
+    flagged-share change that counts as a watch, and the minimum rows / labelled rows / rows per class."""
+
+    psi_watch: float
+    psi_alert: float
+    significance_level: float
+    flagged_share_relative_watch: float
+    flagged_share_absolute_watch: float
+    min_rows: int
+    min_labels: int
+    min_per_class: int
+    precision_floor: float | None = None
+    recall_floor: float | None = None
+    version: int = 0
+    changed_at: datetime | None = None
+    changed_by_user_id: UUID | None = None  # never shown to service tokens
+
+
+class MonitoringThresholdSettings(_Versioned):
+    """D5b: a project's editable thresholds; ``etag`` (the version) is ``set_thresholds``' If-Match."""
+
+    project_id: UUID
+    version: int
+    psi_watch: float
+    psi_alert: float
+    precision_floor: float | None = None
+    recall_floor: float | None = None
+    defaults: dict[str, Any] = Field(default_factory=dict)
+    bounds: dict[str, float] = Field(default_factory=dict)
+    changed_at: datetime | None = None
+    changed_by_user_id: UUID | None = None  # never shown to service tokens
+    can_edit: bool = False
+
+
+class MonitoringFinding(BaseModel):
+    """The one deterministic finding of an ``alert`` week (no proposal, no retrain)."""
+
+    code: str
+    severity: str = "alert"
+    title: str
+    body: str
+
+
+class MonitoringWindowSummary(BaseModel):
+    """One weekly window (Monday 00:00 UTC) of a model version, highest revision. ``status``:
+    ok, watch, alert or not_enough_data; outcome fields are null until real outcomes are linked."""
+
+    window_start: datetime
+    window_end: datetime
+    revision: int
+    model_version_id: UUID
+    model_release_id: UUID | None = None
+    status: str
+    summary_code: str
+    summary: str
+    n_rows: int
+    n_batch_predictions: int
+    max_psi: float | None = None
+    prediction_psi: float | None = None
+    outcomes_status: str
+    n_labelled: int | None = None
+    coverage: float | None = None
+    outcome_metric: str | None = None
+    outcome_metric_value: float | None = None
+    computed_at: datetime
+
+
+class MonitoringWindow(MonitoringWindowSummary):
+    """A window in detail: PSI per feature (top 20) with a plain sentence each, score drift and
+    outcomes. Drift means the inputs look different from training, not that the model is wrong."""
+
+    input_drift: dict[str, Any] = Field(default_factory=dict)
+    feature_sentences: list[str] = Field(default_factory=list)
+    prediction_drift: dict[str, Any] = Field(default_factory=dict)
+    outcomes: dict[str, Any] = Field(default_factory=dict)
+    outcome_sentences: list[str] = Field(default_factory=list)
+    finding: MonitoringFinding | None = None
+    thresholds: MonitoringThresholds
+    notes: list[str] = Field(default_factory=list)
+
+
+class MonitoringOverview(BaseModel):
+    """The model in use: latest status and the last 12 windows, newest first. ``status`` also
+    ``no_windows`` / ``no_model_in_use``."""
+
+    project_id: UUID
+    enabled: bool
+    model_version_id: UUID | None = None
+    model_version: str | None = None
+    model_release_id: UUID | None = None
+    status: str
+    latest: MonitoringWindowSummary | None = None
+    windows: list[MonitoringWindowSummary] = Field(default_factory=list)
+    finding: MonitoringFinding | None = None
+    thresholds: MonitoringThresholds
+    notes: list[str] = Field(default_factory=list)
+
+
+class OutcomeSet(_Versioned):
+    """A linked file of real outcomes (key and outcome columns are the user's column names)."""
+
+    id: UUID
+    project_id: UUID
+    dataset_id: UUID
+    dataset_name: str | None = None
+    key_column: str
+    outcome_column: str
+    linked_at: datetime
+    linked_by_user_id: UUID | None = None  # null for service tokens
+
+
+class OutcomeSetList(BaseModel):
+    project_id: UUID
+    items: list[OutcomeSet] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class BusinessOutcomesModel(BaseModel):
+    display_name: str  # untrusted: built from the project name
+    saved_at: datetime
+    approved_at: datetime | None = None  # null when no person approved it for scoring
+    approval_text: str
+
+
+class BusinessOutcomesNumbers(BaseModel):
+    """The final test of the model in use (fractions; errors in natural units)."""
+
+    rows_tested: int | None = None
+    recall: float | None = None
+    precision: float | None = None
+    decision_threshold: float | None = None
+    positives: int | None = None
+    found: int | None = None
+    flagged: int | None = None
+    balanced_accuracy: float | None = None
+    class_count: int | None = None
+    typical_error: float | None = None
+    large_miss_error: float | None = None
+    worse_than_average: bool | None = None
+
+
+class BusinessOutcomesHeadline(BaseModel):
+    status: str  # reported | withheld (service tokens) | missing
+    task: str | None = None
+    sentences: list[str] = Field(default_factory=list)
+    counts_text: str | None = None
+    basis: str
+    numbers: BusinessOutcomesNumbers | None = None
+
+
+class BusinessOutcomesHowBuilt(BaseModel):
+    sentences: list[str] = Field(default_factory=list)
+    rows: int | None = None
+    learned_rows: int | None = None
+    tested_rows: int | None = None
+    target: str | None = None
+    method: str | None = None
+    test_design: str | None = None
+
+
+class BusinessOutcomesList(BaseModel):
+    id: UUID  # the scoring to download with predictions.download
+    completed_at: datetime
+    rows: int
+    has_reasons: bool
+    text: str
+    download_path: str
+
+
+class BusinessOutcomesProject(BaseModel):
+    id: UUID
+    name: str  # untrusted
+
+
+class BusinessOutcomesProjectList(BaseModel):
+    items: list[BusinessOutcomesProject] = Field(default_factory=list)
+
+
+class BusinessOutcomes(BaseModel):
+    """The Business view of a project (P7.6-A): plain sentences built by the server."""
+
+    project_name: str
+    state: str  # ready | no_model | no_result
+    message: str | None = None
+    model_in_use: BusinessOutcomesModel | None = None
+    headline: BusinessOutcomesHeadline | None = None
+    how_built: BusinessOutcomesHowBuilt | None = None
+    weekly_list: BusinessOutcomesList | None = None
+    weekly_list_note: str | None = None
+    limits: list[str] = Field(default_factory=list)
+    boundary: str
+    untrusted_fields: list[str] = Field(default_factory=list)
+
+
+class ProjectModelVersionPage(BaseModel):
+    """V7 B2: a project's model versions, newest first, with CV metrics only and where each stands
+    (``in_use`` / ``waiting_for_approval`` / ``approved_earlier`` / ``not_in_use``)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    project_id: UUID
+    model_in_use_id: UUID | None = None
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    next_cursor: str | None = None
+    limit: int
+
+
+class FeatureContract(BaseModel):
+    """V7 B3: the columns a scoring file must have: names and types only. Column names are
+    untrusted user data."""
+
+    model_config = ConfigDict(extra="allow")
+
+    model_version_id: UUID
+    status: str  # available | names_only
+    column_count: int
+    columns: list[dict[str, Any]] = Field(default_factory=list)
+    target_column: str | None = None
+    manifest_digest: str
+
+
+class PredictionRowsPage(BaseModel):
+    """V7 B6: one capped page of a predictions file (the file's own columns; entity values, labels
+    and reasons are untrusted user data, and reasons say what the model used, not causes)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    prediction_id: UUID
+    task_type: str
+    order: str
+    entity_column: str | None = None
+    rows_total: int
+    rows_reachable: int
+    limit: int
+    next_cursor: str | None = None
+    items: list[dict[str, Any]] = Field(default_factory=list)
+
+
+
+class TargetPeriodBucket(BaseModel):
+    month: str
+    part: str  # training | final_test (final_test only after the final test, never for service tokens)
+    rows: int
+    rate: float
+
+
+class TargetPeriodFinalTest(BaseModel):
+    layout: str
+    start_month: str | None = None
+    end_month: str | None = None
+    row_count: int
+    sealed: bool
+    sealed_reason: str | None = None
+    rate: float | None = None
+    disclosed_after_final_test: bool
+
+
+class TargetByPeriod(BaseModel):
+    """``GET /v1/datasets/{id}/target-by-period`` (D3a): training-row monthly target rate; the final
+    test is a sealed span until it was run for the model in use (always sealed for service tokens)."""
+
+    dataset_id: UUID
+    project_id: UUID | None = None
+    status: str
+    split_plan_id: UUID | None = None
+    target_column: str | None = None
+    time_column: str | None = None
+    training_rate: float | None = None
+    buckets: list[TargetPeriodBucket] = Field(default_factory=list)
+    truncated: bool = False
+    final_test: TargetPeriodFinalTest | None = None
+
+
+class UploadAttempt(BaseModel):
+    """One upload attempt (D3a): metadata only; ``file_name`` is untrusted text."""
+
+    id: UUID
+    created_at: datetime
+    file_name: str
+    size_bytes: int | None = None
+    outcome: str
+    reason_code: str | None = None
+    reason: str | None = None
+    uploaded_by: Creator
+    dataset_id: UUID | None = None
+    source: str
+
+
+class UploadAttemptPage(BaseModel):
+    project_id: UUID
+    retention_days: int = 90
+    items: list[UploadAttempt] = Field(default_factory=list)
+    next_cursor: str | None = None
+
+
+class GoalDecisionRow(BaseModel):
+    what: str
+    suggested_by: str | None = None
+    confirmed_by: str | None = None  # you | person | connected_tool (never "you" for service tokens)
+    when: datetime | None = None
+    why: str | None = None  # untrusted text
+    why_is_default: bool = False
+    value: str | None = None
+    decision_id: UUID | None = None
+
+
+class GoalDecisions(BaseModel):
+    project_id: UUID
+    items: list[GoalDecisionRow] = Field(default_factory=list)
+
+
+class ImproveIteration(BaseModel):
+    """P5.4-A3: one try of an improve loop (iteration 0 of a constrained goal is the operating point;
+    the others are sealed branches). ``comparison`` is cross-validation evidence only."""
+
+    seq: int
+    kind: str
+    status: str
+    reason: str | None = None
+    action: dict[str, Any] = Field(default_factory=dict)
+    experiment_id: UUID | None = None
+    incumbent_experiment_id: UUID
+    planned_new_candidates: int
+    planned_candidate_ids: list[str] = Field(default_factory=list)
+    comparison: dict[str, Any] | None = None
+    agent: str
+    training_seconds: float | None = None
+    created_at: datetime
+    finished_at: datetime | None = None
+
+
+class ImproveActions(BaseModel):
+    accept: bool = False
+    keep_current: bool = False
+    cancel: bool = False
+
+
+class ImproveRun(_Versioned):
+    """P5.4-A3: an improve loop. ``etag`` is the If-Match of ``cancel`` / ``accept``. Service tokens
+    get no person ids; no field carries a final-test value."""
+
+    id: UUID
+    project_id: UUID
+    split_plan_id: UUID
+    start_experiment_id: UUID
+    incumbent_experiment_id: UUID
+    final_experiment_id: UUID | None = None
+    status: str
+    outcome: str | None = None
+    stop_reason: str | None = None
+    stop_detail: str | None = None
+    goal: dict[str, Any] = Field(default_factory=dict)
+    budget: dict[str, Any] = Field(default_factory=dict)
+    plan: list[Any] = Field(default_factory=list)
+    planned_comparisons: int
+    validation_folds: int
+    looks_before: int
+    sealed_set_label: str
+    sealed_set_consulted: bool = False
+    final_attempts: int = 0
+    accepted_iteration_seq: int | None = None
+    accepted_by_user_id: UUID | None = None
+    created_by_user_id: UUID | None = None
+    started_by: str
+    ai: str = "off"
+    training_seconds_spent: float = 0.0
+    llm_micros_spent: int = 0
+    cancel_requested_at: datetime | None = None
+    waiting_user_expires_at: datetime | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    iterations: list[ImproveIteration] = Field(default_factory=list)
+    actions: ImproveActions = Field(default_factory=ImproveActions)
+
+
+class ImproveRunPage(BaseModel):
+    project_id: UUID
+    items: list[ImproveRun] = Field(default_factory=list)

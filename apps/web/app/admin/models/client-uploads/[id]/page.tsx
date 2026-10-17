@@ -21,6 +21,7 @@ import { ApiError } from "@/lib/infrastructure/api-client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
+import { readErrorSentence } from "@/lib/application/api-error-text";
 
 const SOURCE_TONE: Record<string, SignalTone> = {
   explicit: "green",
@@ -59,7 +60,7 @@ export default function ClientUploadAutoTrainPage() {
     return (
       <ErrorState
         title={notFound ? "Client upload not found" : "Could not load client upload"}
-        body={notFound ? "This client upload does not exist." : query.error?.message || "The upload could not be loaded."}
+        body={notFound ? "This client upload does not exist." : readErrorSentence(query.error, "client upload")}
         onRetry={() => void query.refetch()}
       />
     );

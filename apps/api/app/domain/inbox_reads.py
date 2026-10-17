@@ -7,7 +7,13 @@
   ``ToolCallProposal`` only for its thread's owner and the workspace's approvers, never for tokens);
 * ``question``: a run waiting for a person's answer (an execution request in ``needs_input``:
   the target column, or the split a run plan changed);
-* ``run_finished``: a run-completed notice (experiment lifecycle).
+* ``run_finished``: a run-completed notice (experiment lifecycle);
+* ``drift_alert`` (V7 BE-A): a weekly monitoring window at ``alert`` (highest revision). The newest
+  week of the model in use waits in ``needs_decision`` (no inbox action: Monitoring has the next
+  steps); earlier weeks and other models' alerts are ``done``.
+* ``question_asked`` / ``question_answered`` (D7a; people only, never tokens): an open question from the
+  data team, for the workspace's business users; a question a business user answered, for its asker.
+  Ids and a fixed summary only (the question text stays behind ``GET /v1/questions/{id}``).
 
 Tabs: ``needs_decision`` (open decision proposals, open agent proposals, open questions),
 ``applied_automatically`` (agent proposals an agent applied at level 2 or above, with Revert where the
@@ -39,11 +45,17 @@ INBOX_EVIDENCE_MAX = 16
 
 InboxTab = Literal["needs_decision", "applied_automatically", "done"]
 INBOX_TABS: tuple[str, ...] = ("needs_decision", "applied_automatically", "done")
-InboxKind = Literal["decision_proposal", "agent_proposal", "question", "run_finished"]
-# Tie-break rank inside one timestamp (part of the cursor; never reorder).
-INBOX_KIND_RANK: dict[str, int] = {"decision_proposal": 0, "agent_proposal": 1, "question": 2, "run_finished": 3}
-InboxActionName = Literal["accept", "reject", "supersede", "revert", "answer"]
-InboxSourceKind = Literal["decision_record", "agent_proposal", "execution_request", "experiment"]
+InboxKind = Literal["decision_proposal", "agent_proposal", "question", "run_finished", "drift_alert", "retrain_ask",
+                    "challenger_ready", "improve_run", "question_asked", "question_answered"]
+# Tie-break rank inside one timestamp (part of the cursor; never reorder, only append). D5a:
+# ``challenger_ready`` items come from the decision-proposal source, so they share its rank.
+INBOX_KIND_RANK: dict[str, int] = {"decision_proposal": 0, "agent_proposal": 1, "question": 2, "run_finished": 3,
+                                   "drift_alert": 4, "retrain_ask": 5, "challenger_ready": 0, "improve_run": 6,
+                                   "question_asked": 7, "question_answered": 8}
+InboxActionName = Literal["accept", "reject", "supersede", "revert", "answer", "retrain"]
+InboxSourceKind = Literal["decision_record", "agent_proposal", "execution_request", "experiment", "monitoring_window",
+                          "retrain_request", "improve_run", "business_question"]
+SemanticAgreement = Literal["agree", "disagree", "abstain", "unavailable"]
 
 
 class InboxRefRead(BaseModel):
@@ -66,6 +78,29 @@ class InboxActionRead(BaseModel):
         description="Fixed body fields the route needs from this item (e.g. `proposal_id` for a ref move).",
     )
     allowed: bool = Field(description="The caller may take this action (re-checked by the route).")
+
+
+class InboxResolverRead(BaseModel):
+    """Who closed a `done` item, without ids: a person (`is_you` for the reader), a rule or an agent."""
+
+    kind: Literal["person", "rule", "agent"]
+    is_you: bool = Field(default=False, description="Always false for service tokens.")
+
+
+class InboxMonitoringRead(BaseModel):
+    """`drift_alert` items: the week's aggregates (no rows, no column names)."""
+
+    window_start: datetime
+    model_version_id: UUID
+    max_psi: float | None = Field(default=None, description="Largest feature PSI of the week.")
+    prediction_psi: float | None = Field(default=None, description="PSI of the model's scores.")
+    summary_code: str | None = Field(
+        default=None,
+        description=(
+            "Why the week is an alert: `below_floor` (real outcomes under a floor) or a drift code "
+            "(`inputs_moved` | `scores_moved` | `inputs_and_scores_moved`)."
+        ),
+    )
 
 
 class InboxItemRead(BaseModel):
@@ -101,6 +136,13 @@ class InboxItemRead(BaseModel):
     evidence_refs: list[InboxRefRead] = Field(default_factory=list, description="Ids only.")
     actions: list[InboxActionRead] = Field(default_factory=list)
     can_act: bool = Field(description="At least one action is allowed for the caller.")
+    agreement: SemanticAgreement | None = Field(
+        default=None, description="Jev review items: whether the AI's answer agreed with the rule's (as recorded)."
+    )
+    resolved_by: InboxResolverRead | None = Field(
+        default=None, description="`done` decision and proposal items closed by someone; null when it expired."
+    )
+    monitoring: InboxMonitoringRead | None = None
 
 
 class InboxViewerRead(BaseModel):

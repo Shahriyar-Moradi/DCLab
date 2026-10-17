@@ -83,6 +83,19 @@ SDK_OPENAPI_MODELS: tuple[tuple[str, str], ...] = (
     # P4.9-A batch predictions.
     ("BatchPrediction", "BatchPredictionRead"),
     ("BatchPredictionOutput", "BatchPredictionOutput"),
+    # Weekly scheduled scoring.
+    ("ScoringScheduleState", "ScoringScheduleState"),
+    ("ScoringSchedule", "ScoringScheduleRead"),
+    ("ScoringScheduleRun", "ScoringScheduleRunRead"),
+    ("ScoringScheduleRunPage", "ScoringScheduleRunPage"),
+    # P7.4-A monitoring.
+    ("MonitoringOverview", "MonitoringOverviewRead"),
+    ("MonitoringWindowSummary", "MonitoringWindowSummary"),
+    ("MonitoringWindow", "MonitoringWindowRead"),
+    ("MonitoringThresholds", "MonitoringThresholds"),
+    ("MonitoringFinding", "MonitoringFinding"),
+    ("OutcomeSet", "OutcomeSetRead"),
+    ("OutcomeSetList", "OutcomeSetList"),
     # P4.10-A trust-check findings.
     ("ExperimentFindings", "ExperimentFindingsRead"),
     ("ExperimentFinding", "ExperimentFindingRead"),
@@ -565,6 +578,20 @@ SDK_EXEMPT_V1_PATHS = frozenset({
     "/v1/service-tokens", "/v1/service-tokens/{}/revoke",
     # P6.3-B2: the in-app assistant is for signed-in people (403 human_session_required); agents use MCP.
     "/v1/assistant/threads", "/v1/assistant/threads/{}", "/v1/assistant/threads/{}/messages",
+    # V7-B6: members' names and emails are for signed-in administrators (403 session_required for any bearer).
+    "/v1/workspaces/{}/members",
+    # P8.4-A: plan limits and usage are for signed-in administrators (human-only route; no token read).
+    "/v1/workspaces/{}/usage",
+    # P8.5-A: operator reads are for signed-in platform staff (403 human_session_required for any bearer).
+    "/v1/operator/overview", "/v1/operator/workspaces", "/v1/operator/failed-jobs",
+    # P8.8-A: your notification preferences and the workspace's webhooks are session-only (403
+    # session_required for any bearer); unsubscribe takes no credentials (the signed email link only).
+    "/v1/me/notification-preferences", "/v1/notifications/unsubscribe", "/v1/workspaces/{}/webhooks",
+    "/v1/workspaces/{}/webhooks/{}", "/v1/workspaces/{}/webhooks/{}/rotate-secret",
+    "/v1/workspaces/{}/webhooks/{}/test", "/v1/workspaces/{}/webhooks/{}/deliveries",
+    # D7a: business-view questions are person to person, signed-in sessions only (403 session_required).
+    "/v1/questions", "/v1/projects/{}/questions", "/v1/questions/{}", "/v1/questions/{}/replies",
+    "/v1/questions/{}/close",
 })
 
 

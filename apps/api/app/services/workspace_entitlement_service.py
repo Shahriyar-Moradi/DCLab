@@ -14,10 +14,17 @@ Two entitlements, two meanings:
   not seed this key; it is only a safety cap when an operator sets it.
 
 Do not reuse ``max_members`` as the ML-engineer seat limit.
+
+Feature flags (D6a): ``ai_assistant_beta`` (value ``true`` / ``false``; absent = off) lets one
+workspace use the in-app assistant beta. Only a DCLab platform administrator sets it
+(``set_feature_flag``, CLI ``dclab entitlements set``; no HTTP route, tenants cannot): the row
+records ``platform_staff:<admin id>`` and every change is logged on ``dclab.audit``.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -34,6 +41,7 @@ from app.db.models import (
 )
 from app.domain.errors import IdentityError
 from app.services.authorization_service import (
+    can_write_platform,
     consumes_ml_engineer_seat,
     stored_roles_consuming_technical_seats,
 )
@@ -41,6 +49,9 @@ from app.services.authorization_service import (
 MAX_MEMBERS = "max_members"
 MAX_ML_ENGINEER_SEATS = "max_ml_engineer_seats"
 SOURCE_SYSTEM_DEFAULT = "system_default"
+AI_ASSISTANT_BETA = "ai_assistant_beta"
+FEATURE_FLAG_KEYS = (AI_ASSISTANT_BETA,)
+audit_log = logging.getLogger("dclab.audit")
 
 _DEFAULT_MAX_MEMBERS = {
     WorkspaceKind.PERSONAL.value: 1,
@@ -106,6 +117,36 @@ def set_entitlement(
 
     invalidate_capability_cache(db, workspace_id=workspace_id)
     return row
+
+
+def feature_enabled(db: Session, workspace_id: UUID, key: str) -> bool:
+    """A feature flag is on only when its row holds exactly ``true`` (absent or anything else: off)."""
+
+    row = get_entitlement(db, workspace_id, key)
+    return row is not None and row.value_json is True
+
+
+def assistant_beta_enabled(db: Session, workspace_id: UUID) -> bool:
+    return feature_enabled(db, workspace_id, AI_ASSISTANT_BETA)
+
+
+def set_feature_flag(db: Session, *, actor: Any, workspace_id: UUID, key: str, enabled: bool) -> dict[str, Any]:
+    """Platform staff (an active ``dclab_admin``) only; no HTTP route. The row records
+    ``platform_staff:<admin id>`` and the change is logged on ``dclab.audit``. The caller commits."""
+
+    if not getattr(actor, "is_active", False) or not can_write_platform(db, actor):
+        raise IdentityError("setting a workspace feature flag requires a DCLab platform administrator", status_code=403)
+    if key not in FEATURE_FLAG_KEYS:
+        raise IdentityError(f"unknown feature flag {key!r}; one of {', '.join(FEATURE_FLAG_KEYS)}", status_code=422)
+    if db.get(Workspace, workspace_id) is None:
+        raise IdentityError("workspace not found", status_code=404)
+    current = get_entitlement(db, workspace_id, key, for_update=True)  # concurrent changes log a true ``before``
+    before = current is not None and current.value_json is True
+    row = set_entitlement(db, workspace_id, key, bool(enabled), source=f"platform_staff:{actor.id}")
+    audit_log.warning(json.dumps({"event": "workspace_feature_flag_set", "workspace_id": str(workspace_id), "key": key,
+                               "before": before, "after": bool(enabled), "actor_user_id": str(actor.id)}))
+    return {"workspace_id": str(workspace_id), "key": key, "enabled": row.value_json is True, "before": before,
+            "source": row.source}
 
 
 def seed_default_entitlements(db: Session, workspace: Workspace) -> None:

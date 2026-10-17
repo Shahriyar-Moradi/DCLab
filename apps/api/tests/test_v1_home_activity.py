@@ -17,17 +17,21 @@ from app.db.models import (
     ExperimentCandidate,
     ModelEvaluation,
     ModelSelectionDecision,
+    MonitoringWindow,
     ProjectRef,
+    ScoringSchedule,
+    ScoringScheduleRun,
 )
 from app.domain.decision_records import DecisionActor
 from app.services import decision_record_service as drs
+from app.services.observability_service import append_ml_run_event
 from app.services.problem_spec_service import create_problem_spec
 from app.services.project_service import create_project
 from app.services.service_token_service import create_service_token
 from test_agent_persistence import agent_run, insert_agent_run
 from test_data_model_lineage import make_lineage_setup
 from test_decision_record_service import _force_lock
-from test_graph_service import _bootstrap_refs, _count_statements, _headers, _seed_graph
+from test_graph_service import _bootstrap_refs, _count_statements, _derived_dataset, _headers, _seed_graph, _source_dataset
 
 HOLDOUT = {"roc_auc": 0.987654, "pr_auc": 0.976543, "holdout_only": 0.965432}  # must never surface
 # Other evaluation scopes of the winner (and a losing candidate's CV) with names CV never has.
@@ -226,7 +230,8 @@ def test_activity_tenant_isolation(client, db_session, h, setup, tmp_path):
     alpha_items = _all(client, h, limit=100)
     assert not any(str(beta.exp[0]) in str(i) for i in alpha_items)
     beta_items = _get(client, h, user=beta.actor, ws=beta.ws, limit=100)["items"]
-    assert [i["id"] for i in beta_items] == [f"run_queued:{beta.exp[0]}"]
+    # Beta's own source upload (V7 BE-A) and run; the legacy NULL-project table is no project's upload.
+    assert {i["id"] for i in beta_items} == {f"run_queued:{beta.exp[0]}", f"dataset_uploaded:{beta.source.id}"}
     assert not any(str(h.project.id) in str(i) for i in beta_items)
 
     headers = _headers(h.actor, h.ws)
@@ -313,7 +318,10 @@ def test_project_list_summary_is_cv_only_and_bounded(client, db_session, h, test
     others = [s for pid, s in by_id.items() if pid != str(h.project.id)]
     assert len(others) == 5 and all(s["goal"]["version"] == 2 and s["goal"]["is_ref"] is False for s in others)
     assert all(s["champion"] is None and s["latest_run"] is None for s in others)
-    assert many == 5, many  # projects + refs + goals + champions + latest runs
+    # projects + refs + goals + champions + latest runs + unfinished-run counts + training uploads (stage) +
+    # the waiting-decisions count with its two visibility (membership) lookups (V7 BE-A); progress only for
+    # unfinished runs.
+    assert many == 10, many
 
 
 def test_champion_metrics_need_the_locked_winner(client, db_session, setup, tmp_path):
@@ -364,3 +372,164 @@ def test_agent_decision_never_names_an_assistant_thread(client, db_session, h, m
     item = {i["id"]: i for i in _get(client, h, limit=100)["items"]}[f"decision:{record.id}"]
     assert item["actor"] == {"kind": "agent", "rule": None, "agent_key": None, "agent_run_id": None, "is_you": False}
     assert str(thread) not in str(_get(client, h, limit=100))
+
+
+# --- V7 BE-A: activity projection, run results, summary stage / progress / waiting, project flow --------------
+
+MONDAY = datetime(2026, 10, 5, tzinfo=UTC)
+
+
+def _window(db, g, model_version_id, *, week: int = 0, revision: int = 1, status: str = "alert",
+            max_psi: float = 0.31, code: str | None = None) -> MonitoringWindow:
+    start = MONDAY + timedelta(days=7 * week)
+    row = MonitoringWindow(
+        workspace_id=g.ws, project_id=g.project.id, model_version_id=model_version_id, window_start=start,
+        window_end=start + timedelta(days=7), revision=revision, n_rows=10, n_batch_predictions=1,
+        input_drift={"max_psi": max_psi, "features": []}, prediction_drift={"psi": 0.05}, outcomes={},
+        status=status, summary_code=code or ("inputs_moved" if status == "alert" else "stable"),
+        summary="weekly check")
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_activity_projects_uploads_final_tests_drift_and_schedule(client, db_session, h, tmp_path):
+    db = db_session
+    derived = _derived_dataset(db, h)  # a run's prepared table: never an upload
+    schedule = ScoringSchedule(workspace_id=h.ws, project_id=h.project.id, weekday=0, hour_utc=9, enabled=True,
+                               next_planned_for=MONDAY + timedelta(days=7))
+    db.add(schedule)
+    db.flush()
+    tick = ScoringScheduleRun(workspace_id=h.ws, project_id=h.project.id, schedule_id=schedule.id, planned_for=MONDAY,
+                              outcome="skipped_no_new_file")
+    db.add(tick)
+    db.commit()
+    older = _window(db, h, h.mv[0], status="ok")
+    alert = _window(db, h, h.mv[0], revision=2)  # a recompute: only the highest revision counts
+
+    response = client.get("/v1/activity", headers=_headers(h.actor, h.ws), params={"limit": 100})
+    assert response.status_code == 200, response.text
+    by_id = {i["id"]: i for i in response.json()["items"]}
+    assert all(str(v) not in response.text for v in HOLDOUT.values())
+    ended = by_id[f"run_finished:{h.exp[0]}"]
+    assert ended["run_result"] == {"model_family": "linear", "algorithm": "logistic_regression", "metric": "roc_auc",
+                                   "cv_score": CV["roc_auc"], "metric_scope": "cv_aggregate"}
+    assert by_id[f"run_queued:{h.exp[0]}"]["run_result"] is None
+    final = by_id[f"final_test_run:{h.exp[0]}"]
+    assert (final["summary"], final["actor"]["kind"], final["link"]) == (
+        "Final test run once for Run #1", "rule", {"kind": "experiment", "id": str(h.exp[0])})
+    upload = by_id[f"dataset_uploaded:{h.source.id}"]
+    assert (upload["summary"], upload["status"], upload["actor"]["kind"], upload["subject"]["kind"]) == (
+        "Training file uploaded", "training", "person", "dataset_version")
+    assert f"dataset_uploaded:{derived.id}" not in by_id
+    drift = by_id[f"drift_alert:{alert.id}"]
+    assert (drift["status"], drift["subject"]["id"], drift["link"]) == (
+        "alert", str(h.mv[0]), {"kind": "monitoring_window", "id": str(alert.id)})
+    # D8a: the cause travels as the window's code; a floor alert is never called drift.
+    assert (drift["summary"], drift["summary_code"]) == ("Weekly monitoring found drift (alert)", "inputs_moved")
+    assert {i["summary_code"] for i in by_id.values() if i["kind"] != "drift_alert"} == {None}
+    assert f"drift_alert:{older.id}" not in by_id
+    weekly = by_id[f"scheduled_scoring:{tick.id}"]
+    assert (weekly["summary"], weekly["status"], weekly["actor"]["kind"]) == (
+        "Weekly scoring skipped", "skipped_no_new_file", "rule")
+    for size in (1, 3):  # the new kinds page with the others
+        assert [i["id"] for i in _all(client, h, limit=size)] == [i["id"] for i in response.json()["items"]]
+    floor = _window(db, h, h.mv[0], week=1, code="below_floor")
+    floor_item = {i["id"]: i for i in _all(client, h, limit=100)}[f"drift_alert:{floor.id}"]
+    assert (floor_item["summary"], floor_item["summary_code"]) == (
+        "Weekly monitoring found real outcomes below the floor (alert)", "below_floor")
+    _token, raw = create_service_token(db, creator=h.actor, workspace_id=h.ws, name="r", scopes=["read"],
+                                       expires_in_days=1, current_password="test-password")
+    db.commit()
+    as_token = client.get("/v1/activity", headers={"Authorization": f"Bearer {raw}"}, params={"limit": 100})
+    assert as_token.status_code == 200 and all(str(v) not in as_token.text for v in HOLDOUT.values())
+    assert {f"final_test_run:{h.exp[0]}", f"drift_alert:{alert.id}"} <= {i["id"] for i in as_token.json()["items"]}
+
+
+def test_summary_stage_progress_and_waiting_decisions(client, db_session, h, tmp_path):
+    db = db_session
+
+    def summaries(headers=None) -> dict[str, dict]:
+        rows = client.get("/v1/projects", headers=headers or _headers(h.actor, h.ws)).json()
+        return {r["id"]: r["summary"] for r in rows}
+
+    data_only = create_project(db, actor=h.actor, workspace_id=h.ws, name="Data only", slug=f"d-{uuid4().hex[:6]}")
+    empty = create_project(db, actor=h.actor, workspace_id=h.ws, name="Empty", slug=f"e-{uuid4().hex[:6]}")
+    db.commit()
+    _source_dataset(db, tmp_path, workspace_id=h.ws, project_id=data_only.id, env=h.env, name="data-only")
+    first = summaries()
+    assert (first[str(h.project.id)]["stage"], first[str(h.project.id)]["waiting_decisions"]) == ("model_in_use", 0)
+    assert first[str(data_only.id)]["stage"] == "data_uploaded" and first[str(empty.id)]["stage"] == "no_data"
+    latest = first[str(h.project.id)]["latest_run"]
+    assert (latest["run_number"], latest["progress"]) == (2, None)  # finished runs carry no progress
+    assert first[str(h.project.id)]["running_count"] == 0 and first[str(empty.id)]["running_count"] == 0
+
+    drs.propose(db, workspace_id=h.ws, project_id=h.project.id, actor=DecisionActor.human(h.actor),
+                decision_type="experiment_accepted", subject_kind="experiment", subject_id=h.exp[1],
+                rationale="waiting", evidence_refs=[])
+    db.execute(update(Experiment).where(Experiment.id == h.exp[1]).values(status="RUNNING"))
+    db.commit()
+    workflow_run = db.scalar(select(Experiment.workflow_run_id).where(Experiment.id == h.exp[1]))
+    events = (("candidate_training", "candidate_completed", {"model_family": "linear"}),
+              ("cross_validation", "cv_fold_started", {"model_family": "lightgbm", "fold_number": 3}))
+    for stage, event_type, payload in events:
+        append_ml_run_event(db, workspace_id=h.ws, workflow_run_id=workflow_run, experiment_id=h.exp[1], stage=stage,
+                            event_type=event_type, status="started", payload=payload)
+    after = summaries()[str(h.project.id)]
+    assert after["waiting_decisions"] == 1 and after["stage"] == "model_in_use"
+    progress = after["latest_run"]["progress"]
+    assert {k: v for k, v in progress.items() if k != "updated_at"} == {
+        "stage": "cross_validation", "model_family": "lightgbm", "fold_number": 3, "folds_planned": 5,
+        "candidates_finished": 1, "fold_completed": False}
+    assert after["running_count"] == 1
+    append_ml_run_event(db, workspace_id=h.ws, workflow_run_id=workflow_run, experiment_id=h.exp[1],
+                        stage="cross_validation", event_type="cv_fold_completed", status="completed",
+                        payload={"fold_number": 3})
+    done = summaries()[str(h.project.id)]["latest_run"]["progress"]
+    assert (done["fold_number"], done["fold_completed"]) == (3, True)
+    _token, raw = create_service_token(db, creator=h.actor, workspace_id=h.ws, name="r", scopes=["read"],
+                                       expires_in_days=1, current_password="test-password")
+    db.commit()
+    assert summaries({"Authorization": f"Bearer {raw}"})[str(h.project.id)]["waiting_decisions"] == 1
+
+
+FLOW_KEYS = {"project_id", "stage", "waiting_decisions", "data", "goal", "experiments", "improve", "model",
+             "predictions", "monitoring", "history", "untrusted_fields"}
+
+
+def test_project_flow_is_typed_cv_only_and_workspace_scoped(client, db_session, h, setup, tmp_path):
+    db = db_session
+    path = f"/v1/projects/{h.project.id}/flow"
+    response = client.get(path, headers=_headers(h.actor, h.ws))
+    assert response.status_code == 200, response.text
+    flow = response.json()
+    assert set(flow) == FLOW_KEYS and all(str(v) not in response.text for v in HOLDOUT.values())
+    assert (flow["stage"], flow["waiting_decisions"]) == ("model_in_use", 0)
+    assert flow["data"] == {"state": "done", "dataset_id": str(h.source.id), "in_use": False,
+                            "file_name": "alpha-src", "row_count": 3, "uploaded_at": flow["data"]["uploaded_at"],
+                            "training_files": 1, "newer_file": False}
+    assert (flow["goal"]["state"], flow["goal"]["goal"]["problem_spec_id"], flow["goal"]["split_plan_id"]) == (
+        "in_progress", str(h.spec.id), None)
+    assert flow["experiments"] == {"state": "done", "run_count": 2, "running_count": 0,
+                                   "best_experiment_id": str(h.exp[0]), "best_run_number": 1,
+                                   "selection_metric": "roc_auc", "best_cv_score": CV["roc_auc"]}
+    assert flow["improve"] == {"state": "done", "branch_run_count": 1}
+    assert flow["model"] == {"state": "done", "model_version_id": str(h.mv[0]), "version": "v1", "run_number": 1,
+                             "model_family": "linear", "algorithm": "logistic_regression", "decision_threshold": None}
+    assert flow["predictions"]["state"] == "todo" and flow["predictions"]["schedule_enabled"] is None
+    assert flow["monitoring"] == {"state": "todo", "status": None, "window_start": None, "max_psi": None}
+    assert flow["history"]["state"] == "done" and flow["history"]["decision_count"] == 1
+
+    _window(db, h, h.mv[0], max_psi=0.4)
+    monitoring = client.get(path, headers=_headers(h.actor, h.ws)).json()["monitoring"]
+    assert (monitoring["state"], monitoring["status"], monitoring["max_psi"]) == ("alert", "alert", 0.4)
+    _window(db, h, h.mv[0], week=1, status="ok")  # a newer, quiet week
+    assert client.get(path, headers=_headers(h.actor, h.ws)).json()["monitoring"]["state"] == "done"
+
+    beta = _seed_graph(db, tmp_path, setup, "beta", [{}])
+    for project_id in (beta.project.id, uuid4()):
+        assert client.get(f"/v1/projects/{project_id}/flow", headers=_headers(h.actor, h.ws)).status_code == 404
+    _token, raw = create_service_token(db, creator=h.actor, workspace_id=h.ws, name="r", scopes=["read"],
+                                       expires_in_days=1, current_password="test-password")
+    db.commit()
+    assert client.get(path, headers={"Authorization": f"Bearer {raw}"}).status_code == 403  # people only

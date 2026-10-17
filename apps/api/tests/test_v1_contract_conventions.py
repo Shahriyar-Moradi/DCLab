@@ -37,9 +37,25 @@ UUID_ZERO = "00000000-0000-0000-0000-000000000000"
 WORKSPACE_FREE = {"/v1/me", "/v1/workspaces"}
 # Signed-in sessions only; any Authorization header is a 403 with this code (P3.2-A; P6.3-B2).
 SESSION_ONLY = {"/v1/service-tokens": "session_required", "/v1/service-tokens/{token_id}/revoke": "session_required",
+                "/v1/workspaces/{workspace_id}/members": "session_required",
+                "/v1/workspaces/{workspace_id}/usage": "session_required",
                 **{path: "human_session_required" for path in (
                     "/v1/assistant/threads", "/v1/assistant/threads/{thread_id}",
-                    "/v1/assistant/threads/{thread_id}/messages")}}
+                    "/v1/assistant/threads/{thread_id}/messages",
+                    # P8.5-A: platform-staff operator reads (signed-in sessions only).
+                    "/v1/operator/overview", "/v1/operator/workspaces", "/v1/operator/failed-jobs")},
+                # P8.8-A: your notification preferences and the workspace's webhooks.
+                **{path: "session_required" for path in (
+                    "/v1/me/notification-preferences", "/v1/workspaces/{workspace_id}/webhooks",
+                    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}",
+                    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret",
+                    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test",
+                    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries",
+                    # D7a: business-view questions (person to person).
+                    "/v1/questions", "/v1/projects/{project_id}/questions", "/v1/questions/{question_id}",
+                    "/v1/questions/{question_id}/replies", "/v1/questions/{question_id}/close")}}
+# No principal at all (P8.8-A one-click unsubscribe: the signed link is the only authority).
+PUBLIC = {"/v1/notifications/unsubscribe"}
 
 
 def _operations() -> list[tuple[str, str]]:
@@ -61,9 +77,11 @@ def _concrete(path: str, fill: str = UUID_ZERO) -> str:
 
 
 def _call(client, method: str, path: str, **kwargs):
-    if method == "POST":
+    if method in ("POST", "PUT"):
         body = {}
-        if path.endswith("/split-confirmation"):
+        if path.endswith("/scoring-schedule"):
+            body = {"weekday": 0, "hour_utc": 9}
+        elif path.endswith("/split-confirmation"):
             body = {"answer": "keep_rule_split"}
         elif "confirmation" in path:
             body = {"target_column": "y"}
@@ -76,6 +94,8 @@ def _call(client, method: str, path: str, **kwargs):
                     "subject": {"kind": "project"}, "rationale": "x"}
         elif "/governance/policy/" in path:
             body = {"policy_digest": "0" * 64}
+        elif path.endswith("/resolve"):
+            body = {"resolution": "x"}
         elif path.endswith(("/accept", "/reject", "/supersede")):
             body = {"rationale": "x"}
         elif "/refs/" in path:
@@ -84,6 +104,15 @@ def _call(client, method: str, path: str, **kwargs):
             body = {"dataset_id": UUID_ZERO}
         elif path.endswith("/operating-point"):
             body = {"threshold": 0.5, "reason": "x"}
+        elif path.endswith("/retrain"):
+            body = {"dataset_id": UUID_ZERO}
+        elif path.endswith("/retrain-policy"):
+            body = {"policy": "off", "rationale": "x"}
+        elif path.endswith("/monitoring-thresholds"):
+            body = {"psi_watch": 0.1, "psi_alert": 0.2, "precision_floor": None, "recall_floor": None,
+                    "rationale": "x"}
+        elif path.endswith("/monitoring/outcomes"):
+            body = {"dataset_id": UUID_ZERO, "key_column": "id", "outcome_column": "y"}
         kwargs.setdefault("json", body)
         # P3.1-B commands require a key; supply one so the resource checks answer.
         kwargs["headers"] = {"Idempotency-Key": f"conv-{uuid4().hex}", **(kwargs.get("headers") or {})}
@@ -120,6 +149,8 @@ def test_inventory_covers_every_current_v1_operation():
     assert ops == {
         "GET /v1/me",
         "GET /v1/workspaces",
+        "GET /v1/workspaces/{workspace_id}/members",
+        "GET /v1/workspaces/{workspace_id}/usage",
         "GET /v1/projects",
         "POST /v1/projects",
         "GET /v1/activity",
@@ -127,8 +158,13 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/inbox/counts",
         "GET /v1/projects/{project_id}",
         "POST /v1/projects/{project_id}/problem-specs",
+        "GET /v1/projects/{project_id}/problem-specs",
+        "GET /v1/projects/{project_id}/problem-specs/{spec_id}",
+        "GET /v1/split-plans/{split_plan_id}",
         "GET /v1/projects/{project_id}/graph",
+        "GET /v1/projects/{project_id}/flow",
         "GET /v1/projects/{project_id}/decisions",
+        "GET /v1/projects/{project_id}/releases",
         "GET /v1/nodes/{kind}/{node_id}/impact",
         "GET /v1/datasets",
         "POST /v1/datasets",
@@ -149,6 +185,7 @@ def test_inventory_covers_every_current_v1_operation():
         "GET /v1/experiments/{experiment_id}",
         "GET /v1/experiments/{experiment_id}/findings",
         "GET /v1/experiments/{experiment_id}/operating-points",
+        "GET /v1/experiments/{experiment_id}/verdict",
         "POST /v1/experiments/{experiment_id}/operating-point",
         "POST /v1/experiments/{experiment_id}/branches",
         "POST /v1/experiments/{experiment_id}/cancel",
@@ -162,9 +199,21 @@ def test_inventory_covers_every_current_v1_operation():
         "POST /v1/projects/{project_id}/refs/{ref_kind}",
         "GET /v1/model-versions/{model_version_id}",
         "GET /v1/model-versions/{model_version_id}/card",
+        "GET /v1/projects/{project_id}/model-versions",
+        "GET /v1/model-versions/{model_version_id}/feature-contract",
         "POST /v1/model-versions/{model_version_id}/predictions",
         "GET /v1/predictions/{prediction_id}",
         "GET /v1/predictions/{prediction_id}/download",
+        "GET /v1/predictions/{prediction_id}/rows",
+        "GET /v1/projects/{project_id}/scoring-schedule",
+        "PUT /v1/projects/{project_id}/scoring-schedule",
+        "GET /v1/projects/{project_id}/scoring-schedule/runs",
+        "GET /v1/projects/{project_id}/monitoring",
+        "GET /v1/projects/{project_id}/monitoring/windows/{window_start}",
+        "GET /v1/projects/{project_id}/monitoring/outcomes",
+        "POST /v1/projects/{project_id}/monitoring/outcomes",
+        "GET /v1/projects/{project_id}/outcomes",
+        "GET /v1/outcomes/projects",
         "GET /v1/service-tokens",
         "POST /v1/service-tokens",
         "POST /v1/service-tokens/{token_id}/revoke",
@@ -184,7 +233,45 @@ def test_inventory_covers_every_current_v1_operation():
         "POST /v1/governance/policy",
         "POST /v1/governance/policy/{proposal_id}/accept",
         "POST /v1/governance/switches",
+        "POST /v1/governance/incidents/{incident_id}/resolve",
         "POST /v1/agent-runs/{run_id}/replay",
+        "GET /v1/operator/overview",
+        "GET /v1/operator/workspaces",
+        "GET /v1/operator/failed-jobs",
+        "GET /v1/me/notification-preferences",
+        "PUT /v1/me/notification-preferences",
+        "POST /v1/notifications/unsubscribe",
+        "GET /v1/workspaces/{workspace_id}/webhooks",
+        "POST /v1/workspaces/{workspace_id}/webhooks",
+        "PATCH /v1/workspaces/{workspace_id}/webhooks/{webhook_id}",
+        "POST /v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret",
+        "POST /v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test",
+        "GET /v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries",
+        # D3a: Data and Goal reads.
+        "GET /v1/datasets/{dataset_id}/target-by-period",
+        "GET /v1/projects/{project_id}/upload-attempts",
+        "GET /v1/projects/{project_id}/goal/decisions",
+        # D5a: retrain on newest data.
+        "POST /v1/projects/{project_id}/retrain",
+        "GET /v1/projects/{project_id}/retrain-policy",
+        "PUT /v1/projects/{project_id}/retrain-policy",
+        "GET /v1/projects/{project_id}/retrain-status",
+        # P5.4-A3: improve loops.
+        "POST /v1/improve-runs",
+        "GET /v1/improve-runs/{improve_run_id}",
+        "GET /v1/projects/{project_id}/improve-runs",
+        "POST /v1/improve-runs/{improve_run_id}/cancel",
+        "POST /v1/improve-runs/{improve_run_id}/accept",
+        # D5b: editable monitoring thresholds.
+        "GET /v1/projects/{project_id}/monitoring-thresholds",
+        "PUT /v1/projects/{project_id}/monitoring-thresholds",
+        # D7a: business-view questions.
+        "GET /v1/questions",
+        "GET /v1/projects/{project_id}/questions",
+        "POST /v1/projects/{project_id}/questions",
+        "GET /v1/questions/{question_id}",
+        "POST /v1/questions/{question_id}/replies",
+        "POST /v1/questions/{question_id}/close",
     }
 
 
@@ -201,7 +288,7 @@ def test_openapi_documents_the_envelope_on_every_v1_operation():
             for status in ("400", "401", "403", "404", "422", "500"):
                 ref = responses[status]["content"]["application/json"]["schema"]["$ref"]
                 assert ref.endswith("/V1ErrorEnvelope"), (method, path, status)
-            if method == "post":
+            if method in ("post", "put"):
                 headers = {p["name"] for p in operation["parameters"] if p["in"] == "header"}
                 assert "Idempotency-Key" in headers, path
                 assert "409" in responses, path
@@ -210,6 +297,9 @@ def test_openapi_documents_the_envelope_on_every_v1_operation():
 def test_every_v1_operation_401_uses_envelope_with_request_id(client):
     for method, path in _operations():
         response = _call(client, method, _concrete(path))
+        if path in PUBLIC:  # no credentials asked for: the envelope still applies (empty body: 422)
+            _assert_envelope(response, 422, "validation_failed")
+            continue
         error = _assert_envelope(response, 401, "unauthenticated")
         assert error["retryable"] is False
 
@@ -218,7 +308,7 @@ def test_every_workspace_operation_400_without_selector_and_403_foreign(client, 
     setup = make_lineage_setup(db_session, tmp_path)
     bearer = {"Authorization": f"Bearer {create_access_token(setup['alpha_admin'])}"}
     for method, path in _operations():
-        if path in WORKSPACE_FREE:
+        if path in WORKSPACE_FREE or path in PUBLIC:
             continue
         if path in SESSION_ONLY:
             _assert_envelope(_call(client, method, _concrete(path), headers=bearer), 403, SESSION_ONLY[path])
@@ -404,15 +494,15 @@ def test_cursor_codec_rejects_foreign_scope_and_garbage():
 # --- ETag / If-Match --------------------------------------------------------------------------
 
 
-def _create_request(auth_client, **extra):
-    return auth_client.post(
+def _create_request(engineer_client, **extra):
+    return engineer_client.post(
         "/v1/execution-requests",
         json={"operation": OPERATION_MODEL_BUILD, "request_spec": {"filename": "a.csv"}, **extra.pop("body", {})},
         **extra,
     )
 
 
-def test_mutable_gets_return_strong_etags(client, db_session, tmp_path, auth_client):
+def test_mutable_gets_return_strong_etags(client, db_session, tmp_path, engineer_client):
     setup = make_lineage_setup(db_session, tmp_path)
     pipeline = _pipeline_with_events(db_session, setup, count=1)
     db_session.commit()
@@ -424,27 +514,27 @@ def test_mutable_gets_return_strong_etags(client, db_session, tmp_path, auth_cli
         assert re.fullmatch(r'"[0-9a-f]{32}"', etag), etag
         assert client.get(path, headers=headers).headers["ETag"] == etag
 
-    created = _create_request(auth_client)
+    created = _create_request(engineer_client)
     assert created.status_code == 202, created.text
-    fetched = auth_client.get(f"/v1/execution-requests/{created.json()['id']}")
+    fetched = engineer_client.get(f"/v1/execution-requests/{created.json()['id']}")
     assert fetched.headers["ETag"] == created.headers["ETag"]
 
 
-def test_if_match_mismatch_is_412_and_match_reaches_the_command(auth_client):
-    created = _create_request(auth_client)
+def test_if_match_mismatch_is_412_and_match_reaches_the_command(engineer_client):
+    created = _create_request(engineer_client)
     request_id = created.json()["id"]
     etag = created.headers["ETag"]
     confirm = f"/v1/execution-requests/{request_id}/target-confirmation"
 
-    stale = auth_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": '"deadbeef"'})
+    stale = engineer_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": '"deadbeef"'})
     error = _assert_envelope(stale, 412, "precondition_failed")
     assert error["details"]["current_etag"] == etag and error["retryable"] is False
-    weak = auth_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": f"W/{etag}"})
+    weak = engineer_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": f"W/{etag}"})
     _assert_envelope(weak, 412, "precondition_failed")
 
     # Matching (or `*`) preconditions pass; the state machine then answers.
     for value in (etag, "*", f'"other", {etag}'):
-        response = auth_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": value})
+        response = engineer_client.post(confirm, json={"target_column": "y"}, headers={"If-Match": value})
         error = _assert_envelope(response, 409, "execution_not_waiting")
         assert error["details"]["status"] == "accepted"
 
@@ -483,20 +573,20 @@ def _count(db_session) -> int:
     return db_session.scalar(select(func.count(ExecutionRequest.id))) or 0
 
 
-def test_idempotency_key_replays_and_conflicts(auth_client, db_session):
+def test_idempotency_key_replays_and_conflicts(engineer_client, db_session):
     key = f"p31a-{uuid4().hex}"
-    first = _create_request(auth_client, headers={"Idempotency-Key": key})
+    first = _create_request(engineer_client, headers={"Idempotency-Key": key})
     assert first.status_code == 202 and "Idempotent-Replayed" not in first.headers
     before = _count(db_session)
 
-    replay = _create_request(auth_client, headers={"Idempotency-Key": key})
+    replay = _create_request(engineer_client, headers={"Idempotency-Key": key})
     assert replay.status_code == 202 and replay.headers["Idempotent-Replayed"] == "true"
     assert replay.json() == first.json() and _count(db_session) == before
     # Header and the legacy body key are the same key.
-    same = _create_request(auth_client, headers={"Idempotency-Key": key}, body={"idempotency_key": key})
+    same = _create_request(engineer_client, headers={"Idempotency-Key": key}, body={"idempotency_key": key})
     assert same.json()["id"] == first.json()["id"]
 
-    conflict = auth_client.post(
+    conflict = engineer_client.post(
         "/v1/execution-requests",
         json={"operation": OPERATION_MODEL_BUILD, "request_spec": {"filename": "b.csv"}},
         headers={"Idempotency-Key": key},
@@ -505,32 +595,32 @@ def test_idempotency_key_replays_and_conflicts(auth_client, db_session):
     assert error["retryable"] is False and _count(db_session) == before
 
 
-def test_idempotency_key_is_bound_to_the_principal(auth_client, admin_client, db_session):
+def test_idempotency_key_is_bound_to_the_principal(engineer_client, admin_client, db_session):
     key = f"p31a-shared-{uuid4().hex}"
-    assert _create_request(auth_client, headers={"Idempotency-Key": key}).status_code == 202
+    assert _create_request(engineer_client, headers={"Idempotency-Key": key}).status_code == 202
     other = _create_request(admin_client, headers={"Idempotency-Key": key})
     _assert_envelope(other, 409, "idempotency_key_conflict")
 
 
-def test_idempotency_key_validation_and_keyless_posts(auth_client, db_session):
+def test_idempotency_key_validation_and_keyless_posts(engineer_client, db_session):
     _assert_envelope(
-        _create_request(auth_client, headers={"Idempotency-Key": "has spaces!"}), 400, "invalid_idempotency_key"
+        _create_request(engineer_client, headers={"Idempotency-Key": "has spaces!"}), 400, "invalid_idempotency_key"
     )
     _assert_envelope(
-        _create_request(auth_client, headers={"Idempotency-Key": "a"}, body={"idempotency_key": "b"}),
+        _create_request(engineer_client, headers={"Idempotency-Key": "a"}, body={"idempotency_key": "b"}),
         400,
         "idempotency_key_mismatch",
     )
     # Without a key every POST executes (documented: not replay-protected).
-    one, two = _create_request(auth_client), _create_request(auth_client)
+    one, two = _create_request(engineer_client), _create_request(engineer_client)
     assert one.status_code == two.status_code == 202 and one.json()["id"] != two.json()["id"]
 
 
-def test_v1_key_never_replays_an_internal_surface_row(auth_client, db_session, client_user):
+def test_v1_key_never_replays_an_internal_surface_row(engineer_client, db_session, engineer_user):
     # Internal namespaces are reserved: a /v1 caller can neither claim nor plant them.
     for spelling in ({"headers": {"Idempotency-Key": f"legacy_labs_upload:{uuid4()}"}},
                      {"body": {"idempotency_key": f"legacy_labs_upload:{uuid4()}"}}):
-        _assert_envelope(_create_request(auth_client, **spelling), 400, "invalid_idempotency_key")
+        _assert_envelope(_create_request(engineer_client, **spelling), 400, "invalid_idempotency_key")
     # A row written without a digest (internal surface) never replays to a /v1 key.
     key = f"internal-{uuid4().hex}"
     create_execution_request(
@@ -538,34 +628,34 @@ def test_v1_key_never_replays_an_internal_surface_row(auth_client, db_session, c
         workspace_id=DEFAULT_WORKSPACE_ID,
         operation=OPERATION_MODEL_BUILD,
         source_surface=SOURCE_LEGACY_LABS,
-        requested_by_user_id=client_user.id,
+        requested_by_user_id=engineer_user.id,
         idempotency_key=key,
         request_spec={"filename": "a.csv"},
     )
     db_session.commit()
-    _assert_envelope(_create_request(auth_client, headers={"Idempotency-Key": key}), 409, "idempotency_key_conflict")
+    _assert_envelope(_create_request(engineer_client, headers={"Idempotency-Key": key}), 409, "idempotency_key_conflict")
 
 
-def test_server_owned_spec_keys_are_refused_and_the_digest_is_not_exposed(auth_client, db_session):
+def test_server_owned_spec_keys_are_refused_and_the_digest_is_not_exposed(engineer_client, db_session):
     for key in ("request_digest", "parent_experiment_id", "change_set_digest"):
-        response = auth_client.post(
+        response = engineer_client.post(
             "/v1/execution-requests",
             json={"operation": OPERATION_MODEL_BUILD, "request_spec": {key: "0" * 64}},
         )
         _assert_envelope(response, 400, "invalid_request_spec")
-    created = _create_request(auth_client, headers={"Idempotency-Key": f"p31a-{uuid4().hex}"})
+    created = _create_request(engineer_client, headers={"Idempotency-Key": f"p31a-{uuid4().hex}"})
     assert "request_digest" not in created.json()["request_spec"]
     stored = db_session.get(ExecutionRequest, UUID(created.json()["id"]))
     assert len(stored.request_spec["request_digest"]) == 64
 
 
-def test_confirmation_accepts_idempotency_key_and_validates_it(auth_client):
-    created = _create_request(auth_client).json()
+def test_confirmation_accepts_idempotency_key_and_validates_it(engineer_client):
+    created = _create_request(engineer_client).json()
     confirm = f"/v1/execution-requests/{created['id']}/target-confirmation"
     _assert_envelope(
-        auth_client.post(confirm, json={"target_column": "y"}, headers={"Idempotency-Key": "bad key"}),
+        engineer_client.post(confirm, json={"target_column": "y"}, headers={"Idempotency-Key": "bad key"}),
         400,
         "invalid_idempotency_key",
     )
-    keyed = auth_client.post(confirm, json={"target_column": "y"}, headers={"Idempotency-Key": "k-1"})
+    keyed = engineer_client.post(confirm, json={"target_column": "y"}, headers={"Idempotency-Key": "k-1"})
     _assert_envelope(keyed, 409, "execution_not_waiting")

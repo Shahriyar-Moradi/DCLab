@@ -4,15 +4,16 @@ Transport only. ``POST /v1/model-versions/{id}/predictions`` records the request
 and answers ``202`` + ``Location`` (Idempotency-Key required); the worker job
 ``models.batch_predict`` loads the model, never this process. Reads are
 workspace-scoped (a foreign id is 404) and never carry object keys, buckets or
-providers; the download streams the stored file through the same authorization.
+providers; the download streams the stored file through the same authorization, and the
+rows read (V7 B6) pages it under that same authorization with hard caps.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import request_service_token, request_workspace_id, require_workspace_ml_execution, require_workspace_read
@@ -21,6 +22,7 @@ from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
     REPLAY_HEADER_DOC,
+    V1APIError,
     domain_error,
     error_responses,
     idempotency_binding,
@@ -30,12 +32,25 @@ from app.api.v1_conventions import (
 )
 from app.db.models import BatchPrediction, User
 from app.db.session import get_db
-from app.domain.batch_predictions import BatchPredictionCreateRequest, BatchPredictionRead
-from app.domain.errors import ArtifactNotFoundError, ExperimentRequestError, IdentityError, RunQuotaExceededError
+from app.domain.batch_predictions import (
+    ROWS_PAGE_DEFAULT,
+    ROWS_PAGE_MAX,
+    BatchPredictionCreateRequest,
+    BatchPredictionRead,
+    BatchPredictionRowsPage,
+)
+from app.domain.errors import (
+    ArtifactNotFoundError,
+    ExperimentRequestError,
+    IdentityError,
+    InvalidCursorError,
+    RunQuotaExceededError,
+)
 from app.domain.idempotency import RESOURCE_BATCH_PREDICTION
 from app.services.batch_prediction_service import (
     batch_prediction_download,
     batch_prediction_read,
+    batch_prediction_rows,
     create_batch_prediction,
 )
 
@@ -158,7 +173,10 @@ def download_prediction(
     """The completed predictions file: one row per input row (``row_number`` 1 = the
     first data row, plus the entity column when the run had one). Binary:
     ``probability`` and ``label`` at the locked threshold; multiclass:
-    ``probability_<class>`` and ``label``; regression: ``prediction``. Not completed:
+    ``probability_<class>`` and ``label``; regression: ``prediction``. Then, when per-row
+    reasons are on, ``reason_1``..``reason_3``: the input columns that moved the model's
+    score most for that row, with the direction (what the model used, not causes in the
+    world; see ``reasons`` on the prediction read). Not completed:
     ``409 prediction_not_ready``."""
 
     try:
@@ -177,3 +195,46 @@ def download_prediction(
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"},
     )
+
+
+@router.get(
+    "/predictions/{prediction_id}/rows",
+    response_model=BatchPredictionRowsPage,
+    responses=error_responses(409, 429),
+)
+def read_prediction_rows(
+    prediction_id: UUID,
+    request: Request,
+    response: Response,
+    order: Literal["score", "row"] = Query("score", description="score: highest first (ties by row); row: file order."),
+    limit: int = Query(ROWS_PAGE_DEFAULT, ge=1, le=ROWS_PAGE_MAX),
+    cursor: str | None = Query(None, max_length=256, description="Opaque `next_cursor` of the previous page."),
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> BatchPredictionRowsPage:
+    """V7 B6: a capped page of a completed prediction's file, with the same authorization as the
+    download (workspace readers; service tokens with ``read``): ``row_number``, the entity key,
+    binary ``probability`` + ``flagged`` at the locked threshold, multiclass ``label`` + its
+    probability, regression ``prediction``, and ``reasons`` (``reason_1``..``reason_3``: what the
+    model used, not causes). No column beyond what the file holds; text cells are untrusted plain
+    text. At most 200 rows per page and the first 10,000 rows of an ordering (the rest only in the
+    download); files over 64 MiB or 200,000 rows: ``409 prediction_rows_too_large``; too many
+    reads at once: ``429 rows_busy``. Not completed: ``409 prediction_not_ready``. Another
+    workspace's prediction: 404."""
+
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization, Cookie"
+    try:
+        body = batch_prediction_rows(
+            db, actor=user, workspace_id=request_workspace_id(request), prediction_id=prediction_id,
+            order=order, limit=limit, cursor=cursor,
+        )
+    except InvalidCursorError as exc:
+        raise V1APIError(400, "invalid_cursor", str(exc)) from exc
+    except (IdentityError, ExperimentRequestError) as exc:
+        raise domain_error(exc) from exc
+    except ArtifactNotFoundError as exc:
+        raise _not_found("prediction file not found") from exc
+    if body is None:
+        raise _not_found("prediction not found")
+    return body

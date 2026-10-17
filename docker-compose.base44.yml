@@ -32,6 +32,10 @@ services:
       # the worker service (FOR UPDATE SKIP LOCKED), as in production.
       - ML_JOB_DISPATCHER=postgres
       - DCLAB_ENV=development
+      # AI provider key from the host environment / .env (never a literal; read only by the
+      # gateway's Anthropic adapter). The plain vendor name passes through only when it is set.
+      - DCLAB_ANTHROPIC_API_KEY=${DCLAB_ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_API_KEY
     command: ["uvicorn", "app.main:app", "--reload", "--app-dir", "apps/api", "--host", "0.0.0.0", "--port", "8001"]
     depends_on:
       postgres:
@@ -59,6 +63,8 @@ services:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/decisionai
       - ML_JOB_DISPATCHER=postgres
       - DCLAB_ENV=development
+      - DCLAB_ANTHROPIC_API_KEY=${DCLAB_ANTHROPIC_API_KEY:-}  # see the api service
+      - ANTHROPIC_API_KEY
     command: ["dclab", "worker", "run"]
     depends_on:
       postgres:

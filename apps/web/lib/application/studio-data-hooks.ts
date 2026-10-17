@@ -61,6 +61,20 @@ export const DatasetProfileSchema = z.object({
   experiment: z.object({ id: z.string(), selection: z.string(), created_at: z.string() }).nullable(),
   importance_method: nullableString,
   columns: z.array(ProfileColumnSchema),
+  // V7 BE-C: training-row values only (never a final-test row).
+  entity_column: nullableString,
+  entity_count: nullableNumber,
+  time_range: z.object({ column: z.string(), start: z.string(), end: z.string() }).nullable().optional(),
+  target_rate: nullableNumber,
+  // D3a: checked once on the whole upload (no target, feeds no run); null for older files.
+  upload_checks: z.object({
+    ran_at: z.string(),
+    row_count: z.number(),
+    checks: z.array(z.object({
+      code: z.string(), status: z.string(), count: nullableNumber, share: nullableNumber,
+      columns: z.array(z.object({ name: z.string(), count: nullableNumber, share: nullableNumber })), columns_truncated: z.boolean().optional(),
+    })),
+  }).nullable().optional(),
 });
 export type StudioDatasetProfile = z.infer<typeof DatasetProfileSchema>;
 
@@ -104,6 +118,8 @@ const GraphSchema = z.object({
   truncated: z.boolean(),
   truncated_kinds: z.array(z.string()).optional(),
   next_cursor: nullableString,
+  // V7 BE-A: a training file newer than the one in use (no ref moved; nothing is stale because of it).
+  newer_dataset: z.object({ count: z.number(), newest_created_at: z.string(), newest: NodeRef, in_use: NodeRef }).nullable().optional(),
 });
 export type StudioGraph = z.infer<typeof GraphSchema>;
 

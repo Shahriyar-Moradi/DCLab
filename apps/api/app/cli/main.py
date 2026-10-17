@@ -127,6 +127,195 @@ def cmd_governance_switch(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _limit_arg(raw: str | None):
+    """``--runs-per-day 100`` / ``unlimited`` / ``default`` (back to the default plan's value)."""
+
+    from app.services.usage_service import UNSET
+
+    if raw is None:
+        return None
+    word = raw.strip().lower()
+    if word == "unlimited":
+        return ("set", None)
+    if word == "default":
+        return ("set", UNSET)
+    if not word.isdigit():
+        raise SystemExit(f"limit must be a whole number, 'unlimited' or 'default': {raw!r}")
+    return ("set", int(word))
+
+
+def cmd_usage_set_plan(args: argparse.Namespace) -> int:
+    """P8.4-A: a named platform admin sets a workspace's plan and limits; no HTTP route (tenants
+    cannot change their own limits). Entitlement rows record ``platform_staff:<admin id>``.
+    ``--admin`` only records who did it (no password is asked): the control is who holds the
+    database credentials this command runs with."""
+
+    from uuid import UUID
+
+    from sqlalchemy import func, select
+
+    from app.db.models import User
+    from app.domain.errors import IdentityError
+    from app.domain.usage import QUOTA_COMPUTE_SECONDS_MONTH, QUOTA_RUNS_PER_DAY, QUOTA_STORAGE_BYTES
+    from app.services.usage_service import set_plan
+
+    limits = {}
+    for key, raw in ((QUOTA_COMPUTE_SECONDS_MONTH, args.compute_seconds_month),
+                     (QUOTA_STORAGE_BYTES, args.storage_bytes), (QUOTA_RUNS_PER_DAY, args.runs_per_day)):
+        parsed = _limit_arg(raw)
+        if parsed is not None:
+            limits[key] = parsed[1]
+    db = _session()
+    try:
+        admin = db.scalar(select(User).where(func.lower(User.email) == args.admin.strip().lower()))
+        if admin is None:
+            print(json.dumps({"error": "unknown admin"}))
+            return 2
+        try:
+            result = set_plan(db, actor=admin, workspace_id=UUID(args.workspace), plan=args.plan, limits=limits)
+        except IdentityError as exc:
+            db.rollback()
+            print(json.dumps({"error": str(exc)}))
+            return 2
+        db.commit()
+        print(json.dumps(result))
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_entitlements_set(args: argparse.Namespace) -> int:
+    """D6a: a named platform admin switches a workspace feature flag (``ai_assistant_beta``); no HTTP
+    route. The row records ``platform_staff:<admin id>`` and the change is logged on ``dclab.audit``.
+    Like ``usage set-plan``, ``--admin`` is recorded, not authenticated: database credentials are the
+    control."""
+
+    from uuid import UUID
+
+    from sqlalchemy import func, select
+
+    from app.config import get_settings
+    from app.db.models import User
+    from app.domain.errors import IdentityError
+    from app.observability.logging import configure_logging
+    from app.services.workspace_entitlement_service import set_feature_flag
+
+    settings = get_settings()  # the dclab.audit line reaches the process log (stderr) like the API's
+    configure_logging(log_format=settings.log_format, log_level=settings.log_level)
+    db = _session()
+    try:
+        admin = db.scalar(select(User).where(func.lower(User.email) == args.admin.strip().lower()))
+        if admin is None:
+            print(json.dumps({"error": "unknown admin"}))
+            return 2
+        try:
+            result = set_feature_flag(db, actor=admin, workspace_id=UUID(args.workspace), key=args.key,
+                                      enabled=args.state == "on")
+        except (IdentityError, ValueError) as exc:
+            db.rollback()
+            print(json.dumps({"error": str(exc)}))
+            return 2
+        db.commit()
+        print(json.dumps(result))
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_improve_start(args: argparse.Namespace) -> int:
+    """P5.4-A2 (local runs): start an improve loop as a named person (their own ML-write authority is
+    checked); the worker steps it. Acceptance stays a person's act through the API (P5.4-A3)."""
+
+    from uuid import UUID
+
+    from sqlalchemy import func, select
+
+    from app.db.models import User
+    from app.domain.errors import ExperimentNotFoundError, ImproveRunError
+    from app.services.improve.service import start_improve_run
+
+    db = _session()
+    try:
+        user = db.scalar(select(User).where(func.lower(User.email) == args.user.strip().lower()))
+        if user is None:
+            print(json.dumps({"error": "unknown user"}))
+            return 2
+        try:
+            run = start_improve_run(db, actor=user, workspace_id=UUID(args.workspace),
+                                    start_experiment_id=UUID(args.experiment), goal=json.loads(args.goal),
+                                    budget=json.loads(args.budget) if args.budget else None)
+        except (ImproveRunError, ExperimentNotFoundError) as exc:
+            db.rollback()
+            print(json.dumps({"error": getattr(exc, "code", "experiment_not_found"), "message": str(exc)}))
+            return 2
+        print(json.dumps({"improve_run_id": str(run.id), "status": run.status, "plan": run.plan,
+                          "planned_comparisons": run.planned_comparisons}))
+        return 0
+    finally:
+        db.close()
+
+
+def _improve_person(db, email: str):
+    from sqlalchemy import func, select
+
+    from app.db.models import User
+
+    return db.scalar(select(User).where(func.lower(User.email) == email.strip().lower()))
+
+
+def cmd_improve_status(args: argparse.Namespace) -> int:
+    """P5.4-A3: a loop as the named person reads it (the /v1 read model; never a final-test value)."""
+
+    from uuid import UUID
+
+    from app.domain.errors import ImproveRunError
+    from app.services.improve.service import improve_run_read
+
+    db = _session()
+    try:
+        user = _improve_person(db, args.user)
+        if user is None:
+            print(json.dumps({"error": "unknown user"}))
+            return 2
+        try:
+            body = improve_run_read(db, actor=user, workspace_id=UUID(args.workspace), run_id=UUID(args.run),
+                                    agent=False)
+        except ImproveRunError as exc:
+            print(json.dumps({"error": exc.code, "message": exc.detail_message}))
+            return 2
+        print(body.model_dump_json())
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_improve_cancel(args: argparse.Namespace) -> int:
+    """P5.4-A3: stop a loop as the named person (their ML-write authority is checked); its live try
+    is cancelled and the best so far is kept. Accepting a try stays with the API (a person)."""
+
+    from uuid import UUID
+
+    from app.domain.errors import ImproveRunError
+    from app.services.improve.service import cancel_improve_run
+
+    db = _session()
+    try:
+        user = _improve_person(db, args.user)
+        if user is None:
+            print(json.dumps({"error": "unknown user"}))
+            return 2
+        try:
+            run = cancel_improve_run(db, actor=user, workspace_id=UUID(args.workspace), run_id=UUID(args.run))
+        except ImproveRunError as exc:
+            db.rollback()
+            print(json.dumps({"error": exc.code, "message": exc.detail_message}))
+            return 2
+        print(json.dumps({"improve_run_id": str(run.id), "status": run.status, "outcome": run.outcome}))
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_agents_sync_prompts(args: argparse.Namespace) -> int:
     """Create prompt_releases rows from app/agents/prompts (ADR 0009 §2.8); --check only verifies."""
 
@@ -211,7 +400,7 @@ def cmd_r3_run(args: argparse.Namespace) -> int:
             port = semantic_port(GatewayService(), settings=settings)
             if not r3.platform_evaluation_workspace_ok(db, settings.r3_eval_workspace_id, settings) or type(
                     port).__name__ != "JevSemanticPort":
-                print(json.dumps({"error": "live runs need AI enabled, the typesafe provider and R3_EVAL_WORKSPACE_ID "
+                print(json.dumps({"error": "live runs need AI and Jev enabled, the Jev provider and R3_EVAL_WORKSPACE_ID "
                                            f"naming a workspace with the {r3.EVALUATION_CAPABILITY} capability"}))
                 return 2
             eval_ws = settings.r3_eval_workspace_id
@@ -444,26 +633,36 @@ def cmd_experiment_report(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_verify_openai_smoke(args: argparse.Namespace) -> int:
-    """Run exactly one synthetic-only live OpenAI request (needs --live and AI switched on)."""
+def cmd_verify_ai_smoke(args: argparse.Namespace) -> int:
+    """Run exactly one synthetic-only live request through a provider adapter (default Anthropic;
+    needs --live and AI switched on). Prints a safe summary only, never key material."""
     from app.config import get_settings
-    from app.services.openai_smoke import OpenAISmokeError, live_smoke_refusal, run_openai_verification_smoke
+    import app.services.openai_smoke as smoke
 
+    provider = getattr(args, "provider", None) or "anthropic"
     db = _session()
     try:
-        refusal = live_smoke_refusal(db, live=bool(getattr(args, "live", False)),
-                                     ai_enabled=bool(get_settings().ai_enabled))
+        settings = get_settings()
+        refusal = smoke.live_smoke_refusal(db, live=bool(getattr(args, "live", False)),
+                                           ai_enabled=bool(settings.ai_enabled), provider=provider,
+                                           legacy_enabled=settings.ai_legacy_providers_enabled is True)
     finally:
         db.close()
     if refusal is not None:
         print(f"live smoke not executed: {refusal}", file=sys.stderr)
         return 1
+    run = smoke.run_openai_verification_smoke if provider == "openai" else smoke.run_anthropic_verification_smoke
     try:
-        print(json.dumps(run_openai_verification_smoke()))
-    except OpenAISmokeError as exc:
+        print(json.dumps(run()))
+    except smoke.OpenAISmokeError as exc:
         print(f"live smoke not executed: {exc.code}", file=sys.stderr)
         return 1
     return 0
+
+
+def cmd_verify_openai_smoke(args: argparse.Namespace) -> int:
+    """LEGACY (switched to Anthropic 2026-10-16; kept for now): the smoke against the OpenAI adapter."""
+    return cmd_verify_ai_smoke(argparse.Namespace(**{**vars(args), "provider": "openai"}))
 
 
 def cmd_worker_run(args: argparse.Namespace) -> int:
@@ -472,16 +671,90 @@ def cmd_worker_run(args: argparse.Namespace) -> int:
     import socket
     import time
 
-    from app.config import get_settings
+    from app import observability
+    from app.config import get_settings, mark_worker_process
+    from app.observability.setup import setup as setup_observability
     from app.services.ml_job_service import process_next_job
+    from app.services.notification_service import run_notification_tick
+    from app.services.retrain_service import run_retrain_tick
+    from app.services.scoring_schedule_service import run_scoring_schedule_tick
+    from app.services.system_health_service import mark_worker_connections
+    from app.services.upload_attempt_service import PURGE_TICK_SECONDS, purge_expired_upload_attempts
+    from app.services.usage_service import run_usage_metering_tick
 
+    mark_worker_process()  # P7.1-A: this process may load stored models
+    # P8.5-A: name this worker's DB connections (liveness for /health/ready and the operator
+    # console; no new table), then logs / optional OTel for the worker process.
+    mark_worker_connections()
+    setup_observability("worker")
+    settings = get_settings()
+    print(json.dumps({"model_probe_limits": {"memory_bytes": settings.model_probe_memory_bytes,
+                                             "timeout_seconds": settings.model_probe_timeout_seconds}}), file=sys.stderr)
     poll = (
         args.poll_seconds
         if args.poll_seconds is not None
         else get_settings().ml_job_poll_seconds
     )
     claimed_by = f"{socket.gethostname()}:{os.getpid()}"[:128]
+    next_tick = 0.0
+    next_usage_tick = 0.0
+    next_notification_tick = 0.0
+    next_purge_tick = 0.0
+    next_retrain_tick = 0.0
     while True:
+        if time.monotonic() >= next_purge_tick:  # D3a: the 90-day upload log retention (bounded, idempotent)
+            next_purge_tick = time.monotonic() + PURGE_TICK_SECONDS
+            db = _session()
+            try:
+                purge_expired_upload_attempts(db)
+            except Exception as exc:  # noqa: BLE001 - never stops job processing
+                print(json.dumps({"error": f"upload log purge: {type(exc).__name__}"}), file=sys.stderr)
+                db.rollback()
+            finally:
+                db.close()
+        if time.monotonic() >= next_notification_tick:  # P8.8-A outbox: bounded batch, one transaction per row
+            next_notification_tick = time.monotonic() + max(1.0, float(settings.notifications_tick_seconds))
+            db = _session()
+            try:
+                run_notification_tick(db)
+            except Exception as exc:  # noqa: BLE001 - never stops job processing
+                print(json.dumps({"error": f"notification tick: {type(exc).__name__}"}), file=sys.stderr)
+                db.rollback()
+            finally:
+                db.close()
+        if time.monotonic() >= next_usage_tick:  # P8.4-A usage metering (bounded, per-workspace transactions)
+            next_usage_tick = time.monotonic() + max(1.0, float(settings.usage_metering_tick_seconds))
+            db = _session()
+            try:
+                run_usage_metering_tick(db)
+            except Exception as exc:  # noqa: BLE001 - never stops job processing
+                print(json.dumps({"error": f"usage metering tick: {exc}"}), file=sys.stderr)
+                db.rollback()
+            finally:
+                db.close()
+        if time.monotonic() >= next_tick:  # weekly scheduled scoring: queues jobs this loop then runs
+            next_tick = time.monotonic() + max(1.0, float(settings.scoring_schedule_tick_seconds))
+            db = _session()
+            try:
+                with observability.scheduled_tick() as tick:
+                    runs = run_scoring_schedule_tick(db)
+                    queued = sum(1 for run in runs if run.outcome == "queued")
+                    tick.labels = {"runs_queued": queued, "runs_skipped": len(runs) - queued}
+            except Exception as exc:  # noqa: BLE001 - never stops job processing
+                print(json.dumps({"error": f"scoring schedule tick: {exc}"}), file=sys.stderr)
+                db.rollback()
+            finally:
+                db.close()
+        if time.monotonic() >= next_retrain_tick:  # D5a: compare finished retrains, apply retrain policies
+            next_retrain_tick = time.monotonic() + max(1.0, float(settings.retrain_tick_seconds))
+            db = _session()
+            try:
+                run_retrain_tick(db)
+            except Exception as exc:  # noqa: BLE001 - never stops job processing
+                print(json.dumps({"error": f"retrain tick: {type(exc).__name__}"}), file=sys.stderr)
+                db.rollback()
+            finally:
+                db.close()
         db = _session()
         try:
             job = process_next_job(db, claimed_by=claimed_by)
@@ -555,6 +828,48 @@ def build_parser() -> argparse.ArgumentParser:
     governance_switch.add_argument("--reason", required=True)
     governance_switch.add_argument("--workspace", default=None, help="workspace id (omit for platform keys)")
     governance_switch.set_defaults(func=cmd_governance_switch)
+
+    usage = sub.add_parser("usage", help="P8.4-A plans and limits (platform staff)")
+    usage_sub = usage.add_subparsers(dest="usage_cmd", required=True)
+    set_plan = usage_sub.add_parser("set-plan", help="set a workspace's plan name and limits")
+    set_plan.add_argument("workspace", help="workspace id")
+    set_plan.add_argument("--admin", required=True,
+                          help="email of the platform admin (recorded only, not authenticated: database "
+                               "credentials are the control)")
+    set_plan.add_argument("--plan", default=None, help="plan name (a label, e.g. beta, team)")
+    for flag in ("--compute-seconds-month", "--storage-bytes", "--runs-per-day"):
+        set_plan.add_argument(flag, default=None, help="whole number, 'unlimited' or 'default'")
+    set_plan.set_defaults(func=cmd_usage_set_plan)
+
+    entitlements = sub.add_parser("entitlements", help="D6a workspace feature flags (platform staff)")
+    entitlements_sub = entitlements.add_subparsers(dest="entitlements_cmd", required=True)
+    flag = entitlements_sub.add_parser("set", help="switch a workspace feature flag on or off")
+    flag.add_argument("--workspace", required=True, help="workspace id")
+    flag.add_argument("--key", required=True, choices=["ai_assistant_beta"])
+    state = flag.add_mutually_exclusive_group(required=True)
+    state.add_argument("--on", dest="state", action="store_const", const="on")
+    state.add_argument("--off", dest="state", action="store_const", const="off")
+    flag.add_argument("--admin", required=True,
+                      help="email of the platform admin (recorded only, not authenticated: database credentials "
+                           "are the control)")
+    flag.set_defaults(func=cmd_entitlements_set)
+
+    improve = sub.add_parser("improve", help="P5.4-A2 improve loops (local runs)")
+    improve_sub = improve.add_subparsers(dest="improve_cmd", required=True)
+    improve_start = improve_sub.add_parser("start", help="start a loop on a completed scored run")
+    improve_start.add_argument("--user", required=True, help="email of the person starting the loop")
+    improve_start.add_argument("--workspace", required=True, help="workspace id")
+    improve_start.add_argument("--experiment", required=True, help="the start experiment id")
+    improve_start.add_argument("--goal", required=True, help='JSON, e.g. {"plain": {"metric": "pr_auc"}}')
+    improve_start.add_argument("--budget", default=None, help='JSON, e.g. {"max_iterations": 3}')
+    improve_start.set_defaults(func=cmd_improve_start)
+    for name, func, help_text in (("status", cmd_improve_status, "show a loop (as a named person)"),
+                                  ("cancel", cmd_improve_cancel, "stop a loop (as a named person)")):
+        command = improve_sub.add_parser(name, help=help_text)
+        command.add_argument("--user", required=True, help="email of the person")
+        command.add_argument("--workspace", required=True, help="workspace id")
+        command.add_argument("--run", required=True, help="the improve run id")
+        command.set_defaults(func=func)
 
     agents = sub.add_parser("agents")
     agents_sub = agents.add_subparsers(dest="agents_cmd", required=True)
@@ -639,9 +954,18 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--id", required=True)
     report.set_defaults(func=cmd_experiment_report)
 
+    ai_smoke = sub.add_parser(
+        "verify-ai-smoke",
+        help="call the production verifier once through a provider adapter with synthetic bounded evidence",
+    )
+    ai_smoke.add_argument("--live", action="store_true",
+                          help="required: the call leaves the process (AI_ENABLED and global_ai must be on)")
+    ai_smoke.add_argument("--provider", choices=("anthropic", "openai"), default="anthropic",
+                          help="anthropic (default) or openai (legacy)")
+    ai_smoke.set_defaults(func=cmd_verify_ai_smoke)
     smoke = sub.add_parser(
         "verify-openai-smoke",
-        help="call the production OpenAI verifier once with synthetic bounded evidence",
+        help="legacy: call the OpenAI verifier once with synthetic bounded evidence",
     )
     smoke.add_argument("--live", action="store_true",
                        help="required: the call leaves the process (AI_ENABLED and global_ai must be on)")

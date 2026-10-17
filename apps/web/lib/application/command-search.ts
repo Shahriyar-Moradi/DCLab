@@ -40,7 +40,7 @@ export function isUuid(value: unknown): value is string {
 
 /** Plain single-line text: control characters removed, length capped. */
 export function plainText(value: unknown, max = 120): string {
-  const text = String(value ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim();
+  const text = String(value ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").replace(/\s+/g, " ").trim();
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 

@@ -92,6 +92,8 @@ ALLOWED_REQUEST_SPEC_KEYS = frozenset(
         # request is bound to (idempotent replay).
         "parent_experiment_id",
         "change_set_digest",
+        # ADR 0007 §6.2 (P5.4-A1b): the digest of a branch's service-only overrides, bound too.
+        "service_overrides_digest",
         # /v1 Idempotency-Key binding (P3.1-A): server-owned digest of the
         # request a key names; callers can never supply it.
         "request_digest",
@@ -102,13 +104,16 @@ ALLOWED_REQUEST_SPEC_KEYS = frozenset(
         # person's answer to a split confirmation (``SPLIT_RESOLUTIONS``).
         "plan_refusal",
         "split_resolution",
+        # Weekly scheduled scoring: the schedule run that queued this scoring (server only).
+        "scoring_schedule_run_id",
     }
 )
 
 # Keys only server code writes (branch replay binding, /v1 digest binding); a
 # /v1 caller's request_spec may never carry them.
 SERVER_OWNED_REQUEST_SPEC_KEYS = frozenset(
-    {"parent_experiment_id", "change_set_digest", "request_digest", "model_version_id", "output_format"}
+    {"parent_experiment_id", "change_set_digest", "request_digest", "model_version_id", "output_format",
+     "scoring_schedule_run_id", "service_overrides_digest"}
 )
 
 CK_EXECUTION_REQUEST_OPERATION = sql_in_clause("operation", EXECUTION_OPERATIONS)

@@ -1,0 +1,55 @@
+{
+  "case": "propose_branch",
+  "exchanges": [
+    {
+      "events": [
+        {
+          "event": "turn_started"
+        },
+        {
+          "event": "tool_call",
+          "tool": "branch_experiment"
+        },
+        {
+          "code": null,
+          "event": "proposal_created",
+          "status": "proposed",
+          "tool": "branch_experiment"
+        },
+        {
+          "event": "tool_result",
+          "ok": true,
+          "tool": "branch_experiment"
+        },
+        {
+          "citations": [
+            {
+              "id": "<id:1>",
+              "kind": "experiment"
+            }
+          ],
+          "event": "assistant_message",
+          "fallback": null,
+          "kind": "answer",
+          "llm_used": true,
+          "message": "I proposed a branch of [E1](dclab://experiment/<id:1>) without xgboost: confirm it on the card."
+        },
+        {
+          "error_code": null,
+          "event": "turn_done",
+          "proposals": 1,
+          "status": "completed"
+        }
+      ],
+      "request": {
+        "text": "Try the best run again without xgboost."
+      },
+      "status": 200
+    }
+  ],
+  "ledger_rows": 2,
+  "model_calls": 2,
+  "proposals": [
+    "proposed"
+  ]
+}

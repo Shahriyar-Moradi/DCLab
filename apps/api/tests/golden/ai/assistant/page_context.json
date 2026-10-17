@@ -1,0 +1,51 @@
+{
+  "case": "page_context",
+  "exchanges": [
+    {
+      "events": [
+        {
+          "event": "turn_started"
+        },
+        {
+          "event": "tool_call",
+          "tool": "get_experiment"
+        },
+        {
+          "event": "tool_result",
+          "ok": true,
+          "tool": "get_experiment"
+        },
+        {
+          "citations": [
+            {
+              "id": "<id:1>",
+              "kind": "experiment"
+            }
+          ],
+          "event": "assistant_message",
+          "fallback": null,
+          "kind": "answer",
+          "llm_used": true,
+          "message": "You are looking at [E1](dclab://experiment/<id:1>): CV roc_auc 0.812."
+        },
+        {
+          "error_code": null,
+          "event": "turn_done",
+          "proposals": 0,
+          "status": "completed"
+        }
+      ],
+      "request": {
+        "page_context": {
+          "experiment_id": "<id:1>",
+          "screen": "experiment"
+        },
+        "text": "What am I looking at?"
+      },
+      "status": 200
+    }
+  ],
+  "ledger_rows": 2,
+  "model_calls": 2,
+  "proposals": []
+}

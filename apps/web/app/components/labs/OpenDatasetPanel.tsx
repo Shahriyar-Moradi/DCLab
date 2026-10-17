@@ -17,6 +17,7 @@ import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { actionErrorSentence } from "@/lib/application/api-error-text";
 
 function isLabRunStatus(value: string): value is LabRunStatus {
   return (
@@ -84,7 +85,7 @@ export function OpenDatasetPanel({ category }: { category: InsightCategoryValue 
           disabled={!canWrite || uploading}
           label={file ? file.name : "Drop a file here, or click to choose"}
           hint={selected ? "Optional: name the outcome column, then save." : undefined}
-          error={saveFile.isError ? saveFile.error.message : undefined}
+          error={saveFile.isError ? actionErrorSentence(saveFile.error, "saving the file") : undefined}
           onFiles={(files) => void onFileChange(files[0])}
         />
       </div>
@@ -127,7 +128,7 @@ export function OpenDatasetPanel({ category }: { category: InsightCategoryValue 
       </div>
       {!canWrite ? (
         <p className="mt-3 text-body text-ink-muted">
-          Read-only access. Uploading and running analyses require an administrator.
+          Read-only access. Uploading and running analyses need an admin or a data scientist.
         </p>
       ) : null}
       {uploads.isError ? (

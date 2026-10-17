@@ -13,6 +13,8 @@ import { Term } from "@/components/studio/Term";
 import { GLOSSARY } from "@/components/studio/glossary";
 import { ModelInspector } from "@/app/components/studio-app/Inspectors";
 import { ModelCard } from "@/app/components/studio-app/ModelCard";
+import { ModelFinalTest } from "@/app/components/studio-app/ModelFinalTest";
+import { ModelSavedFile } from "@/app/components/studio-app/ModelSavedFile";
 import { OperatingPointsPanel } from "@/app/components/studio-app/OperatingPoints";
 import { ScoreNewData } from "@/app/components/studio-app/ScoreNewData";
 import { QueryNotice } from "@/app/components/studio-app/StudioParts";
@@ -24,7 +26,9 @@ import { isUuid, plainText } from "@/lib/application/command-search";
 const TABS = [
   { id: "version", label: "Summary" },
   { id: "threshold", label: "Threshold" },
+  { id: "final", label: "Final test" },
   { id: "card", label: "Model card" },
+  { id: "file", label: "Saved file & checks" },
   { id: "score", label: "Score new data" },
 ];
 
@@ -67,7 +71,7 @@ function ModelPageInner() {
       <PageHead
         title={title}
         badges={badge}
-        subtitle="What this model is, its threshold, its card, whether it is in use, and scoring a new file with it."
+        subtitle="What this model is, its threshold, its final test, its card, how it is saved, whether it is in use, and scoring a new file with it."
         actions={<><Link className="btn" href={`/projects/${id}/models`}>All models</Link><Link className="btn" href={`/projects/${id}/graph`}>Back to the project diagram</Link></>}
       />
       {!validId ? <Banner tone="warn">This is not a valid model link. <Link href={`/projects/${id}/models`}>See all models</Link>.</Banner> : null}
@@ -75,7 +79,9 @@ function ModelPageInner() {
       {usable ? <Tabs items={TABS} value={tab} onChange={setTab} idPrefix="model" label="Model sections" /> : null}
       <TabPanel idPrefix="model" id="version" active={usable && tab === "version"}>{usable ? <ModelInspector projectId={id} modelVersionId={modelId} /> : null}</TabPanel>
       <TabPanel idPrefix="model" id="threshold" active={usable && tab === "threshold"}>{usable && tab === "threshold" ? <ThresholdTab projectId={id} modelVersionId={modelId} /> : null}</TabPanel>
+      <TabPanel idPrefix="model" id="final" active={usable && tab === "final"}>{usable && tab === "final" ? <ModelFinalTest projectId={id} modelVersionId={modelId} /> : null}</TabPanel>
       <TabPanel idPrefix="model" id="card" active={usable && tab === "card"}>{usable && tab === "card" ? <ModelCard projectId={id} modelVersionId={modelId} /> : null}</TabPanel>
+      <TabPanel idPrefix="model" id="file" active={usable && tab === "file"}>{usable && tab === "file" ? <ModelSavedFile projectId={id} modelVersionId={modelId} /> : null}</TabPanel>
       <TabPanel idPrefix="model" id="score" active={usable && tab === "score"}>{usable ? <ScoreNewData projectId={id} modelVersionId={modelId} modelLabel={model.data ? title : null} /> : null}</TabPanel>
     </>
   );

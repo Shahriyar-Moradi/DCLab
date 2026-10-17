@@ -182,7 +182,8 @@ jobs:
     name: Whole-system E2E
     needs: regression
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 100 serial browser tests plus training runs: ~35-40 min measured locally (2026-10-17).
+    timeout-minutes: 75
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dclab_e2e_verify
       DCLAB_E2E_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dclab_e2e_verify

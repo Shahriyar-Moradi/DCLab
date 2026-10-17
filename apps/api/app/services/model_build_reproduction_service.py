@@ -66,6 +66,7 @@ from app.engine.modeling.validation_planner import (
     STRATIFIED_KFOLD,
     TIME_SERIES_SPLIT,
 )
+from app.engine.validation.split_assignment import POOL_ORDER_SOURCE_ROW
 from app.engine.validation.splits import SOURCE_ROW_COLUMN
 from app.services.artifact_service import read_artifact_bytes, store_artifact
 from app.services.authorization_service import can_read_workspace
@@ -266,6 +267,7 @@ def _split_assignment(experiment: Experiment, result: dict[str, Any]) -> Reprodu
         holdout_row_count=plan.holdout_row_count,
         source_row_column=SOURCE_ROW_COLUMN,
         partitioned_by=mode,
+        pool_order=POOL_ORDER_SOURCE_ROW if split.get("pool_order") == POOL_ORDER_SOURCE_ROW else None,
     )
 
 
@@ -647,11 +649,22 @@ def reproduction_spec_from_experiment(experiment: Experiment) -> ModelBuildRepro
         split_assignment=_split_assignment(experiment, result),
         branch=_branch(experiment, result),
         decision_threshold=_decision_threshold(result),
+        holdout_sealed=experiment.evidence_mode == "sealed",
     )
-    spec.spec_digest = content_digest(
-        spec.model_dump(mode="json", exclude={"spec_digest", "stage_code"})
-    )
+    spec.spec_digest = reproduction_spec_digest(spec)
     return spec
+
+
+def reproduction_spec_digest(spec: ModelBuildReproductionSpec) -> str:
+    """A scored run's digest is unchanged by the sealed flag, and a run trained before the canonical
+    pool order keeps its digest: each is hashed only when set (the training row order is an input)."""
+
+    excluded: dict[str, Any] = {"spec_digest": True, "stage_code": True}
+    if not spec.holdout_sealed:
+        excluded["holdout_sealed"] = True
+    if spec.split_assignment is not None and spec.split_assignment.pool_order is None:
+        excluded["split_assignment"] = {"pool_order": True}
+    return content_digest(spec.model_dump(mode="json", exclude=excluded))
 
 
 def build_model_build_reproduction(experiment: Experiment) -> ModelBuildReproductionSpec:

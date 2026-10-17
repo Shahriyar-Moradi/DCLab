@@ -6,10 +6,8 @@ engine is never mocked. Spies only observe (and call through to) real code.
 
 from __future__ import annotations
 
-import io
 from datetime import datetime
 
-import joblib
 import numpy as np
 import pandas as pd
 import pytest
@@ -22,6 +20,8 @@ from app.db.models import (
     ExperimentTestPrediction,
     ModelSelectionDecision,
 )
+from app.engine.serving.model_package import read_package, sha256_hex
+from app.engine.serving.package_loader import load_model_package
 from app.services import auto_train_service
 from app.services.auto_train import training as training_stage
 from app.services.artifact_service import read_artifact_bytes
@@ -65,7 +65,8 @@ def _winner_pipeline(db_session, upload: ClientLabUpload):
     )
     assert row is not None, "the winner model is published as an artifact"
     payload = read_artifact_bytes(db_session, workspace_id=row.workspace_id, artifact_id=row.id)
-    return joblib.load(io.BytesIO(payload))
+    manifest = read_package(payload).manifest_bytes  # P7.1-A: a model package, never a pickle
+    return load_model_package(payload, manifest_digest=sha256_hex(manifest)).pipeline
 
 
 def _classification(n: int = 260, seed: int = 11) -> pd.DataFrame:
@@ -265,6 +266,70 @@ def test_6_mid_run_refresh_reads_backend_state(auth_client, db_session, monkeypa
 
 
 # ---------------------------------------------------------------------------
+# D8a — no reader ever sees a completed run without its evidence lock
+# ---------------------------------------------------------------------------
+
+
+def test_completed_is_committed_with_the_evidence_lock(auth_client, db_session, test_engine, monkeypatch):
+    from sqlalchemy import event
+    from sqlalchemy.orm import sessionmaker
+
+    from app.db.models import ModelVersion
+    from app.services import reproducibility_service
+    from app.services.experiment_service import STATUS_SQL
+
+    _no_background(monkeypatch)
+    upload_id = _upload(auth_client, _classification(seed=12))
+    other = sessionmaker(bind=test_engine)
+    seen: list[tuple] = []
+
+    def outside(experiment_id) -> None:
+        """What another connection (an API reader) sees now."""
+        with other() as reader:
+            raw, public, locked = reader.execute(
+                select(Experiment.status, STATUS_SQL, Experiment.scientific_evidence_locked_at)
+                .where(Experiment.id == experiment_id)).one()
+            versions = reader.scalar(select(ModelVersion.id).where(ModelVersion.pipeline_run_id == experiment_id))
+        seen.append((raw, public, locked, versions))
+
+    real_execute = training_stage.execute_experiment
+    real_repro = reproducibility_service.persist_reproducibility
+
+    def execute_then_look(db, experiment, **kwargs):
+        done = real_execute(db, experiment, **kwargs)
+        outside(done.id)  # training committed its results
+        return done
+
+    def repro_then_look(db, experiment, result):
+        outside(experiment.id)  # the run's result is committed; the lock transaction is open
+        return real_repro(db, experiment, result)
+
+    monkeypatch.setattr(training_stage, "execute_experiment", execute_then_look)
+    monkeypatch.setattr(reproducibility_service, "persist_reproducibility", repro_then_look)
+    unlocked: list = []
+
+    def guard(session) -> None:
+        """Every commit of the run: never a COMPLETED run without its evidence lock in the same commit."""
+        unlocked.extend(obj.id for obj in list(session.identity_map.values())
+                        if isinstance(obj, Experiment) and str(obj.status).upper() == "COMPLETED"
+                        and obj.scientific_evidence_locked_at is None)
+
+    event.listen(db_session, "before_commit", guard)
+    try:
+        upload, _result = _train(db_session, upload_id)
+    finally:
+        event.remove(db_session, "before_commit", guard)
+    assert unlocked == []
+    assert upload.pipeline_status == "completed" and len(seen) == 2
+    for raw, public, locked, version in seen:
+        assert raw != "COMPLETED" and public != "completed" and locked is None and version is None
+    outside(upload.experiment_id)
+    raw, public, locked, version = seen[-1]
+    assert (raw, public) == ("COMPLETED", "completed") and locked is not None and version is not None
+    assert db_session.get(Experiment, upload.experiment_id).ended_at is not None
+
+
+# ---------------------------------------------------------------------------
 # §27 Test 7 — a completed run reloads from persistence without retraining
 # ---------------------------------------------------------------------------
 
@@ -431,7 +496,7 @@ def test_explicit_two_label_target_positive_class_is_value_based():
 # ---------------------------------------------------------------------------
 
 
-def test_critic_runs_on_every_completed_run_when_enabled(auth_client, db_session, monkeypatch):
+def test_critic_runs_on_every_completed_run_when_enabled(engineer_client, db_session, monkeypatch):
     from types import SimpleNamespace
 
     from app.agents.gateway.limits import GatewayLimits
@@ -454,7 +519,7 @@ def test_critic_runs_on_every_completed_run_when_enabled(auth_client, db_session
 
     reviewed = []
     for frame in (_classification(), _regression()):
-        upload, _result = _train(db_session, _upload(auth_client, frame))
+        upload, _result = _train(db_session, _upload(engineer_client, frame))
         assert upload.pipeline_status == "completed", upload.pipeline_log
         experiment = db_session.get(Experiment, upload.experiment_id)
         run = db_session.scalar(select(AgentRun).where(AgentRun.experiment_id == experiment.id,
@@ -465,7 +530,7 @@ def test_critic_runs_on_every_completed_run_when_enabled(auth_client, db_session
     advice = {"verdict": "needs_work", "summary": "Insufficient evidence for promotion.", "cv_metrics": [],
               "findings": [], "confidence": 0.4}
     fake = FakeProvider(handler=lambda _call: dict(advice), environment="test")
-    service = AgentService(gateway=GatewayService(providers={"openai": fake}, limits=GatewayLimits(),
+    service = AgentService(gateway=GatewayService(providers={"anthropic": fake}, limits=GatewayLimits(),
                                                   settings=lambda: on), settings=lambda: on)
     for experiment, run in reviewed:
         before = (experiment.status, experiment.scientific_evidence_locked_at, dict(experiment.result))

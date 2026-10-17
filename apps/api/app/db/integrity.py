@@ -253,6 +253,9 @@ BEGIN
             RAISE EXCEPTION
                 'experiments.parent_pipeline_run_id, change_set and intent are insert-only';
         END IF;
+        IF NEW.evidence_mode IS DISTINCT FROM OLD.evidence_mode THEN
+            RAISE EXCEPTION 'experiments.evidence_mode is insert-only';
+        END IF;
         IF OLD.source_dataset_id IS NOT NULL
             AND NEW.source_dataset_id IS DISTINCT FROM OLD.source_dataset_id THEN
             RAISE EXCEPTION 'experiments.source_dataset_id is write-once';
@@ -296,7 +299,7 @@ $$ LANGUAGE plpgsql
 EXPERIMENTS_LINEAGE_GUARD_TRIGGER_SQL = """
 CREATE TRIGGER experiments_lineage_guard
 BEFORE INSERT OR UPDATE OF split_plan_id, parent_pipeline_run_id, change_set, intent,
-    source_dataset_id, project_id, workspace_id ON experiments
+    source_dataset_id, project_id, workspace_id, evidence_mode ON experiments
 FOR EACH ROW EXECUTE FUNCTION prevent_experiment_lineage_violation()
 """
 
@@ -1152,8 +1155,193 @@ R3_RUNS_APPEND_ONLY_TRIGGER_SQL = (
 )
 
 
+# 0078 (P7.2-A): model releases (approvals for scoring) are append-only (identical literal in 0078).
+MODEL_RELEASES_APPEND_ONLY_TRIGGER_SQL = (
+    "CREATE TRIGGER model_releases_append_only BEFORE UPDATE OR DELETE ON model_releases "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+)
+
+
+# 0079: the weekly scoring run log is append-only (identical literal in 0079_scoring_schedules).
+SCORING_SCHEDULE_RUNS_APPEND_ONLY_TRIGGER_SQL = (
+    "CREATE TRIGGER scoring_schedule_runs_append_only BEFORE UPDATE OR DELETE ON scoring_schedule_runs "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+)
+
+
+# 0080 (P7.4-A): monitoring windows and linked outcome files are append-only (identical literals in 0080).
+MONITORING_APPEND_ONLY_TRIGGER_SQL = tuple(
+    f"CREATE TRIGGER {table}_append_only BEFORE UPDATE OR DELETE ON {table} "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    for table in ("monitoring_windows", "monitoring_outcome_sets")
+)
+
+# 0081 (P8.4-A): usage records are append-only (identical literal in 0081_usage_records).
+USAGE_RECORDS_APPEND_ONLY_TRIGGER_SQL = (
+    "CREATE TRIGGER usage_records_append_only BEFORE UPDATE OR DELETE ON usage_records "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+)
+
+# 0083 (P8.8-A): the webhook delivery log and change trail are append-only (identical literals in 0083).
+WEBHOOK_APPEND_ONLY_TRIGGER_SQL = tuple(
+    f"CREATE TRIGGER {table}_append_only BEFORE UPDATE OR DELETE ON {table} "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    for table in ("webhook_deliveries", "webhook_changes")
+)
+
+# 0084 (D2a): a finished ml_job attempt is final; the running row is updated once, at its end.
+# DELETE stays possible (the job's or the workspace's cascade). Identical literal in 0084.
+ML_JOB_ATTEMPTS_FINAL_TRIGGER_SQL = (
+    "CREATE TRIGGER ml_job_attempts_final BEFORE UPDATE ON ml_job_attempts "
+    "FOR EACH ROW WHEN (OLD.outcome <> 'running') EXECUTE FUNCTION prevent_canonical_row_mutation()"
+)
+
+# 0085 (D3a): the upload log is append-only and retention-aware (the 0071 functions): UPDATE refused,
+# DELETE only under the retention / workspace-deletion GUCs; created_at forced on insert. Identical in 0085.
+UPLOAD_ATTEMPTS_TRIGGER_SQL = (
+    "CREATE TRIGGER upload_attempts_append_only BEFORE UPDATE OR DELETE ON upload_attempts "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()",
+    "CREATE TRIGGER upload_attempts_created_at_now BEFORE INSERT ON upload_attempts "
+    "FOR EACH ROW EXECUTE FUNCTION force_created_at_now()",
+)
+
+# 0087 (D5a): the retrain log and its stored comparisons are append-only (identical literals in 0087).
+RETRAIN_APPEND_ONLY_TRIGGER_SQL = tuple(
+    f"CREATE TRIGGER {table}_append_only BEFORE UPDATE OR DELETE ON {table} "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    for table in ("retrain_requests", "retrain_comparisons")
+)
+
+
+# 0089 (D5b): a project's monitoring threshold versions are append-only (identical literal in 0089).
+MONITORING_THRESHOLDS_APPEND_ONLY_TRIGGER_SQL = (
+    "CREATE TRIGGER monitoring_thresholds_append_only BEFORE UPDATE OR DELETE ON monitoring_thresholds "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+)
+
+
+# 0087 (P5.4-A2, ADR 0007 §9): improve loops. Goal, budget, plan and T frozen at INSERT; acceptance
+# write-once; status moves only along the loop's transitions; a finished loop is final. A try's
+# experiment and frozen comparison are set once (null -> value); a finished try is final.
+# Identical literals in 0088_improve_runs.
+GUARD_IMPROVE_RUN_SQL = """
+CREATE OR REPLACE FUNCTION guard_improve_run_update()
+RETURNS trigger AS $$
+BEGIN
+    IF ROW(NEW.workspace_id, NEW.project_id, NEW.split_plan_id, NEW.start_experiment_id, NEW.goal, NEW.budget,
+           NEW.plan, NEW.planned_comparisons, NEW.validation_folds, NEW.looks_before, NEW.sealed_set_label,
+           NEW.created_by_user_id, NEW.created_by_service_token_id, NEW.created_at)
+       IS DISTINCT FROM ROW(OLD.workspace_id, OLD.project_id, OLD.split_plan_id, OLD.start_experiment_id, OLD.goal,
+           OLD.budget, OLD.plan, OLD.planned_comparisons, OLD.validation_folds, OLD.looks_before,
+           OLD.sealed_set_label, OLD.created_by_user_id, OLD.created_by_service_token_id, OLD.created_at) THEN
+        RAISE EXCEPTION 'improve_runs: goal, budget, plan and lineage are frozen';
+    END IF;
+    IF (OLD.accepted_iteration_seq IS NOT NULL AND NEW.accepted_iteration_seq IS DISTINCT FROM OLD.accepted_iteration_seq)
+       OR (OLD.accepted_by_user_id IS NOT NULL AND NEW.accepted_by_user_id IS DISTINCT FROM OLD.accepted_by_user_id)
+       OR (OLD.acceptance_record_id IS NOT NULL AND NEW.acceptance_record_id IS DISTINCT FROM OLD.acceptance_record_id) THEN
+        RAISE EXCEPTION 'improve_runs: the acceptance is write-once';
+    END IF;
+    IF OLD.status IN ('completed', 'failed', 'cancelled') THEN
+        RAISE EXCEPTION 'improve_runs: a finished loop is final';
+    END IF;
+    IF OLD.sealed_set_consulted AND NOT NEW.sealed_set_consulted THEN
+        RAISE EXCEPTION 'improve_runs: a consulted final test set stays consulted';
+    END IF;
+    IF NEW.final_attempts < OLD.final_attempts
+       OR (OLD.final_experiment_id IS NOT NULL AND NEW.final_experiment_id IS NULL)
+       OR (NEW.final_experiment_id IS DISTINCT FROM OLD.final_experiment_id
+           AND NEW.final_attempts <> OLD.final_attempts + 1) THEN
+        RAISE EXCEPTION 'improve_runs: a final run changes only with a new attempt';
+    END IF;
+    IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
+        (OLD.status = 'queued' AND NEW.status IN ('running', 'completed', 'failed', 'cancelled'))
+        OR (OLD.status = 'running' AND NEW.status IN ('waiting_user', 'completed', 'failed', 'cancelled'))
+        OR (OLD.status = 'waiting_user' AND NEW.status IN ('finalizing', 'completed', 'failed', 'cancelled'))
+        OR (OLD.status = 'finalizing' AND NEW.status IN ('waiting_user', 'completed', 'failed', 'cancelled'))
+    ) THEN
+        RAISE EXCEPTION 'improve_runs: % -> % is not a loop transition', OLD.status, NEW.status;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+GUARD_IMPROVE_ITERATION_SQL = """
+CREATE OR REPLACE FUNCTION guard_improve_iteration_update()
+RETURNS trigger AS $$
+BEGIN
+    IF ROW(NEW.workspace_id, NEW.project_id, NEW.improve_run_id, NEW.seq, NEW.plan_index, NEW.kind, NEW.action,
+           NEW.incumbent_experiment_id, NEW.planned_new_candidates, NEW.planned_candidate_ids,
+           NEW.idempotency_key, NEW.created_at)
+       IS DISTINCT FROM ROW(OLD.workspace_id, OLD.project_id, OLD.improve_run_id, OLD.seq, OLD.plan_index, OLD.kind,
+           OLD.action, OLD.incumbent_experiment_id, OLD.planned_new_candidates, OLD.planned_candidate_ids,
+           OLD.idempotency_key, OLD.created_at) THEN
+        RAISE EXCEPTION 'improve_iterations: the planned try is frozen';
+    END IF;
+    IF (OLD.experiment_id IS NOT NULL AND NEW.experiment_id IS DISTINCT FROM OLD.experiment_id)
+       OR (OLD.comparison IS NOT NULL AND NEW.comparison IS DISTINCT FROM OLD.comparison)
+       OR (OLD.comparisons_before IS NOT NULL AND NEW.comparisons_before IS DISTINCT FROM OLD.comparisons_before) THEN
+        RAISE EXCEPTION 'improve_iterations: experiment, comparison and N are set once';
+    END IF;
+    IF OLD.status NOT IN ('planned', 'running') THEN
+        RAISE EXCEPTION 'improve_iterations: a finished try is final';
+    END IF;
+    IF NEW.status IS DISTINCT FROM OLD.status AND NOT (
+        (OLD.status = 'planned' AND NEW.status IN ('running', 'failed', 'cancelled'))
+        OR (OLD.status = 'running' AND NEW.status IN ('accepted', 'rejected', 'not_comparable', 'failed', 'cancelled'))
+    ) THEN
+        RAISE EXCEPTION 'improve_iterations: % -> % is not a try transition', OLD.status, NEW.status;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+IMPROVE_TRIGGER_SQL = (
+    GUARD_IMPROVE_RUN_SQL,
+    GUARD_IMPROVE_ITERATION_SQL,
+    "CREATE TRIGGER improve_runs_guard BEFORE UPDATE ON improve_runs "
+    "FOR EACH ROW EXECUTE FUNCTION guard_improve_run_update()",
+    "CREATE TRIGGER improve_iterations_guard BEFORE UPDATE ON improve_iterations "
+    "FOR EACH ROW EXECUTE FUNCTION guard_improve_iteration_update()",
+)
+
+
+# 0090 (D7a): a business question's text, asker, project, link and created_at are frozen and a closed
+# question is final; replies are append-only and retention-aware (the 0071 functions: DELETE only under
+# the retention / workspace-deletion guard; created_at forced on insert). Identical literals in 0090.
+GUARD_BUSINESS_QUESTION_SQL = """
+CREATE OR REPLACE FUNCTION guard_business_question_update()
+RETURNS trigger AS $$
+BEGIN
+    IF ROW(NEW.id, NEW.workspace_id, NEW.project_id, NEW.asked_by_user_id, NEW.model_version_id,
+           NEW.batch_prediction_id, NEW.monitoring_window_id, NEW.text, NEW.created_at)
+       IS DISTINCT FROM ROW(OLD.id, OLD.workspace_id, OLD.project_id, OLD.asked_by_user_id, OLD.model_version_id,
+           OLD.batch_prediction_id, OLD.monitoring_window_id, OLD.text, OLD.created_at) THEN
+        RAISE EXCEPTION 'business_questions: the question is frozen';
+    END IF;
+    IF OLD.status = 'closed' THEN
+        RAISE EXCEPTION 'business_questions: a closed question is final';
+    END IF;
+    IF NEW.version <> OLD.version + 1 THEN
+        RAISE EXCEPTION 'business_questions: every change takes the next version';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+BUSINESS_QUESTIONS_TRIGGER_SQL = (
+    GUARD_BUSINESS_QUESTION_SQL,
+    "CREATE TRIGGER business_questions_guard BEFORE UPDATE ON business_questions "
+    "FOR EACH ROW EXECUTE FUNCTION guard_business_question_update()",
+    "CREATE TRIGGER business_question_replies_append_only BEFORE UPDATE OR DELETE ON business_question_replies "
+    "FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()",
+    "CREATE TRIGGER business_question_replies_created_at_now BEFORE INSERT ON business_question_replies "
+    "FOR EACH ROW EXECUTE FUNCTION force_created_at_now()",
+)
+
+
 def install_immutability_triggers(connection) -> None:
-    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077 install (for create_all)."""
+    """Apply the trigger DDL Alembic 0035, 0042, 0043, 0063, 0065, 0067, 0069, 0071-0074, 0077-0081, 0083-0090
+    install (for create_all)."""
 
     from app.db.evidence_lock import evidence_lock_upgrade_statements
 
@@ -1176,6 +1364,17 @@ def install_immutability_triggers(connection) -> None:
     )
     # 0077 (P6.8-A): stored R3 runs are append-only (identical literal in 0077_r3_runs).
     connection.execute(text(R3_RUNS_APPEND_ONLY_TRIGGER_SQL))
+    connection.execute(text(MODEL_RELEASES_APPEND_ONLY_TRIGGER_SQL))
+    connection.execute(text(SCORING_SCHEDULE_RUNS_APPEND_ONLY_TRIGGER_SQL))
+    for statement in MONITORING_APPEND_ONLY_TRIGGER_SQL:
+        connection.execute(text(statement))
+    connection.execute(text(USAGE_RECORDS_APPEND_ONLY_TRIGGER_SQL))
+    for statement in WEBHOOK_APPEND_ONLY_TRIGGER_SQL:
+        connection.execute(text(statement))
+    connection.execute(text(ML_JOB_ATTEMPTS_FINAL_TRIGGER_SQL))
+    for statement in RETRAIN_APPEND_ONLY_TRIGGER_SQL:
+        connection.execute(text(statement))
+    connection.execute(text(MONITORING_THRESHOLDS_APPEND_ONLY_TRIGGER_SQL))
     for statement in provenance_immutability_upgrade_statements():
         connection.execute(text(statement))
     for statement in evidence_lock_upgrade_statements():
@@ -1199,6 +1398,12 @@ def install_immutability_triggers(connection) -> None:
     for statement in ai_governance_trigger_statements():
         connection.execute(text(statement))
     for statement in agent_run_release_trigger_statements():
+        connection.execute(text(statement))
+    for statement in UPLOAD_ATTEMPTS_TRIGGER_SQL:  # after the 0071 functions it uses
+        connection.execute(text(statement))
+    for statement in IMPROVE_TRIGGER_SQL:
+        connection.execute(text(statement))
+    for statement in BUSINESS_QUESTIONS_TRIGGER_SQL:  # after the 0071 functions it uses
         connection.execute(text(statement))
 
 

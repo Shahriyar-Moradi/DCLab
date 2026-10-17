@@ -5,7 +5,8 @@
  */
 export type GlossaryKey =
   | "cv" | "finalTest" | "prauc" | "recall" | "precision" | "threshold"
-  | "classWeights" | "baseline" | "leakage" | "drift" | "psi";
+  | "classWeights" | "baseline" | "leakage" | "drift" | "psi"
+  | "lightgbm" | "catboost" | "fold" | "trustChecks" | "accessToken";
 
 export type GlossaryEntry = { label: string; definition: string };
 
@@ -54,7 +55,33 @@ export const GLOSSARY: Record<GlossaryKey, GlossaryEntry> = {
     label: "PSI",
     definition: "Population Stability Index: a number for how much a column's values shifted between two periods. Below 0.1 is small; 0.2 or more is usually worth a look.",
   },
+  lightgbm: {
+    label: "LightGBM",
+    definition: "A fast model family that adds many small decision trees one after another. It often works well on tables of numbers and categories.",
+  },
+  catboost: {
+    label: "CatBoost",
+    definition: "A model family built from decision trees that handles category columns (such as a plan type) directly, without turning them into numbers first.",
+  },
+  fold: {
+    label: "fold",
+    definition: "One slice of the training rows in cross-validation. Each fold is left out once and scored by a model that learned from the other folds.",
+  },
+  trustChecks: {
+    label: "trust checks",
+    definition: "Automatic checks on every run, such as leakage, a big gap between training and cross-validation scores, duplicate rows, a rare class and scores that look too good to be true. Each one passes or warns.",
+  },
+  accessToken: {
+    label: "access token",
+    definition: "A secret key that lets your own code or a coding assistant use DCLab with limited rights. It is shown once, and you can revoke it at any time under Connect.",
+  },
 };
+
+/** Every term in the order the glossary panel lists them (the 16 terms of the v7 glossary). */
+export const GLOSSARY_ORDER: readonly GlossaryKey[] = [
+  "cv", "prauc", "recall", "precision", "threshold", "classWeights", "baseline", "leakage",
+  "drift", "psi", "lightgbm", "catboost", "fold", "trustChecks", "accessToken", "finalTest",
+];
 
 export function glossaryEntry(key: GlossaryKey): GlossaryEntry {
   return GLOSSARY[key];

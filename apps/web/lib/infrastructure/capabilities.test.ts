@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -6,7 +7,9 @@ import {
   canAccessProductRoute,
   studioRoute,
   defaultProductRoute,
+  isBusinessViewPath,
   isLegacyMarketingPath,
+  isOperatorPath,
   safeNextPath,
   safeWorkspaceSwitchDestination,
 } from "./capabilities.ts";
@@ -50,7 +53,7 @@ test("navigation follows server capabilities rather than the display role", () =
 test("Studio routes need the development workspace role", () => {
   const developer = user({ [CAPABILITIES.developmentAccess]: true });
   const client = user({ [CAPABILITIES.applicationAccess]: true });
-  for (const path of ["/home", "/inbox", "/agents", "/projects", "/projects/p1/experiments/e1"]) {
+  for (const path of ["/home", "/inbox", "/agents", "/real", "/projects", "/projects/p1/experiments/e1"]) {
     assert.equal(canAccessProductRoute(developer, path), true, path);
     assert.equal(canAccessProductRoute(client, path), false, path);
   }
@@ -61,22 +64,43 @@ test("Studio routes need the development workspace role", () => {
 
 test("Studio paths: known sections and UUID ids only; a project opens on Experiments", () => {
   const id = "11111111-1111-4111-8111-111111111111";
-  for (const ok of ["/home", "/inbox", "/agents", "/projects", "/projects/new", `/projects/${id}/predictions`, `/projects/${id}/experiments/new`, `/projects/${id}/experiments/compare`, `/projects/${id}/graph`, `/projects/${id}/experiments/${id}`,
-    ...["data", "splits", "features", "models", "pipeline"].map((section) => `/projects/${id}/${section}/${id}`)]) {
+  for (const ok of ["/home", "/inbox", "/agents", "/settings", "/governance", "/real", "/projects", "/projects/new", `/projects/${id}/predictions`, `/projects/${id}/goal`, `/projects/${id}/experiments/new`, `/projects/${id}/experiments/compare`, `/projects/${id}/graph`, `/projects/${id}/experiments/${id}`,
+    ...["data", "splits", "features", "models", "pipeline", "improve"].map((section) => `/projects/${id}/${section}/${id}`)]) {
     assert.equal(studioRoute(ok), "ok", ok);
   }
   assert.deepEqual(studioRoute(`/projects/${id}`), { redirect: `/projects/${id}/experiments` });
   for (const bad of ["/projects/x/graph", `/projects/${id}/nope`, `/projects/${id}/constructor`, `/projects/${id}/graph/x`,
-    `/projects/${id}/experiments/x`, "/home/x", "/agents/x", "/agents/", "/projects/AAAAAAAA-1111-4111-8111-111111111111/graph", "/Projects", `/projects/${id}%2Fgraph`, "/projects//evil.example", "/projects/new/x", "/projects/news", `/projects/${id}/experiments/newx`, `/projects/${id}/new`,
-    `/projects/${id}/predictions/x`, `/projects/${id}/predictions/${id}`, `/projects/${id}/data/x`, `/projects/${id}/pipeline/x`, `/projects/${id}/pipeline/${id}/x`, `/projects/${id}/splits/${id}/x`, `/projects/${id}/features`, `/projects/${id}/graph/${id}`]) {
+    `/projects/${id}/experiments/x`, "/home/x", "/agents/x", "/agents/", "/settings/x", "/settings/", "/governance/x", "/governance/", "/governancex", "/real/x", "/realx", "/projects/AAAAAAAA-1111-4111-8111-111111111111/graph", "/Projects", `/projects/${id}%2Fgraph`, "/projects//evil.example", "/projects/new/x", "/projects/news", `/projects/${id}/experiments/newx`, `/projects/${id}/new`,
+    `/projects/${id}/predictions/x`, `/projects/${id}/predictions/${id}`, `/projects/${id}/data/x`, `/projects/${id}/pipeline/x`, `/projects/${id}/pipeline/${id}/x`, `/projects/${id}/splits/${id}/x`, `/projects/${id}/goal/${id}`, `/projects/${id}/features`, `/projects/${id}/graph/${id}`, `/projects/${id}/improve/x`, `/projects/${id}/improve/${id}/x`, `/projects/${id}/improve/new`]) {
     assert.equal(studioRoute(bad), "not_found", bad);
   }
 });
 
-test("the Decision.ai landing page needs the legacy decision layer flag", () => {
+test("business users land on the Business view; their Labs and legacy pages stay reachable", () => {
   const app = { [CAPABILITIES.accountAccess]: true, [CAPABILITIES.applicationAccess]: true };
-  assert.equal(defaultProductRoute(user(app)), "/app/labs");
-  assert.equal(defaultProductRoute(user({ ...app, [CAPABILITIES.legacyDecisionLayer]: true })), "/app/dashboards");
+  assert.equal(defaultProductRoute(user(app)), "/outcomes");
+  const legacy = user({ ...app, [CAPABILITIES.legacyDecisionLayer]: true });
+  assert.equal(defaultProductRoute(legacy), "/outcomes");
+  for (const route of ["/app/labs", "/app/dashboards"]) assert.equal(canAccessProductRoute(legacy, route), true, route);
+});
+
+test("P7.6-A: the Business view is for workspace readers; business users never reach developer routes", () => {
+  const client = user({ [CAPABILITIES.accountAccess]: true, [CAPABILITIES.applicationAccess]: true });
+  const developer = user({ [CAPABILITIES.developmentAccess]: true, [CAPABILITIES.applicationAccess]: true });
+  assert.equal(isBusinessViewPath("/outcomes"), true);
+  for (const path of ["/outcomes/x", "/outcomes/", "/outcomesx", "/Outcomes"]) assert.equal(isBusinessViewPath(path), false, path);
+  assert.equal(canAccessProductRoute(client, "/outcomes"), true);
+  assert.equal(canAccessProductRoute(developer, "/outcomes"), true);
+  assert.equal(canAccessProductRoute(user({ [CAPABILITIES.accountAccess]: true }), "/outcomes"), false);
+  assert.equal(canAccessProductRoute(null, "/outcomes"), false);
+  assert.equal(canAccessProductRoute(client, "/outcomes/x"), false);
+  for (const path of ["/projects", "/home", "/inbox", "/settings", "/governance", "/agents", "/projects/new", "/dev/studio-kit", "/development"]) {
+    assert.equal(canAccessProductRoute(client, path), false, path);
+  }
+  assert.equal(safeNextPath(client, "/outcomes"), "/outcomes");
+  assert.equal(safeNextPath(client, "/projects"), null);
+  assert.equal(safeWorkspaceSwitchDestination(client, "/outcomes"), "/outcomes");
+  assert.equal(safeWorkspaceSwitchDestination(client, "/projects"), "/outcomes");
 });
 
 test("workspace switches preserve only capability-safe collection routes", () => {
@@ -148,12 +172,12 @@ test("every role lands in its workspace after login", () => {
   assert.equal(defaultProductRoute(admin), "/projects");
   assert.equal(defaultProductRoute(developer), "/projects");
   assert.equal(defaultProductRoute(operator), "/admin/monitoring");
-  assert.equal(defaultProductRoute(client), "/app/labs");
+  assert.equal(defaultProductRoute(client), "/outcomes");
   assert.equal(defaultProductRoute(businessAdmin), "/projects");
   assert.equal(defaultProductRoute(user({ ...base, [CAPABILITIES.businessAccess]: true, [CAPABILITIES.applicationAccess]: true })), "/business");
   assert.equal(defaultProductRoute(user(base)), "/app/settings");
   assert.equal(defaultProductRoute(null), "/app/settings");
-  for (const [who, route] of [[admin, "/projects"], [developer, "/projects"], [operator, "/admin/monitoring"], [client, "/app/labs"]] as const) {
+  for (const [who, route] of [[admin, "/projects"], [developer, "/projects"], [operator, "/admin/monitoring"], [client, "/outcomes"]] as const) {
     assert.equal(canAccessProductRoute(who, route), true, route);
   }
 });
@@ -180,3 +204,42 @@ test("only the frozen marketing paths are gated by the marketing flag", () => {
     assert.equal(isLegacyMarketingPath(path), false, path);
   }
 });
+
+test("P8.5-UI: the operator console is for platform administrators only; they land there without a workspace", () => {
+  const base = { [CAPABILITIES.accountAccess]: true };
+  const platformAdmin = user({ ...base, [CAPABILITIES.platformRead]: true, [CAPABILITIES.platformWrite]: true });
+  const platformDeveloper = user({ ...base, [CAPABILITIES.platformRead]: true });
+  const adminInWorkspace = user({ ...base, [CAPABILITIES.platformRead]: true, [CAPABILITIES.platformWrite]: true, [CAPABILITIES.developmentAccess]: true });
+  const owner = user({ ...base, [CAPABILITIES.workspaceRead]: true, [CAPABILITIES.workspaceWrite]: true, [CAPABILITIES.workspaceManageMembers]: true, [CAPABILITIES.workspaceExecuteMl]: true, [CAPABILITIES.developmentAccess]: true, [CAPABILITIES.applicationAccess]: true, [CAPABILITIES.businessAccess]: true });
+  const viewer = user({ ...base, [CAPABILITIES.workspaceRead]: true, [CAPABILITIES.applicationAccess]: true });
+  const client = user({ ...base, [CAPABILITIES.applicationAccess]: true });
+  // A write capability alone (no platform read) is not enough either.
+  const writeOnly = user({ ...base, [CAPABILITIES.platformWrite]: true });
+
+  assert.equal(defaultProductRoute(platformAdmin), "/operator");
+  assert.equal(defaultProductRoute(platformDeveloper), "/admin/monitoring");
+  assert.equal(defaultProductRoute(adminInWorkspace), "/projects");
+  assert.equal(canAccessProductRoute(platformAdmin, "/operator"), true);
+  assert.equal(canAccessProductRoute(adminInWorkspace, "/operator"), true);
+  for (const who of [platformDeveloper, owner, viewer, client, writeOnly, user(base), null]) {
+    assert.equal(canAccessProductRoute(who, "/operator"), false);
+    assert.equal(safeNextPath(who, "/operator"), null);
+  }
+  // The old monitoring page stays reachable for platform staff.
+  assert.equal(canAccessProductRoute(platformAdmin, "/admin/monitoring"), true);
+  assert.equal(canAccessProductRoute(platformDeveloper, "/admin/monitoring"), true);
+  assert.equal(safeNextPath(platformAdmin, "/operator"), "/operator");
+  assert.equal(safeNextPath(platformAdmin, "/operator?tab=workspaces"), "/operator?tab=workspaces");
+  for (const path of ["/operator", "/operator/x"]) assert.equal(isOperatorPath(path), true, path);
+  for (const path of ["/operatorx", "/Operator", "/operators", "/admin/operator"]) assert.equal(isOperatorPath(path), false, path);
+  assert.equal(canAccessProductRoute(platformDeveloper, "/operator/x"), false);
+  assert.equal(safeWorkspaceSwitchDestination(platformAdmin, "/operator"), "/operator");
+});
+
+test("P7.6-A: the middleware runs on every gated Studio and Business view route", () => {
+  const source = readFileSync(new URL("../../middleware.ts", import.meta.url), "utf8");
+  for (const prefix of ["/home", "/inbox", "/agents", "/settings", "/projects", "/outcomes", "/operator", "/dev", "/app", "/business"]) {
+    assert.ok(source.includes(`"${prefix}/:path*"`), prefix);
+  }
+});
+

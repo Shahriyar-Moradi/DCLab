@@ -1,0 +1,58 @@
+<!-- title: Platform console · DCLab staff -->
+<!-- crumbs: DCLab staff › <b>Platform console</b> -->
+<!-- status: warn | Partly working · some tabs planned -->
+<div class="page-head">
+  <div><h1>Platform console</h1><p class="sub">What DCLab staff use to keep the service healthy. Ids and counts only: staff never see customer rows.</p></div>
+</div>
+
+<div class="tabs" data-tabs="con">
+  <button data-tab="over" aria-selected="true">Overview</button>
+  <button data-tab="ws">Workspaces</button>
+  <button data-tab="fail">Failed jobs</button>
+  <button data-tab="later">Planned tabs</button>
+</div>
+
+<div data-tabpanel="con:over" class="on">
+  <div class="grid cols-4">
+    <div class="card"><div class="stat"><span class="v">3</span><span class="l">workspaces</span></div></div>
+    <div class="card"><div class="stat"><span class="v">1 running · 2 waiting</span><span class="l">jobs in the queue</span></div></div>
+    <div class="card"><div class="stat"><span class="v">2 of 2</span><span class="l">workers healthy</span></div></div>
+    <div class="card"><div class="stat"><span class="v">1</span><span class="l">failed job in the last 24 h</span></div></div>
+  </div>
+  <div class="card example-mark">
+    <h3>Backups <span class="pill gray">Not configured</span></h3>
+    <p class="small muted">Not built yet. Backups stay not configured here until DCLab runs in the cloud; this tile will then show when the platform database was last backed up, whether it worked, and when the next backup runs. No backup read exists today, so nothing about backups is shown as a fact.</p>
+    <dl class="kv" aria-hidden="true"><dt>Last backup</dt><dd>Sunday 03:00, worked</dd><dt>Next backup</dt><dd>Sunday 03:00</dd><dt>Kept for</dt><dd>30 days</dd></dl>
+  </div>
+  <p class="small muted">Readiness checks and the platform AI limits are shown read-only; changing a limit needs a code change.</p>
+</div>
+
+<div data-tabpanel="con:ws">
+  <div class="tbl card"><table>
+    <thead><tr><th>Workspace</th><th class="r">Members</th><th class="r">Projects</th><th class="r">Jobs (30 days)</th><th class="r">Failed (24 h)</th></tr></thead>
+    <tbody>
+      <tr><td>Northwind Telecom</td><td class="r">4</td><td class="r">3</td><td class="r">38</td><td class="r">0</td></tr>
+      <tr><td>Harbor Insurance</td><td class="r">7</td><td class="r">5</td><td class="r">112</td><td class="r">1</td></tr>
+      <tr><td>Alder Retail</td><td class="r">2</td><td class="r">1</td><td class="r">6</td><td class="r">0</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Plan and usage per workspace are not in this read yet, so they are not shown here.</p>
+</div>
+
+<div data-tabpanel="con:fail">
+  <div class="tbl card"><table>
+    <thead><tr><th>When</th><th>Workspace</th><th>Job</th><th>Why it failed</th></tr></thead>
+    <tbody><tr><td>Today 06:12</td><td>Harbor Insurance</td><td>training run</td><td>Timeout, after 2 tries</td></tr></tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="con:later">
+  <div class="card">
+    <ul class="hist">
+      <li><span class="pill plan">Planned</span> Files held for review: listed with metadata only; a person clears or rejects each with a reason.</li>
+      <li><span class="pill plan">Planned</span> AI limits per workspace compared with the platform limits.</li>
+      <li><span class="pill plan">Planned</span> Benchmark results and the go or no-go checks they feed.</li>
+    </ul>
+  </div>
+</div>
+<div class="banner"><div class="sp"><b>Staff never see customer rows.</b> This screen shows ids, counts, queues and failure types only.</div></div>

@@ -6,39 +6,26 @@ import { PageHead } from "@/components/studio/PageHead";
 import { TabPanel, Tabs } from "@/components/studio/Tabs";
 import { AgentsConnect } from "@/app/components/studio-app/AgentsConnect";
 import { ServiceTokensPanel } from "@/app/components/studio-app/ServiceTokensPanel";
-import { PhaseEmpty } from "@/app/components/studio-app/StudioParts";
 
 const TABS = [
-  { id: "connect", label: "Connect: MCP · SDK · CLI · API" },
-  { id: "tokens", label: "Service tokens" },
-  { id: "tools", label: "Tool registry" },
-  { id: "runs", label: "Agent runs" },
-  { id: "catalog", label: "Agent catalog" },
+  { id: "connect", label: "Use DCLab from code" },
+  { id: "tokens", label: "Access tokens" },
 ];
 
 export default function AgentsPage() {
   const [tab, setTab] = useState("connect");
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Connect" subtitle="Use DCLab from code or from tools such as Claude Code: Python SDK, command line and MCP, and the access tokens that let them in." />
+      <PageHead eyebrow="Workspace" title="Connect" subtitle="Use DCLab from your own code, from a terminal, or from a coding assistant such as Claude Code or Cursor." />
       <PageGuide
-        purpose="Connect Claude Code, Cursor, scripts or CI to this workspace, and manage the tokens they use."
-        howTo="Copy a snippet from Connect, create a token under Service tokens (shown once), paste it where the snippet says dclab_st_…."
-        youGet="Agents that can read your projects and, only if you allow it, propose changes. A person still accepts every decision."
-        attention="A token shows once, when you create it. Revoke any token you no longer use."
+        purpose="Connect Claude Code, Cursor, scripts or CI to this workspace, and manage the access tokens they use."
+        howTo="Create an access token under Access tokens (it is shown once), then copy a snippet from Use DCLab from code and paste the token where it says dclab_st_…."
+        youGet="Code and tools that can read your projects and, only if you allow it, run experiments and propose decisions. A person still accepts every decision, in the Inbox."
+        attention="A token is shown once, when you create it. Revoke any token you no longer use."
       />
-      <Tabs items={TABS} value={tab} onChange={setTab} idPrefix="agents" label="Agents and tools sections" />
+      <Tabs items={TABS} value={tab} onChange={setTab} idPrefix="agents" label="Connect sections" />
       <TabPanel idPrefix="agents" id="connect" active={tab === "connect"}><AgentsConnect /></TabPanel>
       <TabPanel idPrefix="agents" id="tokens" active={tab === "tokens"}><ServiceTokensPanel /></TabPanel>
-      <TabPanel idPrefix="agents" id="tools" active={tab === "tools"}>
-        <PhaseEmpty title="The tool registry arrives with the agent platform screens." phase="A2-UI" />
-      </TabPanel>
-      <TabPanel idPrefix="agents" id="runs" active={tab === "runs"}>
-        <PhaseEmpty title="Agent runs and their harness records arrive with the agent platform screens." phase="A2-UI" />
-      </TabPanel>
-      <TabPanel idPrefix="agents" id="catalog" active={tab === "catalog"}>
-        <PhaseEmpty title="The agent catalog arrives with the agent governance screens." phase="P6.8-UI" />
-      </TabPanel>
     </>
   );
 }

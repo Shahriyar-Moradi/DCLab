@@ -57,7 +57,7 @@ class SemanticAsk(_Frozen):
     user_text: tuple[Untrusted, ...] = Field(default=(), max_length=10)
     source_datasets: tuple[UUID, ...] = Field(default=(), max_length=64)
     source_columns: tuple[UUID, ...] = Field(default=(), max_length=512)
-    budget: BudgetReservation | None = None  # one pre-reservation per run; else one per ask
+    budget: BudgetReservation | None = None  # one pre-reservation per run; else one hold per batch
     # P6.9-A: the levels snapshotted at job claim, per §1b answer kind ("*" = no kind);
     # None reads the live ``effective_level``. Inside a run the evidence partition is
     # ``train`` (ADR 0008 §2c); None takes the registry's.
@@ -105,7 +105,8 @@ class SemanticPort(Protocol):
 
 
 def semantic_port(gateway: Any = None, *, settings: Any = None) -> SemanticPort:
-    """The deterministic port unless AI is on and the Jev provider is usable."""
+    """The deterministic port unless AI is on, Jev is on (``JEV_ENABLED``: paid traffic on every
+    pipeline run never starts with AI_ENABLED alone) and the Jev provider is usable."""
 
     from app.agents.semantic.deterministic import DeterministicSemanticPort
 
@@ -113,13 +114,17 @@ def semantic_port(gateway: Any = None, *, settings: Any = None) -> SemanticPort:
         from app.config import get_settings
 
         settings = get_settings()
-    if not bool(getattr(settings, "ai_enabled", False)):
+    if not bool(getattr(settings, "ai_enabled", False)) or getattr(settings, "jev_enabled", False) is not True:
         return DeterministicSemanticPort()
     if gateway is None:
         from app.agents.gateway.service import GatewayService
 
         gateway = GatewayService()
-    if not gateway.provider_ready("typesafe"):
+    from app.agents.gateway.router import provider_for
+    from app.agents.semantic.releases import JEV_MODEL_ID
+
+    # The releases' pinned model's provider (Anthropic since 2026-10-16; LEGACY: "typesafe").
+    if not gateway.provider_ready(provider_for(JEV_MODEL_ID) or ""):
         return DeterministicSemanticPort()
     from app.agents.semantic.typesafe_jev import JevSemanticPort
 

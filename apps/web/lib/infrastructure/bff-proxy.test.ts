@@ -79,3 +79,20 @@ test("BFF streams assistant SSE unbuffered with no-transform and forwards Last-E
   }
   assert.match(rest, /turn_done/);
 });
+
+test("BFF never proxies /health/* probes; plain /health (liveness) still passes", async () => {
+  const called: string[] = [];
+  const fakeFetch = (async (url: string) => {
+    called.push(url);
+    return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  for (const path of [["health", "ready"], ["Health", "ready"], ["health", "ready", "x"]]) {
+    const req = new NextRequest(`http://studio.test/api/backend/${path.join("/")}`, { method: "GET" });
+    const response = await proxyBackend(req, path, fakeFetch);
+    assert.equal(response.status, 404);
+  }
+  assert.equal(called.length, 0);
+  const live = await proxyBackend(new NextRequest("http://studio.test/api/backend/health"), ["health"], fakeFetch);
+  assert.equal(live.status, 200);
+  assert.equal(called.length, 1);
+});

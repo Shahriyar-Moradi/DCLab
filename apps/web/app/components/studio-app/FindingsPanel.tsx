@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Findings panel (P4.10-UI): the trust checks of one run, worst first. Every value is a field of
+ * Findings panel: the trust checks of one run in the order they run (the server's check registry, D2b). Every value is a field of
  * `GET /v1/experiments/{id}/findings`; the message is shown exactly as the API returns it, evidence is
  * plain text (column names are user data) and no final test set value exists in the payload. "What to do" links to
  * the Branch form pre-filled only when the recommendation maps to a typed change.
@@ -17,7 +17,7 @@ import { Term } from "@/components/studio/Term";
 import { plainText } from "@/lib/application/command-search";
 import { useExperimentFindings } from "@/lib/application/studio-data-hooks";
 import {
-  RECOMMENDATION_TEXT, attentionCount, branchPrefillHref, checkLabel, evidenceRows, findingStatusLabel, findingTone, findingsState, sortFindings,
+  RECOMMENDATION_TEXT, branchPrefillHref, checkLabel, checkList, evidenceRows, passSummary, findingStatusLabel, findingTone, findingsState,
 } from "@/lib/application/studio-findings";
 
 export const FINDING_TERMS = {
@@ -34,8 +34,10 @@ export function FindingsPanel({ projectId, experimentId }: { projectId: string; 
   const query = useExperimentFindings(experimentId);
   const data = query.data;
   const state = findingsState(data);
-  const checks = sortFindings(data?.checks ?? []);
-  const attention = attentionCount(data);
+  // Shown in the order the read sends them: the registry's run order, not re-sorted here.
+  const checks = data?.checks ?? [];
+  const list = checkList(data);
+  const summary = passSummary(data);
   return (
     <div aria-label="Trust checks" data-testid="findings-panel">
       <p className="muted">
@@ -56,14 +58,31 @@ export function FindingsPanel({ projectId, experimentId }: { projectId: string; 
       ) : null}
       {data && state !== "not_computed" ? (
         <p role="status" className="toolbar">
-          {attention ? <Pill tone="warn">{attention} to review</Pill> : state === "all_passed" ? <Pill tone="ok">All checks passed</Pill> : <Pill tone="gray">None to review{(data.summary?.not_evaluated ?? 0) > 0 ? `, ${data.summary?.not_evaluated} not checked` : ""}</Pill>}
+          {summary ? <Pill tone={summary.tone}>{summary.pill}</Pill> : null}
           <span className="muted">
             {data.summary?.passed ?? 0} passed · {data.summary?.warnings ?? 0} to review · {data.summary?.failures ?? 0} failed · {data.summary?.not_evaluated ?? 0} not checked
             {data.version ? ` · ${plainText(data.version, 40)}` : ""}
           </span>
         </p>
       ) : null}
-      {state === "all_passed" ? <Banner tone="info">All {checks.length} trust checks passed.</Banner> : null}
+      {summary?.sentence ? <Banner tone="info">{summary.sentence}</Banner> : null}
+      {list.length ? (
+        <div className="tbl">
+          <table data-testid="check-list">
+            <caption className="sr-only">The {list.length} trust checks, in the order they run</caption>
+            <thead><tr><th scope="col" className="r">Order</th><th scope="col">Check</th><th scope="col">Result</th></tr></thead>
+            <tbody>
+              {list.map((row) => (
+                <tr key={row.check} data-check-row={row.check}>
+                  <td className="r">{row.position}</td>
+                  <th scope="row">{plainText(row.label, 80)}</th>
+                  <td><Pill tone={row.tone}>{plainText(row.result, 60)}</Pill></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
       {checks.map((finding) => {
         const href = branchPrefillHref(projectId, experimentId, finding);
         const safe = href ? safeInternalHref(href) : null;

@@ -5,6 +5,7 @@ import {
   REQUEST_ID_HEADER,
   WORKSPACE_HEADER,
 } from "./active-workspace";
+import { errorMessage } from "./api-error-message";
 import { CSRF_HEADER, ensureCsrfToken } from "./csrf";
 import { notifySessionChanged } from "./session";
 
@@ -118,20 +119,21 @@ function mergeRequestHeaders(path: string, method: string, context: RequestWorks
   return csrfHeaders(path, context, base);
 }
 
-/** Legacy ``{detail}`` bodies and the /v1 ``{error: {message}}`` envelope. */
-function errorMessage(body: unknown): string | null {
-  if (typeof body !== "object" || !body) return null;
-  if ("detail" in body) return String((body as { detail: unknown }).detail);
-  const error = (body as { error?: { message?: unknown } }).error;
-  return error && typeof error.message === "string" ? error.message : null;
-}
-
 async function request<T>(
   path: string,
   schema: ZodType<T>,
   init?: RequestInit,
   params?: Record<string, string | number | boolean | undefined>,
 ): Promise<T> {
+  return (await send(path, schema, init, params)).data;
+}
+
+async function send<T>(
+  path: string,
+  schema: ZodType<T>,
+  init?: RequestInit,
+  params?: Record<string, string | number | boolean | undefined>,
+): Promise<{ data: T; etag: string | null }> {
   const method = (init?.method || "GET").toUpperCase();
   const context = requestWorkspace(path);
   const headers = await mergeRequestHeaders(path, method, context, init);
@@ -152,7 +154,7 @@ async function request<T>(
   if (!parsed.success) {
     throw new ApiError(response.status, parsed.error.flatten(), "The API returned a response this app could not read.");
   }
-  return parsed.data;
+  return { data: parsed.data, etag: response.headers.get("ETag") };
 }
 
 export function apiGet<T>(
@@ -162,6 +164,16 @@ export function apiGet<T>(
   options?: { signal?: AbortSignal },
 ): Promise<T> {
   return request(path, schema, { method: "GET", signal: options?.signal }, params);
+}
+
+/** A GET that also returns the response's `ETag` (the `If-Match` of a later command), or null when none was sent. */
+export function apiGetTagged<T>(
+  path: string,
+  schema: ZodType<T>,
+  params?: Record<string, string | number | boolean | undefined>,
+  options?: { signal?: AbortSignal },
+): Promise<{ data: T; etag: string | null }> {
+  return send(path, schema, { method: "GET", signal: options?.signal }, params);
 }
 
 export async function apiDownload(
@@ -200,13 +212,46 @@ export function apiPost<T>(
   return request(path, schema, { method: "POST", body: JSON.stringify(json), headers });
 }
 
+/**
+ * A POST whose success body is a `text/event-stream` (D6b: the assistant's turn). Same headers, CSRF and workspace
+ * context as `apiPost`; a non-2xx answer is read as JSON and thrown as `ApiError`. The caller reads `response.body`.
+ */
+export async function apiPostStream(path: string, json: unknown, headers?: Record<string, string>, signal?: AbortSignal): Promise<Response> {
+  const context = requestWorkspace(path);
+  const merged = await mergeRequestHeaders(path, "POST", context, { headers: { ...headers, Accept: "text/event-stream" } });
+  const combined = workspaceRequestSignal(context, signal);
+  combined?.throwIfAborted();
+  const response = await fetch(buildUrl(path), { method: "POST", body: JSON.stringify(json), credentials: "include", headers: merged, signal: combined });
+  if (!response.ok) {
+    // Error bodies are small JSON envelopes; anything larger is not read in full.
+    const text = (await response.text()).slice(0, 65_536);
+    let body: unknown = text || null;
+    try {
+      body = text ? (JSON.parse(text) as unknown) : null;
+    } catch {
+      // keep the (capped) text
+    }
+    dropSessionOnUnauthorized(path, response.status);
+    throw new ApiError(response.status, body, errorMessage(body) || response.statusText || `Request failed (${response.status})`);
+  }
+  if (!(response.headers.get("content-type") ?? "").toLowerCase().startsWith("text/event-stream")) {
+    await response.body?.cancel();
+    throw new ApiError(502, null, "The API answered without an event stream.");
+  }
+  return response;
+}
+
 /** A fresh /v1 Idempotency-Key for one user action (retries of that action reuse it). */
 export function newIdempotencyKey(): string {
   return `studio-${newRequestId()}`;
 }
 
-export function apiPut<T>(path: string, schema: ZodType<T>, json: unknown): Promise<T> {
-  return request(path, schema, { method: "PUT", body: JSON.stringify(json) });
+export function apiPut<T>(path: string, schema: ZodType<T>, json: unknown, headers?: Record<string, string>): Promise<T> {
+  return request(path, schema, { method: "PUT", body: JSON.stringify(json), headers });
+}
+
+export function apiPatch<T>(path: string, schema: ZodType<T>, json: unknown, headers?: Record<string, string>): Promise<T> {
+  return request(path, schema, { method: "PATCH", body: JSON.stringify(json), headers });
 }
 
 export async function apiPostEmpty(path: string): Promise<void> {

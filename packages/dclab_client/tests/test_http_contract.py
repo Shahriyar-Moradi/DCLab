@@ -356,6 +356,33 @@ def test_experiment_findings_use_v1_path_and_parse_checks():
     assert len(recorded) == 1
 
 
+def test_experiment_verdict_uses_v1_path_and_against_query():
+    recorded: list[httpx.Request] = []
+    eid, parent = "33333333-3333-3333-3333-333333333333", "55555555-5555-5555-5555-555555555555"
+    payload = {"experiment_id": eid, "against_experiment_id": parent, "against_is_parent": True,
+               "verdict": "within_the_noise", "reason": "inside_margin", "message": "m", "metric": "rmse",
+               "direction": "lower_is_better", "folds": 5, "mean_difference": -0.2, "margin": 0.5,
+               "comparisons": 3, "new_candidates": 3, "minimum_effect_basis": "relative",
+               "fold_scores": [{"fold_number": 1, "experiment": 9.8, "against": 10.0, "difference": -0.2}],
+               "test_set_looks": {"looks_on_plan": 3, "experiment_look": 3, "against_look": 1}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json=payload)
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    result = api.experiments.verdict(eid, against=parent)
+    assert result.verdict == "within_the_noise" and result.test_set_looks.experiment_look == 3
+    assert result.fold_scores[0].difference == -0.2 and result.outcome_scope == "cv"
+    assert (result.comparisons, result.new_candidates, result.minimum_effect_basis) == (3, 3, "relative")
+    assert recorded[0].method == "GET" and recorded[0].url.path == f"/v1/experiments/{eid}/verdict"
+    assert recorded[0].url.params["against"] == parent
+    api.experiments.verdict(eid)
+    assert "against" not in recorded[1].url.params
+    with pytest.raises(DCLabClientError):
+        api.experiments.verdict(eid, against="../x")
+
+
 def test_experiment_operating_points_use_v1_path_and_parse_points():
     recorded: list[httpx.Request] = []
     point = {"threshold": 0.4, "tp": 3, "fp": 1, "fn": 1, "tn": 5, "precision": 0.75, "recall": 0.75,
@@ -403,6 +430,114 @@ def test_choose_operating_point_posts_a_keyed_body():
     assert recorded[0].url.path == f"/v1/experiments/{eid}/operating-point"
     assert recorded[0].headers["Idempotency-Key"] == "k1"
     assert json.loads(recorded[0].content) == {"reason": "r", "threshold": 0.31}
+
+
+def test_scoring_schedule_get_set_and_runs_use_v1_paths():
+    recorded: list[httpx.Request] = []
+    pid = "66666666-6666-6666-6666-666666666666"
+    run = {"id": "77777777-7777-7777-7777-777777777777", "planned_for": "2030-01-07T09:00:00Z", "outcome": "queued",
+           "message": "m", "batch_prediction_id": "88888888-8888-8888-8888-888888888888",
+           "created_at": "2030-01-07T09:00:02Z"}
+    state = {"project_id": pid, "status": "on", "about": "a", "recent_runs": [run], "schedule": {
+        "id": "99999999-9999-9999-9999-999999999999", "weekday": 0, "weekday_name": "Monday", "hour_utc": 9,
+        "timezone": "UTC", "enabled": True, "next_planned_for": "2030-01-14T09:00:00Z",
+        "created_at": "2030-01-01T00:00:00Z", "updated_at": "2030-01-01T00:00:00Z", "owner_can_score": True}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.url.path.endswith("/runs"):
+            return httpx.Response(200, json={"project_id": pid, "items": [run], "next_cursor": "c1.a.b"})
+        return httpx.Response(200, json=state, headers={"ETag": '"s1"'})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    read = api.scoring_schedules.get(pid)
+    assert read.schedule.weekday_name == "Monday" and read.recent_runs[0].outcome == "queued" and read.etag == '"s1"'
+    api.scoring_schedules.set(pid, weekday=0, hour_utc=9, rationale="weekly list", idempotency_key="k2")
+    page = api.scoring_schedules.runs(pid, cursor="c1.x.y", limit=5)
+    assert page.next_cursor == "c1.a.b" and str(page.items[0].batch_prediction_id).startswith("8888")
+    assert [(r.method, r.url.path) for r in recorded] == [
+        ("GET", f"/v1/projects/{pid}/scoring-schedule"), ("PUT", f"/v1/projects/{pid}/scoring-schedule"),
+        ("GET", f"/v1/projects/{pid}/scoring-schedule/runs")]
+    assert recorded[1].headers["Idempotency-Key"] == "k2"
+    assert json.loads(recorded[1].content) == {"weekday": 0, "hour_utc": 9, "enabled": True, "rationale": "weekly list"}
+    assert recorded[2].url.params["cursor"] == "c1.x.y" and recorded[2].url.params["limit"] == "5"
+
+
+def test_monitoring_reads_and_outcome_link_use_v1_paths():
+    recorded: list[httpx.Request] = []
+    pid, mv = "66666666-6666-6666-6666-666666666666", "77777777-7777-7777-7777-777777777777"
+    thresholds = {"psi_watch": 0.1, "psi_alert": 0.2, "significance_level": 0.01,
+                  "flagged_share_relative_watch": 0.3, "flagged_share_absolute_watch": 0.02, "min_rows": 500,
+                  "min_labels": 100, "min_per_class": 10}
+    window = {"window_start": "2030-01-07T00:00:00Z", "window_end": "2030-01-14T00:00:00Z", "revision": 1,
+              "model_version_id": mv, "model_release_id": None, "status": "alert", "summary_code": "inputs_moved",
+              "summary": "s", "n_rows": 900, "n_batch_predictions": 2, "max_psi": 0.31, "prediction_psi": 0.05,
+              "outcomes_status": "not_linked", "n_labelled": None, "coverage": None, "outcome_metric": None,
+              "outcome_metric_value": None, "computed_at": "2030-01-08T00:00:00Z"}
+    overview = {"project_id": pid, "enabled": True, "model_version_id": mv, "model_version": "v1",
+                "model_release_id": None, "status": "alert", "latest": window, "windows": [window],
+                "finding": {"code": "inputs_look_different", "severity": "alert", "title": "t", "body": "b"},
+                "thresholds": thresholds, "notes": ["n"]}
+    linked = {"id": "88888888-8888-8888-8888-888888888888", "project_id": pid,
+              "dataset_id": "99999999-9999-9999-9999-999999999999", "dataset_name": "labels.csv",
+              "key_column": "customer_id", "outcome_column": "churned", "linked_at": "2030-01-09T00:00:00Z",
+              "linked_by_user_id": None}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        path = request.url.path
+        if path.endswith("/monitoring"):
+            return httpx.Response(200, json=overview)
+        if "/windows/" in path:
+            return httpx.Response(200, json={**window, "input_drift": {"features": []}, "feature_sentences": [],
+                                             "prediction_drift": {}, "outcomes": {}, "finding": None,
+                                             "thresholds": thresholds, "notes": []})
+        if request.method == "POST":
+            return httpx.Response(201, json=linked, headers={"ETag": '"o1"'})
+        return httpx.Response(200, json={"project_id": pid, "items": [linked], "notes": []})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    read = api.monitoring.get(pid)
+    assert read.status == "alert" and read.windows[0].max_psi == 0.31 and read.finding.code == "inputs_look_different"
+    assert api.monitoring.window(pid, "2030-01-07", model_version_id=mv).summary_code == "inputs_moved"
+    assert api.monitoring.outcomes(pid).items[0].key_column == "customer_id"
+    made = api.monitoring.link_outcomes(pid, dataset_id=linked["dataset_id"], key_column="customer_id",
+                                        outcome_column="churned", idempotency_key="k3")
+    assert made.etag == '"o1"' and made.outcome_column == "churned"
+    with pytest.raises(DCLabClientError):
+        api.monitoring.window(pid, "../../v1/me")
+    assert [(r.method, r.url.path) for r in recorded] == [
+        ("GET", f"/v1/projects/{pid}/monitoring"), ("GET", f"/v1/projects/{pid}/monitoring/windows/2030-01-07"),
+        ("GET", f"/v1/projects/{pid}/monitoring/outcomes"), ("POST", f"/v1/projects/{pid}/monitoring/outcomes")]
+    assert recorded[1].url.params["model_version_id"] == mv and recorded[3].headers["Idempotency-Key"] == "k3"
+    assert json.loads(recorded[3].content) == {"dataset_id": linked["dataset_id"], "key_column": "customer_id",
+                                               "outcome_column": "churned"}
+
+
+def test_monitoring_thresholds_read_and_change_use_v1_paths_and_if_match():
+    recorded: list[httpx.Request] = []
+    pid = "66666666-6666-6666-6666-666666666666"
+    values = {"psi_watch": 0.3, "psi_alert": 0.6, "precision_floor": 0.7, "recall_floor": None}
+    body = {"project_id": pid, "version": 1, "etag": '"1"', **values,
+            "defaults": {"psi_watch": 0.1, "psi_alert": 0.2, "precision_floor": None, "recall_floor": None},
+            "bounds": {"psi_watch_min": 0.05, "psi_watch_max": 0.5, "psi_alert_max": 1.0, "floor_min": 0.01,
+                       "floor_max": 0.99},
+            "changed_at": "2030-01-08T00:00:00Z", "changed_by_user_id": None, "can_edit": False, "notes": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        return httpx.Response(200, json=body, headers={"ETag": '"1"'})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    read = api.monitoring.thresholds(pid)
+    assert (read.etag, read.version, read.recall_floor, read.bounds["psi_alert_max"]) == ('"1"', 1, None, 1.0)
+    saved = api.monitoring.set_thresholds(pid, **values, rationale="fewer false alarms", if_match='"0"',
+                                          idempotency_key="k4")
+    assert saved.psi_watch == 0.3
+    assert [(r.method, r.url.path) for r in recorded] == [
+        ("GET", f"/v1/projects/{pid}/monitoring-thresholds"), ("PUT", f"/v1/projects/{pid}/monitoring-thresholds")]
+    assert recorded[1].headers["If-Match"] == '"0"' and recorded[1].headers["Idempotency-Key"] == "k4"
+    assert json.loads(recorded[1].content) == {**values, "rationale": "fewer false alarms"}
 
 
 def test_project_decisions_use_v1_path_filters_and_untrusted_fields():
@@ -1007,3 +1142,68 @@ def test_inbox_uses_v1_paths_filters_and_parses_items():
     with pytest.raises(DCLabClientError, match="UUID"):
         api.inbox.list(project_id="../x")
     assert len(recorded) == 2
+
+
+def test_project_outcomes_reads_the_business_view():
+    recorded: list[httpx.Request] = []
+    pid = "12121212-1212-1212-1212-121212121212"
+    body = {
+        "project_name": "Churn", "state": "ready", "message": None,
+        "model_in_use": {"display_name": "Churn model", "saved_at": "2030-01-01T00:00:00Z", "approved_at": None,
+                         "approval_text": "a"},
+        "headline": {"status": "withheld", "task": "binary", "sentences": [], "counts_text": None, "basis": "b",
+                     "numbers": None},
+        "how_built": {"sentences": ["one", "two", "three"], "rows": 10, "learned_rows": 8, "tested_rows": 2,
+                      "target": "churned", "method": "m", "test_design": None},
+        "weekly_list": {"id": "34343434-3434-3434-3434-343434343434", "completed_at": "2030-01-07T09:00:00Z",
+                        "rows": 30, "has_reasons": True, "text": "t",
+                        "download_path": "/v1/predictions/34343434-3434-3434-3434-343434343434/download"},
+        "weekly_list_note": None, "limits": ["l"], "boundary": "DCLab scores and explains", "untrusted_fields": [],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        if request.url.path == "/v1/outcomes/projects":
+            return httpx.Response(200, json={"items": [{"id": pid, "name": "Churn"}]})
+        return httpx.Response(200, json=body, headers={"ETag": '"o1"'})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    view = api.projects.outcomes(pid)
+    assert view.headline.status == "withheld" and view.weekly_list.rows == 30 and len(view.how_built.sentences) == 3
+    assert [(r.method, r.url.path) for r in recorded] == [("GET", f"/v1/projects/{pid}/outcomes")]
+    with pytest.raises(DCLabClientError, match="UUID"):
+        api.projects.outcomes("../x")
+    assert len(recorded) == 1
+    assert api.projects.outcome_projects().items[0].name == "Churn" and recorded[1].url.path == "/v1/outcomes/projects"
+
+
+
+def test_v7_model_version_list_feature_contract_and_prediction_rows_use_v1_paths():
+    recorded: list[httpx.Request] = []
+    pid, mv, pr = ("66666666-6666-6666-6666-666666666666", "77777777-7777-7777-7777-777777777777",
+                   "88888888-8888-8888-8888-888888888888")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorded.append(request)
+        path = request.url.path
+        if path.endswith("/model-versions"):
+            return httpx.Response(200, json={"project_id": pid, "model_in_use_id": mv, "items": [{"id": mv}],
+                                             "next_cursor": None, "limit": 50, "cv_note": "n"})
+        if path.endswith("/feature-contract"):
+            return httpx.Response(200, json={"model_version_id": mv, "status": "available", "column_count": 1,
+                                             "columns": [{"name": "plan", "role": "categorical"}],
+                                             "target_column": "y", "manifest_digest": "d" * 64})
+        return httpx.Response(200, json={"prediction_id": pr, "task_type": "binary", "order": "row",
+                                         "entity_column": "id", "rows_total": 3, "rows_reachable": 3, "limit": 2,
+                                         "next_cursor": "c1.x.y", "items": [{"row_number": 1}]})
+
+    api = _client(handler, token="t", workspace_id="44444444-4444-4444-4444-444444444444")
+    assert api.model_versions.list_for_project(pid, limit=50).model_in_use_id == UUID(mv)
+    assert api.model_versions.feature_contract(mv).columns[0]["name"] == "plan"
+    assert api.predictions.rows(pr, order="row", limit=2, cursor="c1.a.b").next_cursor == "c1.x.y"
+    with pytest.raises(DCLabClientError):
+        api.predictions.rows(pr, order="random")
+    assert [(r.method, r.url.path) for r in recorded] == [
+        ("GET", f"/v1/projects/{pid}/model-versions"), ("GET", f"/v1/model-versions/{mv}/feature-contract"),
+        ("GET", f"/v1/predictions/{pr}/rows")]
+    assert dict(recorded[2].url.params) == {"order": "row", "limit": "2", "cursor": "c1.a.b"}

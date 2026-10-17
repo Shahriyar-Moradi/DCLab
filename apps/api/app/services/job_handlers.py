@@ -1,7 +1,7 @@
 """Worker handler registry: handler_key -> callable.
 
-``labs.auto_train``, ``auth.session_cleanup``, ``models.batch_predict`` and
-``agents.run`` are shipped handlers. Future capabilities register here without a second queue
+``labs.auto_train``, ``auth.session_cleanup``, ``models.batch_predict``, ``agents.run`` and
+``labs.improve`` are shipped handlers. Future capabilities register here without a second queue
 table. MCP jobs are not registered.
 """
 
@@ -19,7 +19,9 @@ from app.domain.ml_jobs import (
     HANDLER_AGENTS_RUN,
     HANDLER_AUTH_SESSION_CLEANUP,
     HANDLER_LABS_AUTO_TRAIN,
+    HANDLER_LABS_IMPROVE,
     HANDLER_MODELS_BATCH_PREDICT,
+    HANDLER_MONITORING_COMPUTE_WINDOW,
 )
 
 Heartbeat = Callable[[], None]
@@ -110,6 +112,20 @@ def handle_models_batch_predict(
     run_batch_prediction_job(db, job, on_heartbeat=on_heartbeat)
 
 
+@register_handler(HANDLER_MONITORING_COMPUTE_WINDOW)
+def handle_monitoring_compute_window(
+    db: Session,
+    job: MlJob,
+    *,
+    on_heartbeat: Heartbeat | None = None,
+) -> None:
+    """P7.4-A: one monitoring window from stored files (never loads a model)."""
+
+    from app.services.monitoring_service import compute_window_job
+
+    compute_window_job(db, job, on_heartbeat=on_heartbeat)
+
+
 @register_handler(HANDLER_AGENTS_RUN)
 def handle_agents_run(
     db: Session,
@@ -126,3 +142,18 @@ def handle_agents_run(
     spec = spec_for_job(db, job)
     if spec is not None:
         AgentService().run(db, spec, heartbeat=on_heartbeat)
+
+
+@register_handler(HANDLER_LABS_IMPROVE)
+def handle_labs_improve(
+    db: Session,
+    job: MlJob,
+    *,
+    on_heartbeat: Heartbeat | None = None,
+) -> None:
+    """P5.4-A2: one step of an improve loop (ADR 0007 §8). Acts only when this job is the run's
+    continuation; never waits on another job (a probe runs as its own ``labs.auto_train`` job)."""
+
+    from app.services.improve.loop_handler import handle_improve_step
+
+    handle_improve_step(db, job, on_heartbeat=on_heartbeat)

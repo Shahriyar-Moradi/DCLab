@@ -33,6 +33,26 @@ export async function axeViolations(page: Page): Promise<string[]> {
   });
 }
 
+/**
+ * Axe (serious/critical, WCAG 2 A/AA) in light and dark at 1280px and 375px, and no horizontal page scroll at either width.
+ * Leaves the page at 1280px in light.
+ */
+export async function axeLightDarkAt1280And375(page: Page, label: string): Promise<void> {
+  for (const width of [1280, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      expect(await axeViolations(page), `${label}: axe ${scheme} at ${width}px`).toEqual([]);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+        `${label}: no horizontal scroll at ${width}px (${scheme})`,
+      ).toBe(true);
+    }
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 1280, height: 900 });
+}
+
 export async function shot(page: Page, name: string): Promise<void> {
   const dir = process.env.DCLAB_E2E_SHOTS;
   if (dir) await page.screenshot({ path: path.join(dir, `${name}.png`), fullPage: true });
@@ -53,7 +73,8 @@ export async function trainedProject(page: Page, label: string): Promise<{ proje
   await expect(page.getByLabel("Dataset in this project")).not.toHaveValue("");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByLabel("Task").selectOption("binary");
-  await page.getByLabel("Target column").selectOption("churn");
+  // The column list arrives with the dataset profile read; until then the field is a free-text input (a race on a cold server).
+  await page.getByRole("combobox", { name: "Target column" }).selectOption("churn");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Train" }).click();
@@ -63,6 +84,12 @@ export async function trainedProject(page: Page, label: string): Promise<{ proje
     const run = await page.request.get(`/api/backend/v1/experiments/${experimentId}`);
     return ((await run.json()) as { status: string }).status;
   }, { timeout: 170_000, intervals: [2_000] }).toBe("completed");
+  // The run reads "completed" a few seconds before its evidence lock commits together with the first model put in use; wait for
+  // that commit so a page opened next sees the model in use.
+  await expect.poll(async () => {
+    const refs = (await page.request.get(`/api/backend/v1/projects/${projectId}/refs`).then((r) => r.json())) as { items?: Array<{ ref_kind: string }> };
+    return (refs.items ?? []).some((r) => r.ref_kind === "champion_model");
+  }, { timeout: 60_000, intervals: [1_000] }).toBe(true);
   return { projectId: projectId!, experimentId, name };
 }
 

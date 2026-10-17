@@ -37,7 +37,9 @@ from app.db.models import (
     Workspace,
 )
 from app.domain.errors import IdentityError
+from app.domain.data_plane import uploaded_by
 from app.domain.observability import LlmInvocationRead
+from app.domain.workspace_identity import creator_read
 from app.services.audience_projection import artifact_read, code_snapshot_read, invocation_read, public_failure
 from app.domain.reproducibility import (
     ArtifactRead,
@@ -272,7 +274,9 @@ def _model_version_list_item(row: ModelVersion) -> ModelVersionListItem:
     )
 
 
-def _dataset_list_item(row: Dataset) -> DatasetListItem:
+def _dataset_list_item(row: Dataset, *, viewer_id: UUID | None = None) -> DatasetListItem:
+    """``viewer_id``: the signed-in reader (None for service tokens and internal callers: no ``is_you``)."""
+
     return DatasetListItem(
         id=row.id,
         workspace_id=row.workspace_id,
@@ -284,6 +288,13 @@ def _dataset_list_item(row: Dataset) -> DatasetListItem:
         row_count=row.row_count,
         column_count=row.column_count,
         purpose=row.purpose,
+        uploaded_by=uploaded_by(row.uploaded_by_service_token_id),
+        uploader=creator_read(
+            user_id=row.asset.created_by if row.asset is not None else None,
+            service_token_id=row.uploaded_by_service_token_id, viewer_id=viewer_id,
+            # A person or a connected tool, never a rule; no recorded uploader (removed user, old row) is `unknown`.
+            kind="person" if row.asset is not None and row.asset.created_by is not None else "unknown",
+        ),
         created_at=row.created_at,
     )
 
@@ -1087,14 +1098,18 @@ def list_datasets(
     *,
     workspace_id: UUID | None,
     limit: int | None = None,
+    viewer_id: UUID | None = None,
 ) -> list[DatasetListItem]:
     scope = resolve_explorer_scope(db, user, workspace_id)
-    stmt = select(Dataset).order_by(Dataset.created_at.desc(), Dataset.id).limit(
-        _limit(limit)
+    stmt = (
+        select(Dataset)
+        .options(selectinload(Dataset.asset))
+        .order_by(Dataset.created_at.desc(), Dataset.id)
+        .limit(_limit(limit))
     )
     if scope is not None:
         stmt = stmt.where(Dataset.workspace_id == scope)
-    return [_dataset_list_item(row) for row in db.scalars(stmt)]
+    return [_dataset_list_item(row, viewer_id=viewer_id) for row in db.scalars(stmt)]
 
 
 def get_dataset(

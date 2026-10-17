@@ -305,12 +305,12 @@ class Test2And3MissingAndCategorical:
         assert n_full not in sizes
         assert all(size <= n_train for size in sizes)
 
-        import joblib
+        from app.engine.serving.model_package import PACKAGE_FILENAME, read_package, sha256_hex
+        from app.engine.serving.package_loader import load_model_package
 
-        members = Path(experiment.artifact_dir) / "members"
-        pipelines = list(members.glob("*.joblib"))
-        assert pipelines
-        pipeline = joblib.load(pipelines[0])
+        payload = (Path(experiment.artifact_dir) / PACKAGE_FILENAME).read_bytes()
+        manifest = read_package(payload).manifest_bytes
+        pipeline = load_model_package(payload, manifest_digest=sha256_hex(manifest)).pipeline
         prep = pipeline.named_steps["prep"]
         encoder = prep.named_transformers_["cat"].named_steps["onehot"]
         assert encoder.handle_unknown == "ignore"
@@ -423,7 +423,7 @@ class TestObjective:
     """P1.4-B: a ProblemSpec objective drives the metric and the locked threshold."""
 
     def test_spec_objective_sets_metric_and_cv_threshold(
-        self, auth_client, db_session, client_user, monkeypatch
+        self, engineer_client, db_session, engineer_user, monkeypatch
     ):
         from app.db.models import DEFAULT_WORKSPACE_ID, EvaluationMetric, ModelEvaluation
         from app.services.lineage_service import seed_business_domains
@@ -433,11 +433,11 @@ class TestObjective:
         _disable_background_job(monkeypatch)
         seed_business_domains(db_session)
         project = get_or_create_labs_project(
-            db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=client_user
+            db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=engineer_user
         )
         spec = create_problem_spec(
             db_session,
-            actor=client_user,
+            actor=engineer_user,
             workspace_id=DEFAULT_WORKSPACE_ID,
             project_id=project.id,
             task_type="binary",
@@ -452,7 +452,7 @@ class TestObjective:
         )
         db_session.commit()
         frame = _classification_frame_with_missing(n=400)
-        created = auth_client.post(
+        created = engineer_client.post(
             "/app/labs/uploads",
             data={"category": "Revenue", "problem_spec_id": str(spec.id)},
             files={"file": ("churn.csv", frame.to_csv(index=False).encode(), "text/csv")},
@@ -492,7 +492,7 @@ class TestObjective:
         assert holdout_recall is not None and holdout_recall.threshold == threshold
 
     def test_invalid_spec_objective_fails_the_run_clearly(
-        self, auth_client, db_session, client_user, monkeypatch
+        self, engineer_client, db_session, engineer_user, monkeypatch
     ):
         from app.db.models import DEFAULT_WORKSPACE_ID
         from app.services.lineage_service import seed_business_domains
@@ -502,12 +502,12 @@ class TestObjective:
         _disable_background_job(monkeypatch)
         seed_business_domains(db_session)
         project = get_or_create_labs_project(
-            db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=client_user
+            db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=engineer_user
         )
         # The spec says regression metrics, but the target is binary.
         spec = create_problem_spec(
             db_session,
-            actor=client_user,
+            actor=engineer_user,
             workspace_id=DEFAULT_WORKSPACE_ID,
             project_id=project.id,
             task_type="regression",
@@ -517,7 +517,7 @@ class TestObjective:
             status="locked",
         )
         db_session.commit()
-        created = auth_client.post(
+        created = engineer_client.post(
             "/app/labs/uploads",
             data={"category": "Revenue", "problem_spec_id": str(spec.id)},
             files={

@@ -10,12 +10,15 @@ actions the runner applied (which must agree with the locked evidence) and the
 date formats recorded on the training rows. Nothing is refit or re-decided on
 scoring rows. A model whose transforms cannot be replayed deterministically fails
 closed (``unsupported_transform``); it is never scored on an untransformed frame.
+After the scores, ``score_frame(..., reasons=True)`` appends per-row reasons (P7.7-A,
+``app.engine.explain``) computed from the same prepared rows; they never change a score.
 """
 
 from __future__ import annotations
 
 import io
 import json
+import logging
 import math
 import numbers
 import re
@@ -26,19 +29,22 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from app.domain.batch_predictions import (
-    CONTRACT_CHECK_MAX_BYTES,
-    FEATURE_CONTRACT_FAILED,
-    SCORING_FAILED,
-    UNSUPPORTED_MODEL,
-    UNSUPPORTED_TRANSFORM,
-)
+from app.engine.explain.reasons import REASON_COLUMNS
 from app.engine.lab.auto_prepare import (
     apply_feature_engineering_actions,
     clean_feature_cells,
     coerce_numeric_like,
 )
 from app.engine.modeling.objective import DEFAULT_THRESHOLD
+from app.engine.serving.codes import (
+    CONTRACT_CHECK_MAX_BYTES,
+    FEATURE_CONTRACT_FAILED,
+    SCORING_FAILED,
+    UNSUPPORTED_MODEL,
+    UNSUPPORTED_TRANSFORM,
+)
+
+logger = logging.getLogger(__name__)
 
 TASK_TYPES = frozenset({"binary", "multiclass", "regression"})
 # The only feature action training applies in place to other partitions (auto_prepare).
@@ -92,17 +98,9 @@ class ScoringSpec:
 class ScoredFrame:
     predictions: pd.DataFrame
     contract: dict[str, Any]
-
-
-def load_pipeline(payload: bytes) -> Any:
-    """Unpickle the stored winner Pipeline. Worker only; the caller verified the digest."""
-
-    import joblib
-
-    try:
-        return joblib.load(io.BytesIO(payload))
-    except Exception as exc:  # noqa: BLE001
-        raise ScoringError(UNSUPPORTED_MODEL, _MODEL_MESSAGE) from exc
+    # P7.7-A: the per-row reasons record (``explain.available_summary`` / ``unavailable_summary``);
+    # None when reasons were not asked for.
+    reasons: dict[str, Any] | None = None
 
 
 def _unsupported(code: str = UNSUPPORTED_TRANSFORM) -> ScoringError:
@@ -201,11 +199,20 @@ def _domain_fills(plan: Any) -> dict[str, Any]:
 def scoring_spec(result: Mapping[str, Any], pipeline: Any) -> ScoringSpec:
     """The replay plan for one locked run. Raises ``ScoringError`` (fail closed)."""
 
+    return contract_spec(result, _pipeline_contract(pipeline))
+
+
+def contract_spec(
+    result: Mapping[str, Any], contract: tuple[list[str], list[str], list[str], dict[str, tuple[Any, ...]]]
+) -> ScoringSpec:
+    """``scoring_spec`` from an input contract (columns, numeric, categorical, categories) learned
+    at fit time: the loaded pipeline's, or (P7.4-A monitoring, no model loaded) the manifest's."""
+
     task = result.get("task") if isinstance(result.get("task"), dict) else {}
     task_type = str(task.get("task_type") or "")
     if task_type not in TASK_TYPES:
         raise _unsupported(UNSUPPORTED_MODEL)
-    features, numeric, categorical, categories = _pipeline_contract(pipeline)
+    features, numeric, categorical, categories = contract
     evidence = result.get("scientific_evidence")
     if not isinstance(evidence, dict):
         raise _unsupported()
@@ -440,9 +447,11 @@ def _scores(pipeline: Any, features: pd.DataFrame, spec: ScoringSpec, on_progres
     return np.concatenate(parts) if parts else np.empty((0,))
 
 
-def _prediction_table(frame: pd.DataFrame, spec: ScoringSpec, scores: np.ndarray) -> pd.DataFrame:
+def _prediction_table(
+    frame: pd.DataFrame, spec: ScoringSpec, scores: np.ndarray, *, reasons: bool = False
+) -> pd.DataFrame:
     table = pd.DataFrame(index=pd.RangeIndex(len(frame)))
-    reserved = {ROW_COLUMN, "probability", "label", "prediction"}
+    reserved = {ROW_COLUMN, "probability", "label", "prediction", *(REASON_COLUMNS if reasons else ())}
     entity = spec.entity_column
     if entity and entity in frame.columns and entity not in reserved and not entity.startswith("probability_"):
         table[entity] = frame[entity].to_numpy()
@@ -460,14 +469,73 @@ def _prediction_table(frame: pd.DataFrame, spec: ScoringSpec, scores: np.ndarray
     return table
 
 
+_REASONS_FAILED = "the reasons step failed on this file; the scores are not affected"
+
+
+def _with_reasons(
+    table: pd.DataFrame,
+    features: pd.DataFrame,
+    spec: ScoringSpec,
+    pipeline: Any,
+    on_progress: Callable[[], None] | None,
+    max_rows: int | None,
+    deadline_seconds: float | None,
+    reference: Mapping[str, Any] | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """``table`` with ``reason_1``..``reason_3`` appended (empty where a row was not explained)
+    and the reasons record. Never fails the scoring: scores are written whatever happens here
+    (only the job's cancellation, a ``BaseException`` raised by the heartbeat, propagates)."""
+
+    from app.engine import explain
+
+    texts: list[list[str | None]] = []
+    try:
+        fmap = explain.feature_map(pipeline)
+        baselines = explain.training_baselines(pipeline, fmap)
+        explanation = explain.explain_rows(
+            pipeline, features, fmap, baselines, task_type=spec.task_type,
+            max_rows=explain.MAX_ROWS if max_rows is None else max_rows, deadline_seconds=deadline_seconds,
+            on_progress=on_progress,
+        )
+        texts = explain.reason_texts(
+            explanation, features, fmap, task_type=spec.task_type,
+            date_columns=set(spec.date_formats) | set(spec.legacy_date_columns), reference=reference,
+        )
+        summary = explain.available_summary(explanation)
+    except explain.ExplainUnavailable as exc:
+        texts, summary = [], explain.unavailable_summary(str(exc))
+    except Exception as exc:  # noqa: BLE001 - reasons are advisory; never fail the scoring
+        from app.engine.serving.model_package import failure_chain
+
+        logger.warning("per-row reasons failed (scores kept): %s", failure_chain(exc))
+        texts, summary = [], explain.unavailable_summary(_REASONS_FAILED)
+    out = table.copy()
+    for rank, name in enumerate(REASON_COLUMNS):
+        column: list[str | None] = [None] * len(out)
+        for row, row_texts in enumerate(texts):
+            column[row] = row_texts[rank]
+        out[name] = pd.Series(column, index=out.index, dtype=object)
+    return out, summary
+
+
 def score_frame(
     frame: pd.DataFrame,
     spec: ScoringSpec,
     pipeline: Any,
     *,
     on_progress: Callable[[], None] | None = None,
+    reasons: bool = False,
+    reasons_max_rows: int | None = None,
+    reasons_deadline_seconds: float | None = None,
+    reasons_reference: Mapping[str, Any] | None = None,
 ) -> ScoredFrame:
-    """Contract check, replayed transforms, fitted pipeline, locked threshold."""
+    """Contract check, replayed transforms, fitted pipeline, locked threshold. With
+    ``reasons`` (P7.7-A), after the scores: ``reason_1``..``reason_3`` appended per row from
+    the same prepared rows (``app.engine.explain``); a failure there leaves them empty and
+    is recorded in ``ScoredFrame.reasons``, never as a scoring failure. ``reasons_reference``: the
+    package's training ``reference_summary`` (``monitoring.usable_reference``), whose quantile bins
+    describe numeric values ("high (top 20%)"); without it they are described against the
+    method's reference."""
 
     frame = frame.copy()
     frame.columns = [str(name) for name in frame.columns]
@@ -492,10 +560,27 @@ def score_frame(
     if any(rate < PARSE_RATE_WARNING for rate in facts["parse_rates"].values()):
         contract["status"] = "warning"  # scored, but many values could not be read
     contract = _bounded(contract)
-    table = _prediction_table(frame, spec, _scores(pipeline, features, spec, on_progress))
+    table = _prediction_table(frame, spec, _scores(pipeline, features, spec, on_progress), reasons=reasons)
     if len(table) != len(frame):
         raise ScoringError(SCORING_FAILED, "scoring did not return one prediction per row", contract=contract)
-    return ScoredFrame(predictions=table, contract=contract)
+    if not reasons:
+        return ScoredFrame(predictions=table, contract=contract)
+    table, summary = _with_reasons(table, features, spec, pipeline, on_progress, reasons_max_rows,
+                                   reasons_deadline_seconds, reasons_reference)
+    return ScoredFrame(predictions=table, contract=contract, reasons=summary)
+
+
+def flagged_summary(table: pd.DataFrame, spec: ScoringSpec) -> dict[str, Any] | None:
+    """Binary only: how many scored rows are flagged (``label`` 1, i.e. ``probability`` at or above
+    the locked decision threshold) and their share. Counted from the written file's rows; None
+    for multiclass and regression (no single flagged class)."""
+
+    if spec.task_type != "binary" or "label" not in table.columns:
+        return None
+    rows = int(len(table))
+    count = int(pd.to_numeric(table["label"], errors="coerce").fillna(0).astype(int).sum())
+    return {"count": count, "rows": rows, "share": round(count / rows, 6) if rows else None,
+            "decision_threshold": spec.decision_threshold}
 
 
 def serialize_predictions(table: pd.DataFrame, output_format: str) -> tuple[bytes, str, str]:

@@ -1,0 +1,65 @@
+<!-- title: Home · DCLab demo -->
+<!-- crumbs: Northwind Telecom › <b>Home</b> -->
+<!-- status: ok | Working today -->
+<div class="page-head">
+  <div><h1>Good morning, Sam</h1><p class="sub">Three things need you today. Everything else is finished or running.</p></div>
+  <div class="toolbar"><button class="btn" type="button" data-mock="upload">Upload data</button></div>
+</div>
+
+<div class="card">
+  <h2>3 things need you <span class="sp"><a href="inbox.html">Open the Inbox</a></span></h2>
+  <div class="dlist">
+    <div class="drow"><span class="ic">1</span><span><b>Switch to the retrained model?</b><br><small class="muted">Raised by the retrain rule · Northwind churn · Monitoring · Wed</small></span><a class="btn sm primary" href="inbox.html">Decide</a></div>
+    <div class="drow"><span class="ic">2</span><span><b>Alert on the model in use</b><br><small class="muted">Raised by monitoring · Northwind churn · week of 28 Sep</small></span><a class="btn sm" href="monitoring.html">Review</a></div>
+    <div class="drow"><span class="ic">3</span><span><b>Improvement loop waiting for you</b><br><small class="muted">Raised by the loop · Late payment risk · Improve · Thu</small></span><a class="btn sm" href="improve.html">Open</a></div>
+  </div>
+  <p class="small muted">Home names who raised each item and where. The evidence is on the item itself in the Inbox.</p>
+</div>
+
+<div class="card">
+  <h2>Northwind churn <span class="sp">catch at least 80% of the customers who will cancel</span></h2>
+  <ol class="flow-home">
+    <li class="done"><a href="data.html"><span class="k">1 Data</span><b>Jun 2026 file</b><small>a newer file exists</small></a></li>
+    <li class="done"><a href="goal.html"><span class="k">2 Goal &amp; test</span><b>Recall ≥ 0.80</b><small>time-ordered folds</small></a></li>
+    <li class="done"><a href="experiments.html"><span class="k">3 Experiments</span><b>5 runs</b><small>model from Run 1</small></a></li>
+    <li class="done"><a href="improve.html"><span class="k">4 Improve</span><b>1 guided try</b><small>no gain shown</small></a></li>
+    <li class="alert"><a href="model.html"><span class="k">5 Model</span><b>v1 in use</b><small>v5 waiting for you</small></a></li>
+    <li class="done"><a href="predictions.html"><span class="k">6 Predictions</span><b>6,412 flagged</b><small>every Monday</small></a></li>
+    <li class="alert"><a href="monitoring.html"><span class="k">7 Monitoring</span><b>Alert</b><small>drift and a floor</small></a></li>
+    <li class="done"><a href="history.html"><span class="k">8 History</span><b>Every decision</b><small>who, what, why</small></a></li>
+  </ol>
+  <div class="toolbar"><a class="btn primary" href="data.html">Open project</a></div>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h3>Running now</h3>
+    <div class="dlist">
+      <div class="drow"><span class="ic">▶</span><span><b>Plan upgrade · Run 1</b><br><small class="muted">Model being trained: fold 3 of 5 · started 4 minutes ago</small><div class="meter ai" style="margin-top:6px"><i style="width:60%"></i></div></span><a class="btn sm" href="projects.html">Open</a></div>
+    </div>
+    <p class="small muted">Nothing else is running. Weekly scoring of Northwind churn runs next on Monday at 02:00 UTC.</p>
+  </div>
+  <div class="card">
+    <h3>Recent activity</h3>
+    <ul class="hist">
+      <li>Retrained model compared with the model in use · same kind of test, latest months · Wed</li>
+      <li>Run 5 finished · LightGBM · CV PR-AUC 0.71 · on the Sep 2026 file · Wed</li>
+      <li>You started a retrain on newest data (the retrain policy is Ask me, so the Inbox asked first) · Tue</li>
+      <li>Maya Chen uploaded <code>customers_2026_09.csv</code> · 53,540 rows · Tue</li>
+      <li>Drift alert on <code>plan_type</code> · week of 28 Sep · Mon</li>
+      <li>Weekly scoring finished · 6,412 of 51,296 flagged · Mon 02:00</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card">
+  <h3>All projects <span class="sp"><a href="projects.html">See all</a></span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Project</th><th>Goal</th><th class="r">CV score of the model in use</th><th>Model in use</th><th>Last run</th></tr></thead>
+    <tbody>
+      <tr><td><a href="data.html"><b>Northwind churn</b></a></td><td>Catch ≥ 80% of churners</td><td class="r">PR-AUC 0.70</td><td>Churn model v1 · LightGBM</td><td>Run 5 · finished Wed</td></tr>
+      <tr><td><b>Late payment risk</b></td><td>Best recall while precision ≥ 0.60</td><td class="r">PR-AUC 0.48</td><td>Late payment model v1 · random forest</td><td>Loop Try 2 · finished Thu</td></tr>
+      <tr><td><b>Plan upgrade</b></td><td>Recall ≥ 0.60</td><td class="r">—</td><td>None yet</td><td>Run 1 · training</td></tr>
+    </tbody>
+  </table></div>
+</div>

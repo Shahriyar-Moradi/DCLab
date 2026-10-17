@@ -245,7 +245,8 @@ the harness; any recorded agent run can be replayed without a live model.
 
 **Checkpoint G6 (about 4 weeks of R3 data after the gate, during Phase 4 Stages
 2–3):** confirm or lower the default trust levels, confirm the models chosen in
-ADR 0008 (`gpt-6.1-sol` complex, `gpt-6-luna` simple) against R3 cost and quality,
+ADR 0008 (`gpt-6.1-sol` complex, `gpt-6-luna` simple; since 2026-10-16 Claude Sonnet 5.5
+`claude-sonnet-5-5` for every role, OpenAI / TypeSafe inactive) against R3 cost and quality,
 and confirm the ADR 0009 budget defaults before Phase 4 Stage 4 exposes AI to users.
 
 ## Phase 4, Stages 2–5 — Agent-first Studio (after the Phase 6 gate)

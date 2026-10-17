@@ -27,12 +27,36 @@ from sqlalchemy.orm import Session
 from app.agents.contracts import UNTRUSTED_TEXT_MAX_CHARS, Untrusted
 from app.db.models import PromptRelease
 
-JEV_MODEL_ID = "jev-1.13.0"  # never an alias (jev-latest / jev-preview)
+# Claude Sonnet 5.5 on Anthropic since 2026-10-16: every release moved to version 2 (the model is part
+# of the digest; sync retires v1, levels restart at L0). Never an alias (-latest / -preview).
+JEV_MODEL_ID = "claude-sonnet-5-5"
+# LEGACY (switched to Anthropic 2026-10-16; kept for now): JEV_MODEL_ID = "jev-1.13.0" (TypeSafe)
 TYPESAFE_SDK_PIN = "0.7.2"
 JEV_PREFIX = "jev:"
 MAX_QUESTIONS = 50
 MAX_STATE_BYTES = 8 * 1024
-TIMEOUT_MS = 1000
+TIMEOUT_MS = 30_000  # a general model answers in seconds (LEGACY TypeSafe Jev: 1000)
+# Batches are packed by token budget (the port's ``batches``), not by question count alone: the
+# answers must fit the output cap next to low-effort thinking, the measured input a fixed bound,
+# so a full batch's worst case fits one per-batch hold (gateway.budget, run kind ``jev``).
+JEV_MAX_OUTPUT_TOKENS = 4096
+JEV_THINKING_TOKENS = 1024
+JEV_MAX_INPUT_TOKENS = 7_000  # measured like the gateway: 3 characters per token
+
+
+def answer_labels(release: "JevRelease", choices: Any = ()) -> list[str]:
+    """The labels an answer carries a probability for: the choices, yes / no, or the score levels."""
+    if release.primitive == "choice":
+        return [str(label) for label in (release.choices or choices)]
+    if release.primitive == "score":
+        return [str(level) for level in range(len(release.criteria or ()) or 1)]
+    return ["yes", "no"]
+
+
+def answer_tokens(question_key: str, labels: list[str]) -> int:
+    """Conservative output tokens of one answer: its key, value, confidence and a probability
+    per label, as compact JSON at 3 characters per token."""
+    return -(-(120 + len(question_key) + sum(len(label) + 12 for label in labels)) // 3)
 SUBJECT_KEY = re.compile(r"^c[0-9]{1,2}$")  # per-column state entries: c0 … c49
 
 UNTRUSTED, UNTRUSTED_LIST, BOOL = "untrusted", "untrusted_list", "bool"
@@ -123,14 +147,14 @@ def _fields(**spec: Any) -> MappingProxyType:
 _COLUMN = {"column": UNTRUSTED, "dtype": DTYPE_KINDS}
 RELEASES: MappingProxyType[str, JevRelease] = MappingProxyType({r.purpose: r for r in (
     JevRelease(
-        "column.is_identifier", 1, "noul",
+        "column.is_identifier", 2, "noul",
         "Is the column in this state entry an identifier: a key, code or id that names a row or an entity, "
         "rather than a measurement or a category?", None,
         criteria={"true": "The column identifies rows or entities.", "false": "The column describes them."},
         subject_fields=_fields(**_COLUMN, name_tokens=UNTRUSTED_LIST, uniqueness=RATIO_BANDS, nulls=RATIO_BANDS),
         yes_at=0.90, no_at=0.10, max_level=1),
     JevRelease(
-        "column.semantic_role", 1, "choice",
+        "column.semantic_role", 2, "choice",
         "Which role does the column in this state entry play in a tabular model?", None,
         criteria={"numeric": "a measured quantity", "categorical_code": "a label from a small set of codes",
                   "identifier": "a key or id", "datetime": "a date or time", "free_text": "free-form text",
@@ -140,7 +164,7 @@ RELEASES: MappingProxyType[str, JevRelease] = MappingProxyType({r.purpose: r for
                                nulls=RATIO_BANDS),
         confidence_at=0.80, max_level=2),
     JevRelease(
-        "feature.leakage_suspect", 1, "noul",
+        "feature.leakage_suspect", 2, "noul",
         "Would the column in this state entry be unavailable at prediction time or encode the target "
         "(target leakage)?", None,
         criteria={"true": "The column likely leaks the target.", "false": "No sign of leakage."},
@@ -148,11 +172,11 @@ RELEASES: MappingProxyType[str, JevRelease] = MappingProxyType({r.purpose: r for
         context_fields=_fields(target=UNTRUSTED, task=TASKS),
         yes_at=0.90, max_level=1),
     JevRelease(
-        "command.intent_route", 1, "choice",
+        "command.intent_route", 2, "choice",
         "Which quick action does the user's message ask for? Answer other when none fits.", "message",
         confidence_at=0.80, max_level=1, user_text=True),
     JevRelease(
-        "proposal.completeness", 1, "score",
+        "proposal.completeness", 2, "score",
         "How complete is this proposal for a reviewer?", "proposal",
         criteria=["missing most parts", "has a kind and little else", "has a rationale or evidence",
                   "has rationale and evidence", "complete with citations and a revert path"],

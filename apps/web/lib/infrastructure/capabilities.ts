@@ -22,16 +22,26 @@ export const CAPABILITIES = {
 } as const;
 
 /** Developer Studio routes (STUDIO_DESIGN section 3): development workspace role only. */
-const STUDIO_PREFIXES = ["/home", "/inbox", "/agents", "/projects"] as const;
+const STUDIO_PREFIXES = ["/home", "/inbox", "/agents", "/settings", "/governance", "/real", "/projects"] as const;
 
 export function isStudioPath(pathname: string): boolean {
   return STUDIO_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
+/** Business view (P7.6-A): `/outcomes` only, for any workspace reader who may open the business pages. */
+export function isBusinessViewPath(pathname: string): boolean {
+  return pathname === "/outcomes";
+}
+
+/** Operator console (P8.5-UI): `/operator` (other paths below it are 404), for DCLab platform administrators (`platform_write`); the API authorizes. */
+export function isOperatorPath(pathname: string): boolean {
+  return pathname === "/operator" || pathname.startsWith("/operator/");
+}
+
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-const PROJECT_SECTIONS = "lab|pipeline|graph|data|experiments|improve|models|predictions|monitoring|decisions";
+const PROJECT_SECTIONS = "lab|pipeline|graph|data|goal|experiments|improve|models|predictions|monitoring|decisions|questions";
 const STUDIO_ROUTE = new RegExp(
-  `^/(?:home|inbox|agents|projects(?:/new|/${UUID}(?:/(?:${PROJECT_SECTIONS})|/experiments/(?:${UUID}|new|compare)|/(?:data|splits|features|models|pipeline)/${UUID})?)?)$`,
+  `^/(?:home|inbox|agents|settings|governance|real|projects(?:/new|/${UUID}(?:/(?:${PROJECT_SECTIONS})|/experiments/(?:${UUID}|new|compare)|/(?:data|splits|features|models|pipeline|improve)/${UUID})?)?)$`,
 );
 
 /**
@@ -53,19 +63,19 @@ export function hasCapability(
 
 /**
  * Where each role lands after login (STUDIO_DESIGN section 3). Developers and admins with a
- * workspace open the project list (`/home` is one click away in the sidebar); a platform operator
- * with no workspace opens monitoring until `/operator` (P8.5-UI); a business-only administrator keeps
- * `/business`; clients keep their existing pages until `/outcomes` (P7.6).
+ * workspace open the project list (`/home` is one click away in the sidebar); a platform administrator
+ * with no workspace opens the operator console `/operator` (P8.5-UI) and a platform developer with no
+ * workspace keeps `/admin/monitoring`; a business-only administrator keeps `/business`; business users
+ * (clients) open the Business view `/outcomes` (P7.6-A; Labs stays reachable).
  */
 export function defaultProductRoute(user: CapabilityPrincipal | null | undefined): string {
   const platform = hasCapability(user, CAPABILITIES.platformRead);
   const development = hasCapability(user, CAPABILITIES.developmentAccess);
   if (development) return "/projects";
+  if (platform && hasCapability(user, CAPABILITIES.platformWrite)) return "/operator";
   if (platform) return "/admin/monitoring";
   if (hasCapability(user, CAPABILITIES.businessAccess)) return "/business";
-  if (hasCapability(user, CAPABILITIES.applicationAccess)) {
-    return hasCapability(user, CAPABILITIES.legacyDecisionLayer) ? "/app/dashboards" : "/app/labs";
-  }
+  if (hasCapability(user, CAPABILITIES.applicationAccess)) return "/outcomes";
   return "/app/settings";
 }
 
@@ -111,12 +121,19 @@ export function canAccessProductRoute(
   if (pathname === "/admin" || pathname.startsWith("/admin/")) {
     return hasCapability(user, CAPABILITIES.platformRead);
   }
+  // Founder decision 2026-10-16: the operator console is for platform administrators only.
+  if (isOperatorPath(pathname)) {
+    return hasCapability(user, CAPABILITIES.platformRead) && hasCapability(user, CAPABILITIES.platformWrite);
+  }
   // Studio design kit: development workspace role only (the page also 404s in production).
   if (pathname === "/dev" || pathname.startsWith("/dev/")) {
     return hasCapability(user, CAPABILITIES.developmentAccess);
   }
   if (isStudioPath(pathname)) {
     return hasCapability(user, CAPABILITIES.developmentAccess);
+  }
+  if (isBusinessViewPath(pathname)) {
+    return hasCapability(user, CAPABILITIES.applicationAccess);
   }
   if (pathname === "/business" || pathname.startsWith("/business/")) {
     return hasCapability(user, CAPABILITIES.businessAccess);
@@ -142,12 +159,15 @@ const WORKSPACE_SWITCH_STABLE_ROUTES = new Set([
   "/app/opportunities/upload",
   "/app/decisions",
   "/app/labs",
+  "/outcomes",
   "/business",
   "/development",
   "/admin/businesses",
   "/home",
   "/inbox",
   "/agents",
+  "/governance",
+  "/real",
   "/projects",
 ]);
 

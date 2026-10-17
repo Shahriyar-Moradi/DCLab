@@ -7,7 +7,7 @@ import { Level } from "@/components/studio/Level";
 import { Pill } from "@/components/studio/Pill";
 import { safeInternalHref } from "@/components/studio/safe-href";
 import { Term } from "@/components/studio/Term";
-import { knownPointLabel } from "@/lib/application/studio-runs";
+import { knownPointLabel, nodeStatusText } from "@/lib/application/studio-runs";
 import { QueryNotice, formatWhen } from "@/app/components/studio-app/StudioParts";
 import { plainText } from "@/lib/application/command-search";
 import { useNodeImpact, type StudioGraph, type StudioGraphNode } from "@/lib/application/studio-data-hooks";
@@ -112,7 +112,7 @@ export function GraphInspector({ projectId, graph, node, name, names, markers, k
         { key: "id", label: "Reference", value: <span className="mono">{node.id}</span> },
         ...(node.version ? [{ key: "version", label: "Version", value: plainText(node.version, 40) }] : []),
         { key: "created", label: "Created", value: formatWhen(node.created_at) },
-        { key: "status", label: "Status", value: node.status ? node.status.toLowerCase().replaceAll("_", " ") : "—" },
+        { key: "status", label: "Status", value: node.status ? nodeStatusText(node.status) : "—" },
         {
           key: "refs", label: <Term definition="The versions the project uses now (goal, data, test design, features, model). Changing one is saved in History.">Versions in use here</Term>,
           value: refs.length ? refs.map((ref) => `${refBadge(ref.ref_kind)} (last changed ${formatWhen(ref.moved_at)})${ref.staleness_bearing ? "" : ". Changing it does not mark anything as built on an older version"}`).join("; ") : "Not in use",

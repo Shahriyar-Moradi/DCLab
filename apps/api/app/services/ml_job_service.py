@@ -11,19 +11,30 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
-from app.db.models import ClientLabUpload, MlJob
+from app.db.models import ClientLabUpload, MlJob, MlJobAttempt
 from app.db.session import get_session_factory
 from app.domain.errors import MlJobSpecError, RunCancelledError, RunQuotaExceededError, UnknownJobHandlerError
 from app.domain.lab_run_stages import CANCELLED, COMPLETED, IN_PROGRESS_STAGES, NEEDS_INPUT, SKIPPED
 from app.services.target_intent_service import upload_has_unresolved_target
 from app.domain.ml_jobs import (
+    ATTEMPT_CANCELLED,
+    ATTEMPT_COMPLETED,
+    ATTEMPT_FAILED,
+    ATTEMPT_FAILURE_CLASSES,
+    ATTEMPT_RETRIED,
+    ATTEMPT_RUNNING,
     DEFAULT_HEARTBEAT_TIMEOUT_SECONDS,
     DEFAULT_MAX_ATTEMPTS,
     DEFAULT_PRIORITY,
+    FAILURE_CANCELLED,
+    FAILURE_DATA_ERROR,
+    FAILURE_INTERNAL_ERROR,
+    FAILURE_WORKER_LOST,
     FORBIDDEN_JOB_PAYLOAD_KEYS,
     HANDLER_AGENTS_RUN,
     HANDLER_LABS_AUTO_TRAIN,
@@ -39,6 +50,7 @@ from app.domain.ml_jobs import (
     PAYLOAD_MAX_BYTES,
     PRIORITY_MAX,
     PRIORITY_MIN,
+    exception_failure_class,
 )
 from app.services.job_handlers import get_handler, registered_handler_keys
 
@@ -69,6 +81,60 @@ def _heartbeat_timeout_seconds() -> float:
 
 def _lease_expires(now: datetime) -> datetime:
     return now + timedelta(seconds=_heartbeat_timeout_seconds())
+
+
+# --- attempts (D2a, Alembic 0084) -------------------------------------------------------------
+
+
+def _start_attempt(db: Session, job: MlJob, *, now: datetime) -> None:
+    """The claim's ``running`` attempt row (numbered by ``ml_jobs.attempts``), in the claim's
+    transaction. A number that already has a row (a hand-edited counter) is left alone."""
+
+    db.execute(
+        pg_insert(MlJobAttempt)
+        .values(workspace_id=job.workspace_id, ml_job_id=job.id, attempt=job.attempts, started_at=now,
+                outcome=ATTEMPT_RUNNING)
+        .on_conflict_do_nothing(constraint="uq_ml_job_attempts_job_attempt")
+    )
+
+
+def _end_attempt(db: Session, job: MlJob, outcome: str, failure_class: str | None, *, now: datetime) -> None:
+    """Close the job's current attempt once (a finished one is final, DB trigger). No row (a job
+    claimed before 0084, or hand-set to running): nothing to close."""
+
+    db.execute(
+        update(MlJobAttempt)
+        .where(MlJobAttempt.ml_job_id == job.id, MlJobAttempt.attempt == job.attempts,
+               MlJobAttempt.outcome == ATTEMPT_RUNNING)
+        .values(ended_at=func.greatest(MlJobAttempt.started_at, now), outcome=outcome, failure_class=failure_class)
+    )
+
+
+def _end_attempt_after_failure(db: Session, job: MlJob, failure_class: str, *, now: datetime) -> None:
+    """After ``_apply_failure``: cancelled, retried (back in the queue) or failed (terminal)."""
+
+    if job.status == JOB_CANCELLED:
+        _end_attempt(db, job, ATTEMPT_CANCELLED, FAILURE_CANCELLED, now=now)
+    else:
+        _end_attempt(db, job, ATTEMPT_RETRIED if job.status == JOB_QUEUED else ATTEMPT_FAILED, failure_class, now=now)
+
+
+# Auto-train stages whose deliberate failure is about the data (loading, profiling, the target,
+# cleaning, preparation, the split). A failure later on (training, evaluating) is internal.
+_DATA_STAGES = frozenset(
+    {"queued", "ingesting", "analyzing", "cleaning", "feature_engineering", "preprocessing", "splitting"}
+)
+
+
+def _auto_train_failure_class(upload: ClientLabUpload | None) -> str:
+    """The class of an auto-train run that recorded its own failure: the class the run wrote
+    (an unexpected exception), else by the stage it failed at."""
+
+    log = upload.pipeline_log if upload is not None and isinstance(upload.pipeline_log, dict) else {}
+    recorded = log.get("failure_class")
+    if recorded in ATTEMPT_FAILURE_CLASSES and recorded != FAILURE_CANCELLED:
+        return str(recorded)
+    return FAILURE_DATA_ERROR if str(log.get("failed_at") or "") in _DATA_STAGES else FAILURE_INTERNAL_ERROR
 
 
 def bound_job_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
@@ -240,12 +306,15 @@ def commit_job_heartbeat(
 
 
 def ensure_run_capacity(
-    db: Session, workspace_id: UUID, *, job_types: tuple[str, ...] = (JOB_TYPE_AUTO_TRAIN, JOB_TYPE_BATCH_PREDICT)
+    db: Session, workspace_id: UUID, *, job_types: tuple[str, ...] = (JOB_TYPE_AUTO_TRAIN, JOB_TYPE_BATCH_PREDICT),
+    resume: bool = False,
 ) -> None:
     """Refuse a new job of ``job_types`` (default: training runs and batch scoring, one
     shared worker budget) when the workspace holds its maximum of queued + running ones (``RunQuotaExceededError``, 429).
     Serialized per workspace by a transaction-scoped advisory lock, so concurrent
-    creators cannot overshoot."""
+    creators cannot overshoot. Then the P8.4-A plan limits (``QuotaExceededError``, 429
+    ``quota_exceeded``). ``resume=True``: a parked run continues (target or split confirmed),
+    so it is not counted again as a run started today."""
 
     limit = int(get_settings().ml_max_active_runs_per_workspace)
     db.execute(
@@ -262,6 +331,15 @@ def ensure_run_capacity(
     )
     if int(active or 0) >= limit:
         raise RunQuotaExceededError(limit)
+    # P8.4-A plan limits: runs started today (under this lock), this month's compute, and storage
+    # (runs and scorings write files). Admission only: the worker never checks.
+    from app.domain.usage import QUOTA_COMPUTE_SECONDS_MONTH, QUOTA_RUNS_PER_DAY, QUOTA_STORAGE_BYTES
+    from app.services.usage_service import ensure_within_quota
+
+    if not resume:
+        ensure_within_quota(db, workspace_id, QUOTA_RUNS_PER_DAY, requested=1)
+    ensure_within_quota(db, workspace_id, QUOTA_COMPUTE_SECONDS_MONTH)
+    ensure_within_quota(db, workspace_id, QUOTA_STORAGE_BYTES)
 
 
 def _mark_job_cancelled(job: MlJob, *, now: datetime) -> None:
@@ -352,11 +430,13 @@ def recover_abandoned_jobs(
             reason="abandoned: heartbeat expired",
             now=moment,
         )
+        _end_attempt_after_failure(db, job, FAILURE_WORKER_LOST, now=moment)
         recovered.append(job)
     if recovered:
         db.flush()
     for job in recovered:
         _sync_batch_prediction(db, job)
+        _notify_terminal(db, job)
         if job.status == JOB_CANCELLED:
             _record_cancelled_run(db, job)  # commits, one job at a time
     return recovered
@@ -397,6 +477,7 @@ def claim_next_queued_job(
         job.failure_reason = job.failure_reason or "max attempts exhausted before claim"
         db.flush()
         _sync_batch_prediction(db, job)
+        _notify_terminal(db, job)
         return None
     worker = (claimed_by or "").strip() or None
     if worker is not None:
@@ -408,12 +489,16 @@ def claim_next_queued_job(
     job.claimed_by = worker
     job.lease_expires_at = _lease_expires(moment)
     db.flush()
+    _start_attempt(db, job, now=moment)
     return job
 
 
-def _fail_job_terminally(db: Session, job: MlJob, reason: str, *, now: datetime) -> None:
+def _fail_job_terminally(
+    db: Session, job: MlJob, reason: str, *, now: datetime, failure_class: str = FAILURE_INTERNAL_ERROR
+) -> None:
     """A deterministic failure (the handler recorded it): never retried."""
 
+    _end_attempt(db, job, ATTEMPT_FAILED, failure_class, now=now)
     job.status = JOB_FAILED
     job.completed_at = now
     job.heartbeat_at = now
@@ -425,6 +510,7 @@ def _fail_job_terminally(db: Session, job: MlJob, reason: str, *, now: datetime)
 
 def complete_job(db: Session, job: MlJob, *, now: datetime | None = None) -> None:
     moment = now or _now()
+    _end_attempt(db, job, ATTEMPT_COMPLETED, None, now=moment)
     job.status = JOB_COMPLETED
     job.completed_at = moment
     job.heartbeat_at = moment
@@ -463,10 +549,17 @@ def fail_or_retry_job(
     reason: str,
     *,
     now: datetime | None = None,
+    failure_class: str = FAILURE_INTERNAL_ERROR,
 ) -> None:
-    _apply_failure(job, reason=reason, now=now or _now())
+    """``failure_class``: the closed class recorded on the attempt (``reason`` stays on the job
+    row only, never on the attempt)."""
+
+    moment = now or _now()
+    _apply_failure(job, reason=reason, now=moment)
+    _end_attempt_after_failure(db, job, failure_class, now=moment)
     db.flush()
     _sync_batch_prediction(db, job)
+    _notify_terminal(db, job)
     if job.status == JOB_CANCELLED:
         _record_cancelled_run(db, job)
 
@@ -485,6 +578,15 @@ def _sync_batch_prediction(db: Session, job: MlJob) -> None:
         from app.agents.harness.service import end_run_for_job
 
         end_run_for_job(db, job)
+
+
+def _notify_terminal(db: Session, job: MlJob) -> None:
+    """P8.8-A: a training or scoring job that ended completed / failed notifies (once per
+    transition, in this transaction; never raises, a notification never fails the job)."""
+
+    from app.services.notification_service import notify_job_terminal
+
+    notify_job_terminal(db, job)
 
 
 def _record_cancelled_run(db: Session, job: MlJob) -> None:
@@ -547,11 +649,14 @@ def execute_job(
         current = db.get(MlJob, job_id)
         if current is None:
             raise RuntimeError("ml job disappeared during execution") from None
-        _mark_job_cancelled(current, now=_now())
+        moment = _now()
+        _mark_job_cancelled(current, now=moment)
+        _end_attempt(db, current, ATTEMPT_CANCELLED, FAILURE_CANCELLED, now=moment)
         _sync_batch_prediction(db, current)
         _record_cancelled_run(db, current)
         db.commit()
         db.refresh(current)
+        _after_terminal(db, current)
         return current
     except UnknownJobHandlerError as exc:
         db.rollback()
@@ -561,15 +666,17 @@ def execute_job(
         fail_or_retry_job(db, current, str(exc), now=_now())
         db.commit()
         db.refresh(current)
+        _after_terminal(db, current)
         return current
     except Exception as exc:  # noqa: BLE001
         db.rollback()
         current = db.get(MlJob, job_id)
         if current is None:
             raise
-        fail_or_retry_job(db, current, str(exc), now=_now())
+        fail_or_retry_job(db, current, str(exc), now=_now(), failure_class=exception_failure_class(exc))
         db.commit()
         db.refresh(current)
+        _after_terminal(db, current)
         return current
 
     current = db.get(MlJob, job_id)
@@ -592,6 +699,7 @@ def execute_job(
             # Also a run that stopped for input (or would resume) after a cancel
             # request: it is cancelled, never completed/requeued.
             _mark_job_cancelled(current, now=terminal_at)
+            _end_attempt(db, current, ATTEMPT_CANCELLED, FAILURE_CANCELLED, now=terminal_at)
             if status != CANCELLED:
                 _record_cancelled_run(db, current)
         elif status in {COMPLETED, SKIPPED} or waiting:
@@ -608,28 +716,59 @@ def execute_job(
 
             enqueue_auto_train(target_id)
         else:
+            from app.engine.evaluation.comparability import NONDETERMINISTIC_RERUN
+
             reason = ""
             if upload is not None and isinstance(upload.pipeline_log, dict):
                 reason = str(upload.pipeline_log.get("reason") or "")
-            fail_or_retry_job(
-                db,
-                current,
-                reason or f"auto-train ended with status {status or 'missing'}",
-                now=terminal_at,
-            )
+            if reason.startswith(f"{NONDETERMINISTIC_RERUN}:"):
+                # ADR 0007 §6.2 (D4c gate 3): a pinned final run that did not reproduce its probe is a
+                # deterministic refusal before the final test; a retry could only spend the look on a
+                # run already shown not to reproduce. The person decides (the loop is waiting_user).
+                _fail_job_terminally(db, current, reason, now=terminal_at,
+                                     failure_class=_auto_train_failure_class(upload))
+            else:
+                fail_or_retry_job(
+                    db,
+                    current,
+                    reason or f"auto-train ended with status {status or 'missing'}",
+                    now=terminal_at,
+                    failure_class=_auto_train_failure_class(upload),
+                )
     elif handler_key == HANDLER_MODELS_BATCH_PREDICT:
         from app.services.batch_prediction_service import prediction_failure_code
+
+        from app.domain.batch_predictions import DATA_FAILURE_CODES
 
         failure = prediction_failure_code(db, current)
         if failure is None:
             complete_job(db, current, now=terminal_at)
         else:
-            _fail_job_terminally(db, current, failure, now=terminal_at)
+            _fail_job_terminally(db, current, failure, now=terminal_at, failure_class=(
+                FAILURE_DATA_ERROR if failure in DATA_FAILURE_CODES else FAILURE_INTERNAL_ERROR))
     else:
         complete_job(db, current, now=terminal_at)
+    _notify_terminal(db, current)
     db.commit()
     db.refresh(current)
+    _after_terminal(db, current)
     return current
+
+
+def _after_terminal(db: Session, job: MlJob) -> None:
+    """P5.4-A2 (ADR 0007 §8): after ``job``'s terminal commit, in its own transaction and best-effort,
+    an improve loop whose probe or final run this was is stepped now (its watchdog pulled forward);
+    never touches ``job`` itself. Any error is logged; the watchdog still steps the loop."""
+
+    if job.status not in (JOB_COMPLETED, JOB_FAILED, JOB_CANCELLED):
+        return
+    try:
+        from app.services.improve.loop_handler import on_job_terminal
+
+        on_job_terminal(db, job)
+    except Exception:  # noqa: BLE001 - best-effort; the watchdog covers it
+        logging.getLogger("dclab.ml_jobs").exception("improve terminal hook failed for job %s", job.id)
+        db.rollback()
 
 
 def _end_abandoned_assistant_turns(db: Session) -> None:
@@ -658,14 +797,22 @@ def process_next_job(
 
     # Import side effect: register shipped handlers before dispatch.
     registered_handler_keys()
-    recover_abandoned_jobs(
+    recovered = recover_abandoned_jobs(
         db, now=now, heartbeat_timeout_seconds=heartbeat_timeout_seconds
     )
     db.commit()
+    for lost in recovered:
+        _after_terminal(db, lost)
     _end_abandoned_assistant_turns(db)
     job = claim_next_queued_job(db, now=now, job_id=job_id, claimed_by=claimed_by)
     if job is None:
         db.commit()
         return None
+    labels = {"job_id": job.id, "job_type": job.job_type, "handler_key": job.handler_key, "attempt": job.attempts}
     db.commit()
-    return execute_job(db, job, runner=runner)
+    from app import observability  # P8.5-A: span + dclab_ml_jobs; no-op unless configured
+
+    with observability.job(**labels) as outcome:
+        finished = execute_job(db, job, runner=runner)
+        outcome.status = finished.status
+    return finished

@@ -19,6 +19,9 @@ Resource design (transport only; ``decision_record_service`` and
   stale, ``*`` refused) or ``If-None-Match: *`` to create a missing kind.
   Accepting a ref-move proposal through ``/accept`` is ``409
   ref_move_requires_move_ref``: the move needs the ref precondition.
+* Moving ``champion_model`` puts a model in use, which approves it for scoring:
+  the same transaction inserts its immutable ``model_releases`` row (P7.2-A);
+  ``GET /v1/projects/{id}/releases`` lists those approvals.
 
 Every POST requires ``Idempotency-Key`` (``idempotency_keys``, resource kind
 ``decision_record``; scope workspace + principal + operation). The actor is
@@ -44,7 +47,7 @@ from app.api.deps import (
     require_workspace_read,
 )
 from app.api.v1 import _created, _key_scope, _keyed_command, _not_found, _principal_id
-from app.api.v1_agent_views import decision_view
+from app.api.v1_agent_views import decision_view, is_agent
 from app.api.v1_conventions import (
     COMMON_ERROR_STATUSES,
     ETAG_HEADER_DOC,
@@ -90,9 +93,11 @@ from app.domain.errors import (
     RefVersionConflictError,
 )
 from app.domain.idempotency import RESOURCE_DECISION_RECORD
+from app.domain.model_releases import ModelReleaseList
 from app.domain.state_graph import REF_KINDS, REF_TARGET_COLUMNS, REF_TARGET_NODE_KINDS, node_key
 from app.services import decision_record_service as drs
 from app.services import idempotency_service
+from app.services import model_release_service as mrs
 from app.services import project_ref_service as prs
 from app.services.project_ref_service import RefMove
 from app.services.project_service import get_project
@@ -440,6 +445,27 @@ def read_project_ref(
     return _ref_read(ref)
 
 
+@router.get("/projects/{project_id}/releases", response_model=ModelReleaseList)
+def read_project_releases(
+    project_id: UUID,
+    request: Request,
+    user: User = Depends(require_workspace_read),
+    db: Session = Depends(get_db),
+) -> ModelReleaseList:
+    """Approvals of the model in use ("approved for scoring"), newest first (P7.2-A). Each is
+    written when a person puts a model in use (``POST /v1/projects/{id}/refs/champion_model``);
+    there is no other way to approve. ``rationale`` is untrusted plain text; service tokens get
+    ``approved_by_user_id`` null and a null ``rationale`` when it names the final holdout."""
+
+    try:
+        return mrs.list_releases(
+            db, actor=user, workspace_id=request_workspace_id(request), project_id=project_id,
+            agent=is_agent(request),
+        )
+    except _MAPPED as exc:
+        raise _error(exc) from exc
+
+
 def _expected_version(if_match: str | None, if_none_match: str | None) -> int | None:
     """``If-Match: "<n>"`` → n; ``If-None-Match: *`` → None (the kind must not exist)."""
 
@@ -492,7 +518,10 @@ def move_ref_v1(
     ``Idempotency-Key``. A champion must cite its ``final_holdout`` evaluation,
     move ``feature_recipe`` with it and share the current champion's split plan
     (``409 champion_split_plan_mismatch``). Companion refs carry their own
-    ``expected_version`` (stale: ``409 ref_version_conflict``).
+    ``expected_version`` (stale: ``409 ref_version_conflict``). Moving ``champion_model``
+    puts the model in use and approves it for scoring: the same transaction writes its
+    release (``GET /v1/projects/{id}/releases``); a model without a stored package, or a
+    quarantined legacy pickle the server does not score with, is ``422``.
     """
 
     workspace_id = request_workspace_id(request)

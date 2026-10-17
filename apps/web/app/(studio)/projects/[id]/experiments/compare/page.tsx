@@ -16,6 +16,8 @@ import { Pill } from "@/components/studio/Pill";
 import { Term } from "@/components/studio/Term";
 import { plainText, projectHref } from "@/lib/application/command-search";
 import { useCompare } from "@/lib/application/studio-compare-hooks";
+import { useVerdicts } from "@/lib/application/studio-improve-hooks";
+import { parentChildPairs, shownVerdict, verdictBadge, verdictSentence } from "@/lib/application/studio-improve";
 import { changeSetDiff, compareRefusal, deltaWording, durationText, formatDelta, metricRows, parseCompareIds, type MetricRow } from "@/lib/application/studio-compare";
 import { useProjectExperiments } from "@/lib/application";
 import { metricInfo, ruleStatusText } from "@/lib/application/studio-goal";
@@ -41,6 +43,9 @@ function useDetails(ids: string[]) {
 function CompareBody({ projectId, ids }: { projectId: string; ids: string[] }) {
   const compare = useCompare(ids);
   const details = useDetails(ids);
+  // D8b: a run compared with the run it is based on gets its verdict (the existing verdict read, cross-validation only).
+  const pairs = compare.data ? parentChildPairs(compare.data.experiments) : [];
+  const verdicts = useVerdicts(pairs.map((p) => p.child));
   const siblings = useProjectExperiments(projectId);
   const runs = siblings.data?.items ?? [];
   const partial = !!siblings.data?.next_cursor;
@@ -77,6 +82,28 @@ function CompareBody({ projectId, ids }: { projectId: string; ids: string[] }) {
       <DataTable caption="Cross-validation metric comparison" columns={columns} rows={rows} rowKey={(r) => r.metric}
         emptyMessage="These runs share no cross-validation metric." />
       <p className="muted">&ldquo;Better&rdquo; and &ldquo;worse&rdquo; only describe the direction of the score. A model is chosen on cross-validation by a fixed rule; the final test set is not shown here.</p>
+      {pairs.length ? (
+        <>
+          <h2><Term definition="The difference of the two runs' scores on each of the same folds, against a noise margin. Evidence for one comparison, not proof.">Is the change bigger than the noise?</Term></h2>
+          <ul className="plain-list" aria-label="Verdicts against the run each one is based on">
+            {pairs.map((pair) => {
+              const read = verdicts.get(pair.child);
+              const v = read?.data && read.data.against_is_parent === true && read.data.against_experiment_id === pair.parent ? read.data : null;
+              const badge = v ? verdictBadge(shownVerdict(v)) : null;
+              return (
+                <li key={pair.child} className="card flat" data-verdict-for={pair.child}>
+                  <p className="toolbar"><b>{runLabel(pair.child)}</b> <span className="muted">against {runLabel(pair.parent)}, the run it is based on</span>{badge ? <Pill tone={badge.tone}>{badge.label}</Pill> : null}</p>
+                  {!read || read.isPending ? <p role="status">Reading the verdict…</p>
+                    : read.isError ? <QueryNotice error={read.error} what="verdict" />
+                      : v ? <p>{verdictSentence(v, "the run it is based on")}</p>
+                        : <p className="muted">The verdict read did not compare these two runs, so nothing is concluded here.</p>}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="muted">Calculated by fixed rules on cross-validation, never on the final test set. With several tries on the same folds, one can beat the noise by luck.</p>
+        </>
+      ) : null}
       <h2>Runs</h2>
       <div className="grid">
         {items.map((item, i) => {

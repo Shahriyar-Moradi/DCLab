@@ -88,14 +88,14 @@ def _frame(n: int = 240, seed: int = 7) -> pd.DataFrame:
     )
 
 
-def _parent(auth_client, db, client_user, monkeypatch) -> Experiment:
+def _parent(engineer_client, db, engineer_user, monkeypatch) -> Experiment:
     monkeypatch.setattr("app.services.client_lab_upload_service.enqueue_auto_train", lambda _id: None)
     monkeypatch.setattr("app.services.auto_train_service.enqueue_auto_train", lambda _id: None)
     seed_business_domains(db)
-    project = get_or_create_labs_project(db, workspace_id=DEFAULT_WORKSPACE_ID, actor=client_user)
+    project = get_or_create_labs_project(db, workspace_id=DEFAULT_WORKSPACE_ID, actor=engineer_user)
     spec = create_problem_spec(
         db,
-        actor=client_user,
+        actor=engineer_user,
         workspace_id=DEFAULT_WORKSPACE_ID,
         project_id=project.id,
         task_type="binary",
@@ -104,7 +104,7 @@ def _parent(auth_client, db, client_user, monkeypatch) -> Experiment:
         status="locked",
     )
     db.commit()
-    response = auth_client.post(
+    response = engineer_client.post(
         "/app/labs/uploads",
         data={"category": "Revenue", "problem_spec_id": str(spec.id)},
         files={"file": ("rows.csv", _frame().to_csv(index=False).encode(), "text/csv")},
@@ -361,11 +361,11 @@ BRANCH_CASES = [
     "changes, check", [case[1:] for case in BRANCH_CASES], ids=[case[0] for case in BRANCH_CASES]
 )
 def test_branch_applies_change_on_parent_split_plan(
-    auth_client, db_session, client_user, monkeypatch, changes, check
+    engineer_client, db_session, engineer_user, monkeypatch, changes, check
 ):
     db = db_session
-    parent = _parent(auth_client, db, client_user, monkeypatch)
-    child = _branch(db, client_user, parent, changes, monkeypatch, intent="  why:\x00 test\n ")
+    parent = _parent(engineer_client, db, engineer_user, monkeypatch)
+    child = _branch(db, engineer_user, parent, changes, monkeypatch, intent="  why:\x00 test\n ")
     check(parent, child)
     assert child.intent == "why: test"
     assert child.change_set == {"schema_version": 1, "changes": changes}
@@ -378,13 +378,13 @@ def test_branch_applies_change_on_parent_split_plan(
     assert db.get(Experiment, parent.id).result["split"] == parent.result["split"]
 
 
-def test_branch_of_a_branch_inherits_materialized_changes(auth_client, db_session, client_user, monkeypatch):
+def test_branch_of_a_branch_inherits_materialized_changes(engineer_client, db_session, engineer_user, monkeypatch):
     db = db_session
-    parent = _parent(auth_client, db, client_user, monkeypatch)
-    child = _branch(db, client_user, parent, [{"kind": "family_exclude", "family": "xgboost"}], monkeypatch)
+    parent = _parent(engineer_client, db, engineer_user, monkeypatch)
+    child = _branch(db, engineer_user, parent, [{"kind": "family_exclude", "family": "xgboost"}], monkeypatch)
     grandchild = _branch(
         db,
-        client_user,
+        engineer_user,
         child,
         [{"kind": "metric_override", "primary_metric": "roc_auc", "reason": "ranking quality"}],
         monkeypatch,
@@ -493,16 +493,16 @@ INVALID_CASES = [
 ]
 
 
-def test_invalid_changes_are_rejected_with_typed_errors(auth_client, db_session, client_user, monkeypatch):
+def test_invalid_changes_are_rejected_with_typed_errors(engineer_client, db_session, engineer_user, monkeypatch):
     db = db_session
-    parent = _parent(auth_client, db, client_user, monkeypatch)
+    parent = _parent(engineer_client, db, engineer_user, monkeypatch)
     before = db.scalar(select(func.count()).select_from(Experiment))
     uploads = db.scalar(select(func.count()).select_from(ClientLabUpload))
     for changes, reason, path in INVALID_CASES:
         with pytest.raises(InvalidChangeSetError) as caught:
             branch_experiment(
                 db,
-                actor=client_user,
+                actor=engineer_user,
                 workspace_id=parent.workspace_id,
                 parent_id=parent.id,
                 changes=changes,
@@ -515,7 +515,7 @@ def test_invalid_changes_are_rejected_with_typed_errors(auth_client, db_session,
     with pytest.raises(InvalidChangeSetError) as caught:
         branch_experiment(
             db,
-            actor=client_user,
+            actor=engineer_user,
             workspace_id=parent.workspace_id,
             parent_id=parent.id,
             changes=[{"kind": "family_exclude", "family": "xgboost"}],
@@ -617,15 +617,15 @@ def _other_tenant(db) -> tuple[Workspace, User]:
     return workspace, user
 
 
-def test_branch_preconditions_tenancy_and_idempotency(auth_client, db_session, client_user, monkeypatch):
+def test_branch_preconditions_tenancy_and_idempotency(engineer_client, db_session, engineer_user, monkeypatch):
     db = db_session
-    parent = _parent(auth_client, db, client_user, monkeypatch)
+    parent = _parent(engineer_client, db, engineer_user, monkeypatch)
     changes = [{"kind": "family_exclude", "family": "xgboost"}]
     other_workspace, other_user = _other_tenant(db)
     for actor, workspace_id, parent_id in (
         (other_user, other_workspace.id, parent.id),  # another tenant's experiment
-        (client_user, other_workspace.id, parent.id),  # a workspace the actor cannot use
-        (client_user, parent.workspace_id, uuid4()),  # no such experiment
+        (engineer_user, other_workspace.id, parent.id),  # a workspace the actor cannot use
+        (engineer_user, parent.workspace_id, uuid4()),  # no such experiment
     ):
         with pytest.raises(ExperimentNotFoundError):
             branch_experiment(
@@ -634,7 +634,7 @@ def test_branch_preconditions_tenancy_and_idempotency(auth_client, db_session, c
 
     first = branch_experiment(
         db,
-        actor=client_user,
+        actor=engineer_user,
         workspace_id=parent.workspace_id,
         parent_id=parent.id,
         changes=changes,
@@ -643,7 +643,7 @@ def test_branch_preconditions_tenancy_and_idempotency(auth_client, db_session, c
     )
     replay = branch_experiment(
         db,
-        actor=client_user,
+        actor=engineer_user,
         workspace_id=parent.workspace_id,
         parent_id=parent.id,
         changes=changes,
@@ -654,7 +654,7 @@ def test_branch_preconditions_tenancy_and_idempotency(auth_client, db_session, c
     with pytest.raises(ExperimentNotBranchableError) as caught:
         branch_experiment(
             db,
-            actor=client_user,
+            actor=engineer_user,
             workspace_id=parent.workspace_id,
             parent_id=parent.id,
             changes=[{"kind": "family_exclude", "family": "lightgbm"}],
@@ -681,12 +681,12 @@ def test_branch_preconditions_tenancy_and_idempotency(auth_client, db_session, c
     # A parent that has not completed (no locked evidence) cannot be branched.
     with pytest.raises(ExperimentNotBranchableError) as caught:
         branch_experiment(
-            db, actor=client_user, workspace_id=parent.workspace_id, parent_id=child.id, changes=changes, intent="x"
+            db, actor=engineer_user, workspace_id=parent.workspace_id, parent_id=child.id, changes=changes, intent="x"
         )
     assert caught.value.code == "parent_not_completed"
 
 
-def test_parent_without_split_plan_cannot_be_branched(auth_client, db_session, client_user, monkeypatch):
+def test_parent_without_split_plan_cannot_be_branched(engineer_client, db_session, engineer_user, monkeypatch):
     db = db_session
 
     def unavailable(*_args, **_kwargs):
@@ -696,7 +696,7 @@ def test_parent_without_split_plan_cannot_be_branched(auth_client, db_session, c
         patch.setattr("app.services.auto_train.split_plan.require_partition_source", unavailable)
         monkeypatch.setattr("app.services.client_lab_upload_service.enqueue_auto_train", lambda _id: None)
         seed_business_domains(db)
-        response = auth_client.post(
+        response = engineer_client.post(
             "/app/labs/uploads",
             data={"category": "Revenue", "target_column": "label"},
             files={"file": ("rows.csv", _frame().to_csv(index=False).encode(), "text/csv")},
@@ -709,7 +709,7 @@ def test_parent_without_split_plan_cannot_be_branched(auth_client, db_session, c
     with pytest.raises(ExperimentNotBranchableError) as caught:
         branch_experiment(
             db,
-            actor=client_user,
+            actor=engineer_user,
             workspace_id=legacy.workspace_id,
             parent_id=legacy.id,
             changes=[{"kind": "family_exclude", "family": "xgboost"}],
@@ -734,9 +734,9 @@ def _insert_forged_branch(db, parent: Experiment, *, source_dataset_id, split_pl
     db.commit()
 
 
-def test_lineage_guard_rejects_forged_branches_at_db_level(auth_client, db_session, client_user, monkeypatch):
+def test_lineage_guard_rejects_forged_branches_at_db_level(engineer_client, db_session, engineer_user, monkeypatch):
     db = db_session
-    parent = _parent(auth_client, db, client_user, monkeypatch)
+    parent = _parent(engineer_client, db, engineer_user, monkeypatch)
     plan = db.get(SplitPlan, parent.split_plan_id)
     # A second, valid plan in the same project (a new root's plan, e.g. another seed).
     other = SplitPlan(
@@ -761,7 +761,7 @@ def test_lineage_guard_rejects_forged_branches_at_db_level(auth_client, db_sessi
     # The service's own child passes the guard; its lineage columns are then frozen.
     child = branch_experiment(
         db,
-        actor=client_user,
+        actor=engineer_user,
         workspace_id=parent.workspace_id,
         parent_id=parent.id,
         changes=[{"kind": "family_exclude", "family": "xgboost"}],
@@ -779,7 +779,7 @@ def test_lineage_guard_rejects_forged_branches_at_db_level(auth_client, db_sessi
 
 
 def test_branch_whose_holdout_or_folds_would_differ_fails_closed(
-    auth_client, db_session, client_user, monkeypatch
+    engineer_client, db_session, engineer_user, monkeypatch
 ):
     """A branch never plans: another holdout or validation identity is a failed run, not a new plan."""
 
@@ -789,7 +789,7 @@ def test_branch_whose_holdout_or_folds_would_differ_fails_closed(
     from app.services.auto_train import holdout as holdout_stage
 
     db = db_session
-    parent = _parent(auth_client, db, client_user, monkeypatch)
+    parent = _parent(engineer_client, db, engineer_user, monkeypatch)
     real_holdout, real_development = holdout_stage.plan_holdout, decisions_stage.plan_model_development
 
     def other_seed_holdout(*args, **kwargs):
@@ -815,7 +815,7 @@ def test_branch_whose_holdout_or_folds_would_differ_fails_closed(
     ):
         result = branch_experiment(
             db,
-            actor=client_user,
+            actor=engineer_user,
             workspace_id=parent.workspace_id,
             parent_id=parent.id,
             changes=[{"kind": "family_exclude", "family": "xgboost"}],

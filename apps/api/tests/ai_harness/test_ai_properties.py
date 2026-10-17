@@ -137,6 +137,31 @@ def test_codeact_check_catches_planted_violations(tmp_path):
                                       "subprocess.run(['git', 'log'])\n"}
     found = codeact_findings(_tree(tmp_path / "lab", lab), **none)
     assert sorted(int(f.split(":")[1]) for f in found) == [3, 4, 5, 6, 7, 8]  # only the exact probe passes
+    good_child = ("import json\n_CHILD = 'print(1)'\n\ndef run(mode, payload):\n    import subprocess\n    import sys\n"
+                  "    command = [sys.executable, '-I', '-c', _CHILD, mode]\n"
+                  "    return subprocess.Popen(command, stdin=subprocess.PIPE, stdout=None, env={}, cwd='.',\n"
+                  "                            start_new_session=True)\n")
+    child_file = "engine/serving/package_loader.py"
+    variants = {
+        "good": good_child,
+        "shell": good_child.replace("start_new_session=True", "shell=True"),
+        "executable": good_child.replace("start_new_session=True", "executable='/bin/sh'"),
+        "preexec": good_child.replace("start_new_session=True", "preexec_fn=f"),
+        "other_argv": good_child.replace("Popen(command,", "Popen(argv,"),
+        "no_dash_i": good_child.replace("'-I', ", ""),
+        "code_from_data": good_child.replace("_CHILD, mode]", "payload, mode]"),
+        "child_computed": good_child.replace("_CHILD = 'print(1)'", "_CHILD = 'print(' + str(1) + ')'"),
+        "child_rebound": good_child + "\ndef rebind(x):\n    global _CHILD\n    _CHILD = x\n",
+        "command_other_shape": good_child + "\ndef other(x):\n    command = ['sh', '-c', x]\n",
+        "second_popen": good_child + "\ndef again(x):\n    import subprocess\n    subprocess.Popen(x)\n",
+        "run_instead": good_child.replace("subprocess.Popen(command,", "subprocess.run(command,"),
+    }
+    results = {name: codeact_findings(_tree(tmp_path / f"child_{name}", {child_file: body}), **none)
+               for name, body in variants.items()}
+    assert results["good"] == []  # the reviewed model-load child passes
+    assert {name for name, found in results.items() if not found} == {"good"}, results  # every deviation is flagged
+    elsewhere = codeact_findings(_tree(tmp_path / "elsewhere", {"services/other.py": good_child}), **none)
+    assert elsewhere  # the exception is bound to the one file
     empty = tmp_path / "empty"
     empty.mkdir()
     assert codeact_findings(empty, settings_fields={"agents_sandbox_lane_enabled": True, "sandbox_image": "",
@@ -230,7 +255,7 @@ def test_registry_check_catches_planted_tools(monkeypatch):
 
 
 def _critic(ac, provider):  # uncached: a repeated input reaches the provider again
-    return run_specialist(ac, CRITIC, _Uncached(providers={"openai": provider}, limits=GatewayLimits(),
+    return run_specialist(ac, CRITIC, _Uncached(providers={"anthropic": provider}, limits=GatewayLimits(),
                                                 settings=lambda: ON))
 
 
@@ -257,10 +282,13 @@ def test_every_read_tool_result_is_holdout_free_on_the_seeded_graph(ac):
             "inspect_dataset": {"dataset_id": g.source.id, "project_id": g.project.id},
             "compare_experiments": {"experiment_ids": [str(g.exp[0]), str(g.exp[1])]},
             "list_decisions": {"project_id": g.project.id}, "list_proposals": {"project_id": g.project.id},
+            "list_releases": {"project_id": g.project.id}, "get_scoring_schedule": {"project_id": g.project.id},
+            "get_monitoring": {"project_id": g.project.id},
             "get_model": {"model_version_id": model}, "get_model_card": {"model_version_id": model},
             "get_impact": {"kind": "experiment", "node_id": g.exp[1]},
             "accept_proposal": {"proposal_id": proposed.id},
-            "get_prediction": {"prediction_id": uuid4()}}  # no prediction in the graph: refused, typed
+            "get_prediction": {"prediction_id": uuid4()},  # no prediction in the graph: refused, typed
+            "get_improve_run": {"improve_run_id": _seed_improve_run(db, g)}}
     ctx = ToolContext(db=db, actor=g.actor, workspace_id=g.ws)
     checked, refused = [], {}
     for name, tool in catalog_module.catalog().items():
@@ -291,6 +319,30 @@ def test_every_read_tool_result_is_holdout_free_on_the_seeded_graph(ac):
     # The seeded graph has no prediction; every other read tool returned a shaped result.
     assert refused == {"get_prediction": "not_found"}, refused
     assert len(checked) == len([t for t in catalog_module.catalog().values() if t.effect == "read"]) - 1
+
+
+def _seed_improve_run(db, g):
+    """P5.4-A3: a finished improve loop on exp[1] with one compared try (CV numbers only)."""
+
+    from app.db.models import Experiment, ImproveIteration, ImproveRun
+
+    start = db.get(Experiment, g.exp[1])
+    run = ImproveRun(workspace_id=g.ws, project_id=g.project.id, split_plan_id=start.split_plan_id,
+                     start_experiment_id=start.id, incumbent_experiment_id=start.id, status="queued",
+                     goal={"plain": {"metric": "roc_auc"}}, budget={"max_iterations": 1}, plan=[],
+                     planned_comparisons=3, validation_folds=5, looks_before=1, sealed_set_label="reported_before",
+                     created_by_user_id=g.actor.id)
+    db.add(run)
+    db.flush()
+    db.add(ImproveIteration(
+        workspace_id=g.ws, project_id=g.project.id, improve_run_id=run.id, seq=0, plan_index=1,
+        kind="family_include", action={"kind": "family_include", "family": "extra_trees"}, status="rejected",
+        reason="inside_margin", experiment_id=g.exp[0], incumbent_experiment_id=start.id, planned_new_candidates=3,
+        planned_candidate_ids=["extra_trees"], idempotency_key=f"improve:{run.id}:0",
+        comparison={"status": "rejected", "mean_difference": 0.0123, "se_nb": 0.0081,
+                    "fold_scores": [{"fold_number": 1, "probe": 0.8123, "incumbent": 0.8001, "difference": 0.0122}]}))
+    db.commit()
+    return run.id
 
 
 def _seed_winner(db, g, index) -> None:

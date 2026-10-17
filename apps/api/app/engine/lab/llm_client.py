@@ -1,6 +1,6 @@
 """Lab decision agents: result models, evidence envelopes and gateway wrappers.
 
-The provider call lives in ``app/agents/gateway/providers/openai.py`` (ADR 0009 §1);
+The provider call lives in ``app/agents/gateway/providers/anthropic.py`` (ADR 0009 §1);
 every request here goes through ``GatewayService.complete`` (policy, kill switches,
 ADR 0005 labels, budget, ledger) with the legacy purposes unchanged until P6.9-A
 (ADR 0009 §4). Evidence travels as a tagged ``ContextEnvelope``: names and dtypes as

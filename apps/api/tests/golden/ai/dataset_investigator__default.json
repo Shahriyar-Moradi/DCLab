@@ -122,7 +122,7 @@
       "payload": {
         "cache_hit": false,
         "call": 1,
-        "cost_micros": 185,
+        "cost_micros": 5526,
         "invocation_id": "<id:1>",
         "ok": true,
         "output_digest": "<digest>",
@@ -146,8 +146,8 @@
     },
     {
       "payload": {
-        "cost_micros": 185,
-        "freed_micros": 99815
+        "cost_micros": 5526,
+        "freed_micros": 94474
       },
       "type": "budget_settled"
     },
@@ -183,7 +183,7 @@
       "data_class": "metadata",
       "input_tokens": 1492,
       "llm_used": true,
-      "model": "gpt-6-luna",
+      "model": "claude-sonnet-5-5",
       "outcome_scope": "none",
       "output_tokens": 70,
       "prompt_version": "dataset_investigator:v1",
@@ -237,7 +237,7 @@
     "decision_point_key": "target.column",
     "error_code": null,
     "kind": "specialist",
-    "model": "gpt-6-luna",
+    "model": "claude-sonnet-5-5",
     "outcome_scope": "none",
     "purpose": "target.column",
     "runtime": "fake",

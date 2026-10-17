@@ -6,6 +6,7 @@ import { PageHeader } from "@/app/components/ui/PageHeader";
 import { useState } from "react";
 import { useCreateLabTaskFromConfig, useSession } from "@/lib/application";
 import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
+import { actionErrorSentence } from "@/lib/application/api-error-text";
 
 export default function CreateTaskPage() {
   const [path, setPath] = useState("configs/tasks/purchase.yaml");
@@ -40,7 +41,7 @@ export default function CreateTaskPage() {
         onClick={() => {
           createTask.mutate(path, {
             onSuccess: (row) => setMessage(`Created ${row.slug}`),
-            onError: (err) => setMessage(err.message),
+            onError: (err) => setMessage(actionErrorSentence(err, "creating the task")),
           });
         }}
       >

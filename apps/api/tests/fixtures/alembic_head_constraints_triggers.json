@@ -481,6 +481,41 @@
       "definition": "CHECK (((decision_threshold IS NULL) OR ((decision_threshold >= (0)::double precision) AND (decision_threshold <= (1)::double precision))))"
     },
     {
+      "table": "business_question_replies",
+      "name": "ck_business_question_replies_side",
+      "definition": "CHECK (((author_side)::text = ANY ((ARRAY['business'::character varying, 'data_team'::character varying])::text[])))"
+    },
+    {
+      "table": "business_question_replies",
+      "name": "ck_business_question_replies_text",
+      "definition": "CHECK ((((char_length(btrim((text)::text, ' \t\n'::text)) >= 1) AND (char_length(btrim((text)::text, ' \t\n'::text)) <= 2000)) AND ((text)::text !~ '[\\x01-\\x08\\x0b-\\x1f\\x7f-\\x9f]'::text)))"
+    },
+    {
+      "table": "business_questions",
+      "name": "ck_business_questions_closed",
+      "definition": "CHECK (((((status)::text = 'closed'::text) = (closed_at IS NOT NULL)) AND ((closed_at IS NULL) = (closed_by_user_id IS NULL))))"
+    },
+    {
+      "table": "business_questions",
+      "name": "ck_business_questions_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['open'::character varying, 'answered'::character varying, 'closed'::character varying])::text[])))"
+    },
+    {
+      "table": "business_questions",
+      "name": "ck_business_questions_subject",
+      "definition": "CHECK ((num_nonnulls(model_version_id, batch_prediction_id, monitoring_window_id) <= 1))"
+    },
+    {
+      "table": "business_questions",
+      "name": "ck_business_questions_text",
+      "definition": "CHECK ((((char_length(btrim((text)::text, ' \t\n'::text)) >= 1) AND (char_length(btrim((text)::text, ' \t\n'::text)) <= 2000)) AND ((text)::text !~ '[\\x01-\\x08\\x0b-\\x1f\\x7f-\\x9f]'::text)))"
+    },
+    {
+      "table": "business_questions",
+      "name": "ck_business_questions_version",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
       "table": "client_lab_uploads",
       "name": "ck_client_lab_uploads_client_status",
       "definition": "CHECK (((client_status)::text = ANY ((ARRAY['queued'::character varying, 'processing'::character varying, 'completed'::character varying, 'failed'::character varying, 'needs_input'::character varying])::text[])))"
@@ -887,6 +922,11 @@
     },
     {
       "table": "experiments",
+      "name": "ck_experiments_evidence_mode",
+      "definition": "CHECK (((evidence_mode)::text = ANY ((ARRAY['scored'::character varying, 'sealed'::character varying])::text[])))"
+    },
+    {
+      "table": "experiments",
       "name": "ck_experiments_intent_not_blank",
       "definition": "CHECK (((intent IS NULL) OR (char_length(btrim((intent)::text)) > 0)))"
     },
@@ -949,6 +989,66 @@
       "table": "idempotency_keys",
       "name": "ck_idempotency_keys_status",
       "definition": "CHECK (((response_status >= 200) AND (response_status <= 299)))"
+    },
+    {
+      "table": "improve_iterations",
+      "name": "ck_improve_iterations_agent",
+      "definition": "CHECK (((agent)::text = ANY ((ARRAY['off'::character varying, 'agree'::character varying, 'disagree'::character varying, 'abstain'::character varying, 'unavailable'::character varying, 'late'::character varying])::text[])))"
+    },
+    {
+      "table": "improve_iterations",
+      "name": "ck_improve_iterations_kind",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['operating_point'::character varying, 'family_include'::character varying])::text[])))"
+    },
+    {
+      "table": "improve_iterations",
+      "name": "ck_improve_iterations_shape",
+      "definition": "CHECK (((seq >= 0) AND (plan_index >= 0) AND (planned_new_candidates >= 0) AND (jsonb_typeof(action) = 'object'::text) AND ((comparison IS NULL) OR (jsonb_typeof(comparison) = 'object'::text)) AND (((kind)::text = 'operating_point'::text) = ((status)::text = 'recorded'::text)) AND (((status)::text <> ALL ((ARRAY['running'::character varying, 'accepted'::character varying, 'rejected'::character varying, 'not_comparable'::character varying])::text[])) OR (experiment_id IS NOT NULL))))"
+    },
+    {
+      "table": "improve_iterations",
+      "name": "ck_improve_iterations_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['planned'::character varying, 'running'::character varying, 'recorded'::character varying, 'accepted'::character varying, 'rejected'::character varying, 'not_comparable'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_acceptance",
+      "definition": "CHECK ((((final_experiment_id IS NULL) OR ((accepted_by_user_id IS NOT NULL) AND (acceptance_record_id IS NOT NULL) AND (accepted_iteration_seq IS NOT NULL))) AND (((status)::text <> 'finalizing'::text) OR (final_experiment_id IS NOT NULL))))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_counts",
+      "definition": "CHECK (((planned_comparisons >= 1) AND (validation_folds >= 5) AND ((final_attempts >= 0) AND (final_attempts <= 3)) AND (step_errors >= 0) AND (training_seconds_spent >= (0)::double precision) AND (llm_micros_spent >= 0) AND (looks_before >= 0)))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_goal",
+      "definition": "CHECK (((jsonb_typeof(goal) = 'object'::text) AND (octet_length((goal)::text) <= 4096) AND (jsonb_typeof(budget) = 'object'::text) AND (jsonb_typeof(plan) = 'array'::text)))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_outcome",
+      "definition": "CHECK (((outcome IS NULL) OR ((outcome)::text = ANY ((ARRAY['improved'::character varying, 'kept_current'::character varying, 'goal_met'::character varying, 'blocked'::character varying, 'nothing_comparable'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[]))))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_sealed_set_label",
+      "definition": "CHECK (((sealed_set_label)::text = ANY ((ARRAY['clean'::character varying, 'carried_over'::character varying, 'reported_before'::character varying, 'reused'::character varying])::text[])))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_shape",
+      "definition": "CHECK (((((status)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])) = ((outcome IS NOT NULL) AND (finished_at IS NOT NULL))) AND (((status)::text <> 'waiting_user'::text) OR (waiting_user_expires_at IS NOT NULL))))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'waiting_user'::character varying, 'finalizing'::character varying, 'completed'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[])))"
+    },
+    {
+      "table": "improve_runs",
+      "name": "ck_improve_runs_stop_reason",
+      "definition": "CHECK (((stop_reason IS NULL) OR ((stop_reason)::text = ANY ((ARRAY['cancelled'::character varying, 'failed'::character varying, 'blocking_finding'::character varying, 'goal_met'::character varying, 'no_improvement'::character varying, 'unstable_evidence'::character varying, 'comparison_bound'::character varying, 'budget_iterations'::character varying, 'budget_wall'::character varying, 'budget_compute'::character varying, 'proposer_exhausted'::character varying])::text[]))))"
     },
     {
       "table": "ingestion_publication_events",
@@ -1051,6 +1151,26 @@
       "definition": "CHECK (((refusal_code IS NULL) OR ((refusal_code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text)))"
     },
     {
+      "table": "ml_job_attempts",
+      "name": "ck_ml_job_attempts_failure_class",
+      "definition": "CHECK (((failure_class IS NULL) OR ((failure_class)::text = ANY ((ARRAY['out_of_memory'::character varying, 'timeout'::character varying, 'worker_lost'::character varying, 'data_error'::character varying, 'internal_error'::character varying, 'cancelled'::character varying])::text[]))))"
+    },
+    {
+      "table": "ml_job_attempts",
+      "name": "ck_ml_job_attempts_number",
+      "definition": "CHECK ((attempt >= 1))"
+    },
+    {
+      "table": "ml_job_attempts",
+      "name": "ck_ml_job_attempts_outcome",
+      "definition": "CHECK (((outcome)::text = ANY ((ARRAY['running'::character varying, 'completed'::character varying, 'failed'::character varying, 'retried'::character varying, 'cancelled'::character varying])::text[])))"
+    },
+    {
+      "table": "ml_job_attempts",
+      "name": "ck_ml_job_attempts_shape",
+      "definition": "CHECK ((((((outcome)::text = ANY ((ARRAY['running'::character varying, 'completed'::character varying])::text[])) AND (failure_class IS NULL)) OR (((outcome)::text = ANY ((ARRAY['failed'::character varying, 'retried'::character varying])::text[])) AND (failure_class IS NOT NULL) AND ((failure_class)::text <> 'cancelled'::text)) OR (((outcome)::text = 'cancelled'::text) AND ((failure_class)::text = 'cancelled'::text))) AND (((outcome)::text = 'running'::text) = (ended_at IS NULL)) AND ((ended_at IS NULL) OR (ended_at >= started_at))))"
+    },
+    {
       "table": "ml_jobs",
       "name": "ck_ml_jobs_attempts_non_negative",
       "definition": "CHECK ((attempts >= 0))"
@@ -1134,6 +1254,131 @@
       "table": "model_hyperparameters",
       "name": "ck_model_hyperparameters_source_valid",
       "definition": "CHECK (((source)::text = ANY ((ARRAY['default'::character varying, 'planner'::character varying, 'user'::character varying, 'random_search'::character varying, 'optuna'::character varying, 'other_search'::character varying])::text[])))"
+    },
+    {
+      "table": "model_releases",
+      "name": "ck_model_releases_digest",
+      "definition": "CHECK (((package_manifest_digest)::text ~ '^[0-9a-f]{64}$'::text))"
+    },
+    {
+      "table": "model_releases",
+      "name": "ck_model_releases_previous_not_self",
+      "definition": "CHECK (((previous_release_id IS NULL) OR (previous_release_id <> id)))"
+    },
+    {
+      "table": "model_releases",
+      "name": "ck_model_releases_rationale",
+      "definition": "CHECK (((char_length(btrim((rationale)::text)) > 0) AND (char_length((rationale)::text) <= 4000)))"
+    },
+    {
+      "table": "model_releases",
+      "name": "ck_model_releases_saved_format",
+      "definition": "CHECK (((saved_format)::text = ANY ((ARRAY['package_v1'::character varying, 'legacy_quarantined'::character varying])::text[])))"
+    },
+    {
+      "table": "monitoring_outcome_sets",
+      "name": "ck_monitoring_outcome_sets_columns",
+      "definition": "CHECK ((((char_length((key_column)::text) >= 1) AND (char_length((key_column)::text) <= 256)) AND ((char_length((outcome_column)::text) >= 1) AND (char_length((outcome_column)::text) <= 256)) AND ((key_column)::text <> (outcome_column)::text)))"
+    },
+    {
+      "table": "monitoring_thresholds",
+      "name": "ck_monitoring_thresholds_bounds",
+      "definition": "CHECK (((psi_watch >= (0.05)::double precision) AND (psi_watch <= (0.5)::double precision) AND (psi_alert > psi_watch) AND (psi_alert <= (1.0)::double precision) AND ((precision_floor IS NULL) OR ((precision_floor >= (0.01)::double precision) AND (precision_floor <= (0.99)::double precision))) AND ((recall_floor IS NULL) OR ((recall_floor >= (0.01)::double precision) AND (recall_floor <= (0.99)::double precision)))))"
+    },
+    {
+      "table": "monitoring_thresholds",
+      "name": "ck_monitoring_thresholds_version",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
+      "table": "monitoring_windows",
+      "name": "ck_monitoring_windows_counts",
+      "definition": "CHECK (((revision >= 1) AND (n_rows >= 0) AND (n_batch_predictions >= 1)))"
+    },
+    {
+      "table": "monitoring_windows",
+      "name": "ck_monitoring_windows_json",
+      "definition": "CHECK (((jsonb_typeof(input_drift) = 'object'::text) AND (octet_length((input_drift)::text) <= 32768) AND (jsonb_typeof(prediction_drift) = 'object'::text) AND (octet_length((prediction_drift)::text) <= 32768) AND (jsonb_typeof(outcomes) = 'object'::text) AND (octet_length((outcomes)::text) <= 32768)))"
+    },
+    {
+      "table": "monitoring_windows",
+      "name": "ck_monitoring_windows_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['ok'::character varying, 'watch'::character varying, 'alert'::character varying, 'not_enough_data'::character varying])::text[])))"
+    },
+    {
+      "table": "monitoring_windows",
+      "name": "ck_monitoring_windows_summary",
+      "definition": "CHECK (((char_length(btrim((summary)::text)) > 0) AND (char_length((summary)::text) <= 1000)))"
+    },
+    {
+      "table": "monitoring_windows",
+      "name": "ck_monitoring_windows_summary_code",
+      "definition": "CHECK (((summary_code)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text))"
+    },
+    {
+      "table": "monitoring_windows",
+      "name": "ck_monitoring_windows_thresholds_used",
+      "definition": "CHECK (((thresholds_used IS NULL) OR ((jsonb_typeof(thresholds_used) = 'object'::text) AND (octet_length((thresholds_used)::text) <= 1024))))"
+    },
+    {
+      "table": "monitoring_windows",
+      "name": "ck_monitoring_windows_week",
+      "definition": "CHECK (((window_end = (window_start + '168:00:00'::interval)) AND (EXTRACT(isodow FROM (window_start AT TIME ZONE 'UTC'::text)) = (1)::numeric) AND (date_trunc('day'::text, (window_start AT TIME ZONE 'UTC'::text)) = (window_start AT TIME ZONE 'UTC'::text))))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_attempts",
+      "definition": "CHECK (((attempts >= 0) AND (attempts <= 5)))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_channel",
+      "definition": "CHECK (((channel)::text = ANY ((ARRAY['email'::character varying, 'webhook'::character varying])::text[])))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_dedupe_key",
+      "definition": "CHECK (((dedupe_key)::text ~ '^[a-z0-9][a-z0-9:._-]{0,199}$'::text))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_error_code",
+      "definition": "CHECK (((last_error_code IS NULL) OR ((last_error_code)::text = ANY ((ARRAY['not_configured'::character varying, 'recipient_unavailable'::character varying, 'endpoint_disabled'::character varying, 'expired'::character varying, 'destination_refused'::character varying, 'dns_failed'::character varying, 'connect_failed'::character varying, 'tls_failed'::character varying, 'timeout'::character varying, 'redirect_not_followed'::character varying, 'http_error'::character varying, 'invalid_response'::character varying, 'body_too_large'::character varying, 'auth_failed'::character varying, 'provider_rejected'::character varying, 'provider_unavailable'::character varying, 'internal_error'::character varying, 'email_unverified'::character varying, 'daily_limit'::character varying])::text[]))))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_kind",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['decision_needed'::character varying, 'run_finished'::character varying, 'run_failed'::character varying, 'scheduled_scoring_result'::character varying, 'drift_alert'::character varying, 'quota_warning'::character varying, 'question_asked'::character varying, 'question_answered'::character varying, 'ping'::character varying])::text[])))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_payload",
+      "definition": "CHECK (((jsonb_typeof(payload) = 'object'::text) AND (octet_length((payload)::text) <= 4096)))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_ping",
+      "definition": "CHECK ((((kind)::text <> 'ping'::text) OR ((channel)::text = 'webhook'::text)))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_recipient",
+      "definition": "CHECK (((((channel)::text = 'email'::text) AND (recipient_user_id IS NOT NULL) AND (webhook_endpoint_id IS NULL)) OR (((channel)::text = 'webhook'::text) AND (webhook_endpoint_id IS NOT NULL) AND (recipient_user_id IS NULL))))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_sent_at",
+      "definition": "CHECK ((((status)::text = 'sent'::text) = (sent_at IS NOT NULL)))"
+    },
+    {
+      "table": "notification_outbox",
+      "name": "ck_notification_outbox_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'sending'::character varying, 'sent'::character varying, 'failed'::character varying, 'skipped_disabled'::character varying, 'skipped_preference'::character varying, 'skipped_limit'::character varying, 'dead'::character varying])::text[])))"
+    },
+    {
+      "table": "notification_preferences",
+      "name": "ck_notification_preferences_kind",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['decision_needed'::character varying, 'run_finished'::character varying, 'run_failed'::character varying, 'scheduled_scoring_result'::character varying, 'drift_alert'::character varying, 'quota_warning'::character varying, 'question_asked'::character varying, 'question_answered'::character varying])::text[])))"
     },
     {
       "table": "pipeline_stage_runs",
@@ -1351,6 +1596,81 @@
       "definition": "CHECK (((jsonb_typeof(report) = 'object'::text) AND (octet_length((report)::text) <= 524288)))"
     },
     {
+      "table": "retrain_comparisons",
+      "name": "ck_retrain_comparisons_reason",
+      "definition": "CHECK ((((status)::text = 'compared'::text) = (reason_code IS NULL)))"
+    },
+    {
+      "table": "retrain_comparisons",
+      "name": "ck_retrain_comparisons_reason_code",
+      "definition": "CHECK (((reason_code IS NULL) OR ((reason_code)::text = ANY ((ARRAY['final_test_overlaps_training'::character varying, 'no_time_column'::character varying, 'time_missing'::character varying, 'time_kinds_differ'::character varying, 'data_unavailable'::character varying, 'incumbent_cannot_score'::character varying, 'target_coding_differs'::character varying, 'challenger_not_scored'::character varying, 'not_enough_labels'::character varying, 'comparison_failed'::character varying, 'challenger_test_not_latest'::character varying, 'task_differs'::character varying])::text[]))))"
+    },
+    {
+      "table": "retrain_comparisons",
+      "name": "ck_retrain_comparisons_result",
+      "definition": "CHECK (((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 16384)))"
+    },
+    {
+      "table": "retrain_comparisons",
+      "name": "ck_retrain_comparisons_status",
+      "definition": "CHECK (((status)::text = ANY ((ARRAY['compared'::character varying, 'not_comparable'::character varying])::text[])))"
+    },
+    {
+      "table": "retrain_policies",
+      "name": "ck_retrain_policies_policy",
+      "definition": "CHECK (((policy)::text = ANY ((ARRAY['off'::character varying, 'ask'::character varying, 'auto'::character varying])::text[])))"
+    },
+    {
+      "table": "retrain_policies",
+      "name": "ck_retrain_policies_version",
+      "definition": "CHECK ((version >= 1))"
+    },
+    {
+      "table": "retrain_requests",
+      "name": "ck_retrain_requests_origin",
+      "definition": "CHECK (((origin)::text = ANY ((ARRAY['person'::character varying, 'ask'::character varying, 'auto'::character varying])::text[])))"
+    },
+    {
+      "table": "retrain_requests",
+      "name": "ck_retrain_requests_run",
+      "definition": "CHECK ((((origin)::text = 'ask'::text) = (experiment_id IS NULL)))"
+    },
+    {
+      "table": "retrain_requests",
+      "name": "ck_retrain_requests_window",
+      "definition": "CHECK (((((origin)::text = 'person'::text) = (window_start IS NULL)) AND (((origin)::text = 'person'::text) = (monitoring_window_id IS NULL))))"
+    },
+    {
+      "table": "scoring_schedule_runs",
+      "name": "ck_scoring_schedule_runs_outcome",
+      "definition": "CHECK (((outcome)::text = ANY ((ARRAY['queued'::character varying, 'skipped_no_new_file'::character varying, 'skipped_no_model_in_use'::character varying, 'skipped_no_approval'::character varying, 'skipped_owner_not_allowed'::character varying, 'skipped_missed'::character varying, 'failed_to_queue'::character varying])::text[])))"
+    },
+    {
+      "table": "scoring_schedule_runs",
+      "name": "ck_scoring_schedule_runs_queued",
+      "definition": "CHECK (((((outcome)::text = 'queued'::text) = (batch_prediction_id IS NOT NULL)) AND (((outcome)::text <> 'queued'::text) OR ((model_release_id IS NOT NULL) AND (input_dataset_id IS NOT NULL)))))"
+    },
+    {
+      "table": "scoring_schedule_runs",
+      "name": "ck_scoring_schedule_runs_reason_code",
+      "definition": "CHECK (((reason_code IS NULL) OR ((reason_code)::text = ANY ((ARRAY['run_limit'::character varying, 'worker_was_down'::character varying, 'owner_missing'::character varying, 'model_not_scoreable'::character varying, 'dataset_unavailable'::character varying, 'release_changed'::character varying, 'internal_error'::character varying])::text[]))))"
+    },
+    {
+      "table": "scoring_schedule_runs",
+      "name": "ck_scoring_schedule_runs_release_version",
+      "definition": "CHECK (((model_release_id IS NULL) OR (model_version_id IS NOT NULL)))"
+    },
+    {
+      "table": "scoring_schedules",
+      "name": "ck_scoring_schedules_hour_utc",
+      "definition": "CHECK (((hour_utc >= 0) AND (hour_utc <= 23)))"
+    },
+    {
+      "table": "scoring_schedules",
+      "name": "ck_scoring_schedules_weekday",
+      "definition": "CHECK (((weekday >= 0) AND (weekday <= 6)))"
+    },
+    {
       "table": "semantic_decision_answers",
       "name": "ck_sda_agreement",
       "definition": "CHECK (((agreement)::text = ANY ((ARRAY['agree'::character varying, 'disagree'::character varying, 'abstain'::character varying, 'unavailable'::character varying])::text[])))"
@@ -1546,6 +1866,56 @@
       "definition": "CHECK ((version >= 1))"
     },
     {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_actor",
+      "definition": "CHECK (((((actor_kind)::text = 'person'::text) AND (service_token_id IS NULL)) OR (((actor_kind)::text = 'connected_tool'::text) AND (service_token_id IS NOT NULL))))"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_file_name",
+      "definition": "CHECK ((((char_length((file_name)::text) >= 1) AND (char_length((file_name)::text) <= 200)) AND ((file_name)::text !~ '[[:cntrl:]]'::text)))"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_outcome",
+      "definition": "CHECK (((outcome)::text = ANY ((ARRAY['accepted'::character varying, 'rejected'::character varying])::text[])))"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_reason",
+      "definition": "CHECK (((((outcome)::text = 'accepted'::text) AND (reason_code IS NULL) AND (dataset_id IS NOT NULL)) OR (((outcome)::text = 'rejected'::text) AND (dataset_id IS NULL) AND ((reason_code)::text = ANY ((ARRAY['too_large'::character varying, 'storage_limit'::character varying, 'empty_file'::character varying, 'unsafe_file_name'::character varying, 'unsupported_type'::character varying, 'content_mismatch'::character varying, 'unreadable_sheets'::character varying, 'unsafe_content'::character varying, 'unreadable_file'::character varying])::text[])))))"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_size",
+      "definition": "CHECK (((size_bytes IS NULL) OR (size_bytes >= 0)))"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "ck_upload_attempts_source",
+      "definition": "CHECK (((source)::text = ANY ((ARRAY['v1_api'::character varying, 'labs'::character varying])::text[])))"
+    },
+    {
+      "table": "usage_records",
+      "name": "ck_usage_records_kind",
+      "definition": "CHECK (((kind)::text = ANY ((ARRAY['compute_seconds'::character varying, 'storage_bytes'::character varying, 'llm_tokens'::character varying, 'llm_cost_micros'::character varying, 'agent_runs'::character varying, 'assistant_runs'::character varying])::text[])))"
+    },
+    {
+      "table": "usage_records",
+      "name": "ck_usage_records_period_day",
+      "definition": "CHECK (((period_day >= '2020-01-01'::date) AND (period_day <= (((created_at AT TIME ZONE 'UTC'::text))::date + 1))))"
+    },
+    {
+      "table": "usage_records",
+      "name": "ck_usage_records_quantity",
+      "definition": "CHECK ((quantity >= 0))"
+    },
+    {
+      "table": "usage_records",
+      "name": "ck_usage_records_source_ref",
+      "definition": "CHECK ((((char_length((source_ref)::text) >= 1) AND (char_length((source_ref)::text) <= 128)) AND ((source_ref)::text ~ '^[a-z0-9][a-z0-9:._-]*$'::text)))"
+    },
+    {
       "table": "users",
       "name": "ck_users_client_requires_workspace",
       "definition": "CHECK ((((role)::text <> ALL ((ARRAY['client_user'::character varying, 'personal_developer'::character varying])::text[])) OR (workspace_id IS NOT NULL)))"
@@ -1589,6 +1959,71 @@
       "table": "visualizations",
       "name": "ck_visualizations_type",
       "definition": "CHECK (((visualization_type)::text ~ '^[a-z][a-z0-9_]{0,63}$'::text))"
+    },
+    {
+      "table": "webhook_changes",
+      "name": "ck_webhook_changes_action",
+      "definition": "CHECK (((action)::text = ANY ((ARRAY['create'::character varying, 'update_url'::character varying, 'update_events'::character varying, 'enable'::character varying, 'disable'::character varying, 'rotate'::character varying, 'delete'::character varying])::text[])))"
+    },
+    {
+      "table": "webhook_changes",
+      "name": "ck_webhook_changes_url_host",
+      "definition": "CHECK (((url_host IS NULL) OR ((url_host)::text ~ '^[a-z0-9.:-]{1,253}$'::text)))"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "ck_webhook_deliveries_error_code",
+      "definition": "CHECK (((error_code IS NULL) OR ((error_code)::text = ANY ((ARRAY['not_configured'::character varying, 'recipient_unavailable'::character varying, 'endpoint_disabled'::character varying, 'expired'::character varying, 'destination_refused'::character varying, 'dns_failed'::character varying, 'connect_failed'::character varying, 'tls_failed'::character varying, 'timeout'::character varying, 'redirect_not_followed'::character varying, 'http_error'::character varying, 'invalid_response'::character varying, 'body_too_large'::character varying, 'auth_failed'::character varying, 'provider_rejected'::character varying, 'provider_unavailable'::character varying, 'internal_error'::character varying, 'email_unverified'::character varying, 'daily_limit'::character varying])::text[]))))"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "ck_webhook_deliveries_event",
+      "definition": "CHECK (((event)::text = ANY ((ARRAY['decision_needed'::character varying, 'run_finished'::character varying, 'run_failed'::character varying, 'scheduled_scoring_result'::character varying, 'drift_alert'::character varying, 'quota_warning'::character varying, 'ping'::character varying])::text[])))"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "ck_webhook_deliveries_numbers",
+      "definition": "CHECK ((((attempt >= 1) AND (attempt <= 10)) AND ((duration_ms >= 0) AND (duration_ms <= 600000))))"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "ck_webhook_deliveries_outcome",
+      "definition": "CHECK (((outcome)::text = ANY ((ARRAY['delivered'::character varying, 'failed'::character varying])::text[])))"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "ck_webhook_deliveries_status_code",
+      "definition": "CHECK (((status_code IS NULL) OR ((status_code >= 100) AND (status_code <= 599))))"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_consecutive_failures",
+      "definition": "CHECK ((consecutive_failures >= 0))"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_events",
+      "definition": "CHECK (\nCASE\n    WHEN (jsonb_typeof(events) = 'array'::text) THEN (((jsonb_array_length(events) >= 1) AND (jsonb_array_length(events) <= 6)) AND (events <@ '[\"decision_needed\", \"run_finished\", \"run_failed\", \"scheduled_scoring_result\", \"drift_alert\", \"quota_warning\"]'::jsonb) AND (jsonb_array_length(events) = ((((((jsonb_exists(events, 'decision_needed'::text))::integer + (jsonb_exists(events, 'run_finished'::text))::integer) + (jsonb_exists(events, 'run_failed'::text))::integer) + (jsonb_exists(events, 'scheduled_scoring_result'::text))::integer) + (jsonb_exists(events, 'drift_alert'::text))::integer) + (jsonb_exists(events, 'quota_warning'::text))::integer)))\n    ELSE false\nEND)"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_name",
+      "definition": "CHECK (((char_length(btrim((name)::text)) >= 1) AND (char_length(btrim((name)::text)) <= 80)))"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_secret_key_id",
+      "definition": "CHECK (((secret_key_id)::text ~ '^[a-z0-9_-]{1,16}$'::text))"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_secret_version",
+      "definition": "CHECK ((secret_version >= 1))"
+    },
+    {
+      "table": "webhook_endpoints",
+      "name": "ck_webhook_endpoints_url",
+      "definition": "CHECK ((((char_length((url)::text) >= 9) AND (char_length((url)::text) <= 2048)) AND ((url)::text ~ '^https://[^@/?#[:space:]]+([/?#][^[:space:]]*)?$'::text)))"
     },
     {
       "table": "workflow_runs",
@@ -1738,6 +2173,21 @@
       "definition": "CREATE TRIGGER batch_predictions_terminal_immutable BEFORE UPDATE ON public.batch_predictions FOR EACH ROW WHEN (((old.status)::text = ANY ((ARRAY['completed'::character varying, 'failed'::character varying])::text[]))) EXECUTE FUNCTION prevent_canonical_column_mutation('id,workspace_id,project_id,model_version_id,model_release_id,input_dataset_id,execution_request_id,ml_job_id,initiated_by_service_token_id,status,output_format,rows_in,rows_out,contract_check,decision_threshold,output_artifact_id,error_code,error_message,created_at,started_at,completed_at')"
     },
     {
+      "table": "business_question_replies",
+      "name": "business_question_replies_append_only",
+      "definition": "CREATE TRIGGER business_question_replies_append_only BEFORE DELETE OR UPDATE ON public.business_question_replies FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()"
+    },
+    {
+      "table": "business_question_replies",
+      "name": "business_question_replies_created_at_now",
+      "definition": "CREATE TRIGGER business_question_replies_created_at_now BEFORE INSERT ON public.business_question_replies FOR EACH ROW EXECUTE FUNCTION force_created_at_now()"
+    },
+    {
+      "table": "business_questions",
+      "name": "business_questions_guard",
+      "definition": "CREATE TRIGGER business_questions_guard BEFORE UPDATE ON public.business_questions FOR EACH ROW EXECUTE FUNCTION guard_business_question_update()"
+    },
+    {
       "table": "code_snapshots",
       "name": "code_snapshots_immutable",
       "definition": "CREATE TRIGGER code_snapshots_immutable BEFORE DELETE OR UPDATE ON public.code_snapshots FOR EACH ROW EXECUTE FUNCTION prevent_code_snapshot_mutation()"
@@ -1810,7 +2260,7 @@
     {
       "table": "experiments",
       "name": "experiments_lineage_guard",
-      "definition": "CREATE TRIGGER experiments_lineage_guard BEFORE INSERT OR UPDATE OF split_plan_id, parent_pipeline_run_id, change_set, intent, source_dataset_id, project_id, workspace_id ON public.experiments FOR EACH ROW EXECUTE FUNCTION prevent_experiment_lineage_violation()"
+      "definition": "CREATE TRIGGER experiments_lineage_guard BEFORE INSERT OR UPDATE OF split_plan_id, parent_pipeline_run_id, change_set, intent, source_dataset_id, project_id, workspace_id, evidence_mode ON public.experiments FOR EACH ROW EXECUTE FUNCTION prevent_experiment_lineage_violation()"
     },
     {
       "table": "feature_lineage",
@@ -1836,6 +2286,16 @@
       "table": "idempotency_keys",
       "name": "idempotency_keys_no_update",
       "definition": "CREATE TRIGGER idempotency_keys_no_update BEFORE UPDATE ON public.idempotency_keys FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "improve_iterations",
+      "name": "improve_iterations_guard",
+      "definition": "CREATE TRIGGER improve_iterations_guard BEFORE UPDATE ON public.improve_iterations FOR EACH ROW EXECUTE FUNCTION guard_improve_iteration_update()"
+    },
+    {
+      "table": "improve_runs",
+      "name": "improve_runs_guard",
+      "definition": "CREATE TRIGGER improve_runs_guard BEFORE UPDATE ON public.improve_runs FOR EACH ROW EXECUTE FUNCTION guard_improve_run_update()"
     },
     {
       "table": "ingestion_publication_events",
@@ -1878,6 +2338,11 @@
       "definition": "CREATE TRIGGER llm_invocations_safe_output_retention BEFORE UPDATE OF safe_output ON public.llm_invocations FOR EACH ROW WHEN (((old.safe_output IS NOT NULL) AND (new.safe_output IS NULL))) EXECUTE FUNCTION prevent_mutation_except_retention('retention_update')"
     },
     {
+      "table": "ml_job_attempts",
+      "name": "ml_job_attempts_final",
+      "definition": "CREATE TRIGGER ml_job_attempts_final BEFORE UPDATE ON public.ml_job_attempts FOR EACH ROW WHEN (((old.outcome)::text <> 'running'::text)) EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
       "table": "ml_run_events",
       "name": "ml_run_events_append_only",
       "definition": "CREATE TRIGGER ml_run_events_append_only BEFORE DELETE OR UPDATE ON public.ml_run_events FOR EACH ROW EXECUTE FUNCTION prevent_ml_run_event_mutation()"
@@ -1893,6 +2358,11 @@
       "definition": "CREATE TRIGGER model_hyperparameters_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.model_hyperparameters FOR EACH ROW EXECUTE FUNCTION prevent_locked_candidate_evidence_mutation('candidate_id')"
     },
     {
+      "table": "model_releases",
+      "name": "model_releases_append_only",
+      "definition": "CREATE TRIGGER model_releases_append_only BEFORE DELETE OR UPDATE ON public.model_releases FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
       "table": "model_selection_decisions",
       "name": "model_selection_decisions_evidence_locked",
       "definition": "CREATE TRIGGER model_selection_decisions_evidence_locked BEFORE INSERT OR DELETE OR UPDATE ON public.model_selection_decisions FOR EACH ROW EXECUTE FUNCTION prevent_locked_run_evidence_mutation('pipeline_run_id')"
@@ -1906,6 +2376,26 @@
       "table": "model_versions",
       "name": "model_versions_immutable",
       "definition": "CREATE TRIGGER model_versions_immutable BEFORE DELETE OR UPDATE ON public.model_versions FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "model_versions",
+      "name": "model_versions_refuse_sealed_run",
+      "definition": "CREATE TRIGGER model_versions_refuse_sealed_run BEFORE INSERT ON public.model_versions FOR EACH ROW EXECUTE FUNCTION prevent_sealed_run_model_version()"
+    },
+    {
+      "table": "monitoring_outcome_sets",
+      "name": "monitoring_outcome_sets_append_only",
+      "definition": "CREATE TRIGGER monitoring_outcome_sets_append_only BEFORE DELETE OR UPDATE ON public.monitoring_outcome_sets FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "monitoring_thresholds",
+      "name": "monitoring_thresholds_append_only",
+      "definition": "CREATE TRIGGER monitoring_thresholds_append_only BEFORE DELETE OR UPDATE ON public.monitoring_thresholds FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "monitoring_windows",
+      "name": "monitoring_windows_append_only",
+      "definition": "CREATE TRIGGER monitoring_windows_append_only BEFORE DELETE OR UPDATE ON public.monitoring_windows FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "pipeline_scientific_plans",
@@ -1968,9 +2458,24 @@
       "definition": "CREATE TRIGGER r3_runs_append_only BEFORE DELETE OR UPDATE ON public.r3_runs FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
+      "table": "retrain_comparisons",
+      "name": "retrain_comparisons_append_only",
+      "definition": "CREATE TRIGGER retrain_comparisons_append_only BEFORE DELETE OR UPDATE ON public.retrain_comparisons FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "retrain_requests",
+      "name": "retrain_requests_append_only",
+      "definition": "CREATE TRIGGER retrain_requests_append_only BEFORE DELETE OR UPDATE ON public.retrain_requests FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
       "table": "runtime_environments",
       "name": "runtime_environments_immutable",
       "definition": "CREATE TRIGGER runtime_environments_immutable BEFORE DELETE OR UPDATE ON public.runtime_environments FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "scoring_schedule_runs",
+      "name": "scoring_schedule_runs_append_only",
+      "definition": "CREATE TRIGGER scoring_schedule_runs_append_only BEFORE DELETE OR UPDATE ON public.scoring_schedule_runs FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "semantic_decision_answers",
@@ -1998,9 +2503,34 @@
       "definition": "CREATE TRIGGER split_plans_immutable BEFORE DELETE OR UPDATE ON public.split_plans FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
+      "table": "upload_attempts",
+      "name": "upload_attempts_append_only",
+      "definition": "CREATE TRIGGER upload_attempts_append_only BEFORE DELETE OR UPDATE ON public.upload_attempts FOR EACH ROW EXECUTE FUNCTION prevent_mutation_except_retention()"
+    },
+    {
+      "table": "upload_attempts",
+      "name": "upload_attempts_created_at_now",
+      "definition": "CREATE TRIGGER upload_attempts_created_at_now BEFORE INSERT ON public.upload_attempts FOR EACH ROW EXECUTE FUNCTION force_created_at_now()"
+    },
+    {
+      "table": "usage_records",
+      "name": "usage_records_append_only",
+      "definition": "CREATE TRIGGER usage_records_append_only BEFORE DELETE OR UPDATE ON public.usage_records FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
       "table": "visualizations",
       "name": "visualizations_immutable",
       "definition": "CREATE TRIGGER visualizations_immutable BEFORE DELETE OR UPDATE ON public.visualizations FOR EACH ROW EXECUTE FUNCTION prevent_visualization_mutation()"
+    },
+    {
+      "table": "webhook_changes",
+      "name": "webhook_changes_append_only",
+      "definition": "CREATE TRIGGER webhook_changes_append_only BEFORE DELETE OR UPDATE ON public.webhook_changes FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
+    },
+    {
+      "table": "webhook_deliveries",
+      "name": "webhook_deliveries_append_only",
+      "definition": "CREATE TRIGGER webhook_deliveries_append_only BEFORE DELETE OR UPDATE ON public.webhook_deliveries FOR EACH ROW EXECUTE FUNCTION prevent_canonical_row_mutation()"
     },
     {
       "table": "workflow_versions",
@@ -2059,6 +2589,18 @@
       "definition": "CREATE OR REPLACE FUNCTION public.guard_agent_run_lifecycle()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF OLD.status IN ('completed', 'failed', 'rejected_by_validator', 'over_budget', 'timed_out', 'cancelled', 'closed') AND NEW.status IS DISTINCT FROM OLD.status THEN\n        RAISE EXCEPTION 'agent_runs: status % is final', OLD.status;\n    END IF;\n    IF OLD.budget_released_at IS NOT NULL\n        AND NEW.budget_released_at IS DISTINCT FROM OLD.budget_released_at THEN\n        RAISE EXCEPTION 'agent_runs.budget_released_at is write-once';\n    END IF;\n    IF OLD.status IN ('queued', 'running', 'waiting_user') AND NEW.status IN ('completed', 'failed', 'rejected_by_validator', 'over_budget', 'timed_out', 'cancelled', 'closed') AND NEW.budget_released_at IS NULL THEN\n        RAISE EXCEPTION 'agent_runs: a run ends only through the budget release (budget_released_at)';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
     {
+      "name": "guard_business_question_update",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_business_question_update()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF ROW(NEW.id, NEW.workspace_id, NEW.project_id, NEW.asked_by_user_id, NEW.model_version_id,\n           NEW.batch_prediction_id, NEW.monitoring_window_id, NEW.text, NEW.created_at)\n       IS DISTINCT FROM ROW(OLD.id, OLD.workspace_id, OLD.project_id, OLD.asked_by_user_id, OLD.model_version_id,\n           OLD.batch_prediction_id, OLD.monitoring_window_id, OLD.text, OLD.created_at) THEN\n        RAISE EXCEPTION 'business_questions: the question is frozen';\n    END IF;\n    IF OLD.status = 'closed' THEN\n        RAISE EXCEPTION 'business_questions: a closed question is final';\n    END IF;\n    IF NEW.version <> OLD.version + 1 THEN\n        RAISE EXCEPTION 'business_questions: every change takes the next version';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "guard_improve_iteration_update",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_improve_iteration_update()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF ROW(NEW.workspace_id, NEW.project_id, NEW.improve_run_id, NEW.seq, NEW.plan_index, NEW.kind, NEW.action,\n           NEW.incumbent_experiment_id, NEW.planned_new_candidates, NEW.planned_candidate_ids,\n           NEW.idempotency_key, NEW.created_at)\n       IS DISTINCT FROM ROW(OLD.workspace_id, OLD.project_id, OLD.improve_run_id, OLD.seq, OLD.plan_index, OLD.kind,\n           OLD.action, OLD.incumbent_experiment_id, OLD.planned_new_candidates, OLD.planned_candidate_ids,\n           OLD.idempotency_key, OLD.created_at) THEN\n        RAISE EXCEPTION 'improve_iterations: the planned try is frozen';\n    END IF;\n    IF (OLD.experiment_id IS NOT NULL AND NEW.experiment_id IS DISTINCT FROM OLD.experiment_id)\n       OR (OLD.comparison IS NOT NULL AND NEW.comparison IS DISTINCT FROM OLD.comparison)\n       OR (OLD.comparisons_before IS NOT NULL AND NEW.comparisons_before IS DISTINCT FROM OLD.comparisons_before) THEN\n        RAISE EXCEPTION 'improve_iterations: experiment, comparison and N are set once';\n    END IF;\n    IF OLD.status NOT IN ('planned', 'running') THEN\n        RAISE EXCEPTION 'improve_iterations: a finished try is final';\n    END IF;\n    IF NEW.status IS DISTINCT FROM OLD.status AND NOT (\n        (OLD.status = 'planned' AND NEW.status IN ('running', 'failed', 'cancelled'))\n        OR (OLD.status = 'running' AND NEW.status IN ('accepted', 'rejected', 'not_comparable', 'failed', 'cancelled'))\n    ) THEN\n        RAISE EXCEPTION 'improve_iterations: % -> % is not a try transition', OLD.status, NEW.status;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "guard_improve_run_update",
+      "definition": "CREATE OR REPLACE FUNCTION public.guard_improve_run_update()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF ROW(NEW.workspace_id, NEW.project_id, NEW.split_plan_id, NEW.start_experiment_id, NEW.goal, NEW.budget,\n           NEW.plan, NEW.planned_comparisons, NEW.validation_folds, NEW.looks_before, NEW.sealed_set_label,\n           NEW.created_by_user_id, NEW.created_by_service_token_id, NEW.created_at)\n       IS DISTINCT FROM ROW(OLD.workspace_id, OLD.project_id, OLD.split_plan_id, OLD.start_experiment_id, OLD.goal,\n           OLD.budget, OLD.plan, OLD.planned_comparisons, OLD.validation_folds, OLD.looks_before,\n           OLD.sealed_set_label, OLD.created_by_user_id, OLD.created_by_service_token_id, OLD.created_at) THEN\n        RAISE EXCEPTION 'improve_runs: goal, budget, plan and lineage are frozen';\n    END IF;\n    IF (OLD.accepted_iteration_seq IS NOT NULL AND NEW.accepted_iteration_seq IS DISTINCT FROM OLD.accepted_iteration_seq)\n       OR (OLD.accepted_by_user_id IS NOT NULL AND NEW.accepted_by_user_id IS DISTINCT FROM OLD.accepted_by_user_id)\n       OR (OLD.acceptance_record_id IS NOT NULL AND NEW.acceptance_record_id IS DISTINCT FROM OLD.acceptance_record_id) THEN\n        RAISE EXCEPTION 'improve_runs: the acceptance is write-once';\n    END IF;\n    IF OLD.status IN ('completed', 'failed', 'cancelled') THEN\n        RAISE EXCEPTION 'improve_runs: a finished loop is final';\n    END IF;\n    IF OLD.sealed_set_consulted AND NOT NEW.sealed_set_consulted THEN\n        RAISE EXCEPTION 'improve_runs: a consulted final test set stays consulted';\n    END IF;\n    IF NEW.final_attempts < OLD.final_attempts\n       OR (OLD.final_experiment_id IS NOT NULL AND NEW.final_experiment_id IS NULL)\n       OR (NEW.final_experiment_id IS DISTINCT FROM OLD.final_experiment_id\n           AND NEW.final_attempts <> OLD.final_attempts + 1) THEN\n        RAISE EXCEPTION 'improve_runs: a final run changes only with a new attempt';\n    END IF;\n    IF NEW.status IS DISTINCT FROM OLD.status AND NOT (\n        (OLD.status = 'queued' AND NEW.status IN ('running', 'completed', 'failed', 'cancelled'))\n        OR (OLD.status = 'running' AND NEW.status IN ('waiting_user', 'completed', 'failed', 'cancelled'))\n        OR (OLD.status = 'waiting_user' AND NEW.status IN ('finalizing', 'completed', 'failed', 'cancelled'))\n        OR (OLD.status = 'finalizing' AND NEW.status IN ('waiting_user', 'completed', 'failed', 'cancelled'))\n    ) THEN\n        RAISE EXCEPTION 'improve_runs: % -> % is not a loop transition', OLD.status, NEW.status;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
       "name": "guard_llm_invocation_ledger",
       "definition": "CREATE OR REPLACE FUNCTION public.guard_llm_invocation_ledger()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    finalized text[] := ARRAY['status', 'validator_verdict', 'final_decision', 'model', 'provider',\n        'cost_micros', 'cache_hit', 'refusal_code', 'provider_resolved_model',\n        'provider_request_id', 'budget_reservation_id', 'safe_output', 'completed_at'];\n    old_row jsonb := to_jsonb(OLD);\n    new_row jsonb := to_jsonb(NEW);\n    guarded text;\nBEGIN\n    IF OLD.safe_output IS NOT NULL AND NEW.safe_output IS NULL THEN\n        IF (new_row - 'safe_output') IS DISTINCT FROM (old_row - 'safe_output') THEN\n            RAISE EXCEPTION 'llm_invocations: the retention update may only null safe_output';\n        END IF;\n        RETURN NEW;\n    END IF;\n    FOREACH guarded IN ARRAY ARRAY['cost_micros', 'currency', 'budget_reservation_id',\n        'provider_request_id', 'provider_resolved_model'] LOOP\n        IF old_row ->> guarded IS NOT NULL AND new_row -> guarded IS DISTINCT FROM old_row -> guarded THEN\n            RAISE EXCEPTION 'llm_invocations.% is write-once', guarded;\n        END IF;\n    END LOOP;\n    IF OLD.budget_settled AND NOT NEW.budget_settled THEN\n        RAISE EXCEPTION 'llm_invocations.budget_settled only moves from false to true';\n    END IF;\n    IF OLD.completed_at IS NOT NULL THEN\n        FOREACH guarded IN ARRAY finalized LOOP\n            IF new_row -> guarded IS DISTINCT FROM old_row -> guarded THEN\n                RAISE EXCEPTION 'llm_invocations.% is final once completed', guarded;\n            END IF;\n        END LOOP;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
@@ -2072,7 +2614,7 @@
     },
     {
       "name": "pipeline_run_scientific_evidence_complete",
-      "definition": "CREATE OR REPLACE FUNCTION public.pipeline_run_scientific_evidence_complete(wanted_run uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT EXISTS (\n        SELECT 1\n        FROM experiments AS run\n        JOIN model_selection_decisions AS selection\n          ON selection.pipeline_run_id = run.id\n        JOIN experiment_candidates AS winner\n          ON winner.id = selection.selected_candidate_id\n         AND winner.experiment_id = run.id\n        LEFT JOIN feature_set_versions AS feature_version\n          ON feature_version.id = winner.feature_set_version_id\n        WHERE run.id = wanted_run\n          AND upper(run.status) = 'COMPLETED'\n          AND lower(winner.status) = 'trained'\n          AND (\n              (\n                  run.project_id IS NULL\n                  AND winner.feature_set_version_id IS NULL\n                  AND NOT EXISTS (\n                      SELECT 1\n                      FROM experiment_candidates AS feature_candidate\n                      WHERE feature_candidate.experiment_id = run.id\n                        AND feature_candidate.feature_set_version_id IS NOT NULL\n                  )\n              )\n              OR (\n                  winner.feature_set_version_id IS NOT NULL\n                  AND feature_version.locked_at IS NOT NULL\n                  AND EXISTS (\n                      SELECT 1\n                      FROM features AS feature_row\n                      WHERE feature_row.feature_set_version_id = winner.feature_set_version_id\n                  )\n              )\n          )\n          AND (\n              (\n                  run.workflow_run_id IS NULL\n                  AND NOT EXISTS (\n                      SELECT 1\n                      FROM model_versions AS unexpected_version\n                      WHERE unexpected_version.pipeline_run_id = run.id\n                  )\n              )\n              OR EXISTS (\n                  SELECT 1\n                  FROM model_versions AS version_row\n                  WHERE version_row.pipeline_run_id = run.id\n                    AND version_row.selected_candidate_id = winner.id\n                    AND version_row.dataset_id = run.dataset_id\n                    AND version_row.feature_set_version_id = winner.feature_set_version_id\n                    AND version_row.runtime_environment_id IS NOT NULL\n                    AND version_row.model_artifact_id IS NOT NULL\n                    AND version_row.feature_manifest_artifact_id IS NOT NULL\n              )\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM preprocessing_steps AS step\n              WHERE step.pipeline_run_id = run.id\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM model_evaluations AS holdout\n              WHERE holdout.candidate_id = winner.id\n                AND holdout.evaluation_scope = 'final_holdout'\n                AND holdout.status = 'completed'\n                AND EXISTS (\n                    SELECT 1\n                    FROM evaluation_metrics AS metric\n                    WHERE metric.model_evaluation_id = holdout.id\n                )\n                AND (\n                    (\n                        run.workflow_run_id IS NULL\n                        AND holdout.model_version_id IS NULL\n                    )\n                    OR EXISTS (\n                        SELECT 1\n                        FROM model_versions AS version_row\n                        WHERE version_row.pipeline_run_id = run.id\n                          AND version_row.selected_candidate_id = winner.id\n                          AND holdout.model_version_id = version_row.id\n                    )\n                )\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM experiment_test_predictions AS prediction\n              WHERE prediction.experiment_id = run.id\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'dependency_lock'\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'model'\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'feature_manifest'\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM experiment_candidates AS candidate_row\n              WHERE candidate_row.experiment_id = run.id\n                AND NOT EXISTS (\n                    SELECT 1\n                    FROM model_hyperparameters AS parameter_row\n                    WHERE parameter_row.candidate_id = candidate_row.id\n                )\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM experiment_candidates AS candidate_row\n              WHERE candidate_row.experiment_id = run.id\n                AND lower(candidate_row.status) = 'trained'\n                AND (\n                    CASE\n                        WHEN jsonb_typeof(candidate_row.payload->'folds') = 'array'\n                        THEN jsonb_array_length(candidate_row.payload->'folds')\n                        ELSE 0\n                    END = 0\n                    OR (\n                        SELECT count(*)\n                        FROM cv_fold_runs AS fold\n                        WHERE fold.candidate_id = candidate_row.id\n                          AND fold.status = 'completed'\n                    ) <> CASE\n                        WHEN jsonb_typeof(candidate_row.payload->'folds') = 'array'\n                        THEN jsonb_array_length(candidate_row.payload->'folds')\n                        ELSE 0\n                    END\n                    OR EXISTS (\n                        SELECT 1\n                        FROM cv_fold_runs AS fold\n                        WHERE fold.candidate_id = candidate_row.id\n                          AND NOT EXISTS (\n                              SELECT 1\n                              FROM model_evaluations AS evaluation_row\n                              WHERE evaluation_row.candidate_id = candidate_row.id\n                                AND evaluation_row.evaluation_scope = 'cv_fold'\n                                AND evaluation_row.status = 'completed'\n                                AND evaluation_row.summary->>'fold_number'\n                                    = fold.fold_number::text\n                                AND EXISTS (\n                                    SELECT 1\n                                    FROM evaluation_metrics AS metric\n                                    WHERE metric.model_evaluation_id = evaluation_row.id\n                                )\n                          )\n                    )\n                    OR NOT EXISTS (\n                        SELECT 1\n                        FROM model_evaluations AS evaluation_row\n                        WHERE evaluation_row.candidate_id = candidate_row.id\n                          AND evaluation_row.evaluation_scope = 'cv_aggregate'\n                          AND evaluation_row.status = 'completed'\n                          AND EXISTS (\n                              SELECT 1\n                              FROM evaluation_metrics AS metric\n                              WHERE metric.model_evaluation_id = evaluation_row.id\n                          )\n                    )\n                )\n          )\n    );\n$function$\n"
+      "definition": "CREATE OR REPLACE FUNCTION public.pipeline_run_scientific_evidence_complete(wanted_run uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE\nAS $function$\n    SELECT CASE WHEN EXISTS (\n        SELECT 1 FROM experiments AS sealed_run\n        WHERE sealed_run.id = wanted_run AND sealed_run.evidence_mode = 'sealed'\n    ) THEN (\n    SELECT EXISTS (\n        SELECT 1\n        FROM experiments AS run\n        JOIN model_selection_decisions AS selection\n          ON selection.pipeline_run_id = run.id\n        JOIN experiment_candidates AS winner\n          ON winner.id = selection.selected_candidate_id\n         AND winner.experiment_id = run.id\n        LEFT JOIN feature_set_versions AS feature_version\n          ON feature_version.id = winner.feature_set_version_id\n        WHERE run.id = wanted_run\n          AND upper(run.status) = 'COMPLETED'\n          AND lower(winner.status) = 'trained'\n          AND (\n              (\n                  run.project_id IS NULL\n                  AND winner.feature_set_version_id IS NULL\n                  AND NOT EXISTS (\n                      SELECT 1\n                      FROM experiment_candidates AS feature_candidate\n                      WHERE feature_candidate.experiment_id = run.id\n                        AND feature_candidate.feature_set_version_id IS NOT NULL\n                  )\n              )\n              OR (\n                  winner.feature_set_version_id IS NOT NULL\n                  AND feature_version.locked_at IS NOT NULL\n                  AND EXISTS (\n                      SELECT 1\n                      FROM features AS feature_row\n                      WHERE feature_row.feature_set_version_id = winner.feature_set_version_id\n                  )\n              )\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM model_versions AS unexpected_version\n              WHERE unexpected_version.pipeline_run_id = run.id\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM preprocessing_steps AS step\n              WHERE step.pipeline_run_id = run.id\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM model_evaluations AS holdout\n              JOIN experiment_candidates AS holdout_candidate\n                ON holdout_candidate.id = holdout.candidate_id\n              WHERE holdout_candidate.experiment_id = run.id\n                AND holdout.evaluation_scope = 'final_holdout'\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM experiment_test_predictions AS prediction\n              WHERE prediction.experiment_id = run.id\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'dependency_lock'\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'model'\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'feature_manifest'\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM experiment_candidates AS candidate_row\n              WHERE candidate_row.experiment_id = run.id\n                AND NOT EXISTS (\n                    SELECT 1\n                    FROM model_hyperparameters AS parameter_row\n                    WHERE parameter_row.candidate_id = candidate_row.id\n                )\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM experiment_candidates AS candidate_row\n              WHERE candidate_row.experiment_id = run.id\n                AND lower(candidate_row.status) = 'trained'\n                AND (\n                    CASE\n                        WHEN jsonb_typeof(candidate_row.payload->'folds') = 'array'\n                        THEN jsonb_array_length(candidate_row.payload->'folds')\n                        ELSE 0\n                    END = 0\n                    OR (\n                        SELECT count(*)\n                        FROM cv_fold_runs AS fold\n                        WHERE fold.candidate_id = candidate_row.id\n                          AND fold.status = 'completed'\n                    ) <> CASE\n                        WHEN jsonb_typeof(candidate_row.payload->'folds') = 'array'\n                        THEN jsonb_array_length(candidate_row.payload->'folds')\n                        ELSE 0\n                    END\n                    OR EXISTS (\n                        SELECT 1\n                        FROM cv_fold_runs AS fold\n                        WHERE fold.candidate_id = candidate_row.id\n                          AND NOT EXISTS (\n                              SELECT 1\n                              FROM model_evaluations AS evaluation_row\n                              WHERE evaluation_row.candidate_id = candidate_row.id\n                                AND evaluation_row.evaluation_scope = 'cv_fold'\n                                AND evaluation_row.status = 'completed'\n                                AND evaluation_row.summary->>'fold_number'\n                                    = fold.fold_number::text\n                                AND EXISTS (\n                                    SELECT 1\n                                    FROM evaluation_metrics AS metric\n                                    WHERE metric.model_evaluation_id = evaluation_row.id\n                                )\n                          )\n                    )\n                    OR NOT EXISTS (\n                        SELECT 1\n                        FROM model_evaluations AS evaluation_row\n                        WHERE evaluation_row.candidate_id = candidate_row.id\n                          AND evaluation_row.evaluation_scope = 'cv_aggregate'\n                          AND evaluation_row.status = 'completed'\n                          AND EXISTS (\n                              SELECT 1\n                              FROM evaluation_metrics AS metric\n                              WHERE metric.model_evaluation_id = evaluation_row.id\n                          )\n                    )\n                )\n          )\n    )\n    ) ELSE (\n    SELECT EXISTS (\n        SELECT 1\n        FROM experiments AS run\n        JOIN model_selection_decisions AS selection\n          ON selection.pipeline_run_id = run.id\n        JOIN experiment_candidates AS winner\n          ON winner.id = selection.selected_candidate_id\n         AND winner.experiment_id = run.id\n        LEFT JOIN feature_set_versions AS feature_version\n          ON feature_version.id = winner.feature_set_version_id\n        WHERE run.id = wanted_run\n          AND upper(run.status) = 'COMPLETED'\n          AND lower(winner.status) = 'trained'\n          AND (\n              (\n                  run.project_id IS NULL\n                  AND winner.feature_set_version_id IS NULL\n                  AND NOT EXISTS (\n                      SELECT 1\n                      FROM experiment_candidates AS feature_candidate\n                      WHERE feature_candidate.experiment_id = run.id\n                        AND feature_candidate.feature_set_version_id IS NOT NULL\n                  )\n              )\n              OR (\n                  winner.feature_set_version_id IS NOT NULL\n                  AND feature_version.locked_at IS NOT NULL\n                  AND EXISTS (\n                      SELECT 1\n                      FROM features AS feature_row\n                      WHERE feature_row.feature_set_version_id = winner.feature_set_version_id\n                  )\n              )\n          )\n          AND (\n              (\n                  run.workflow_run_id IS NULL\n                  AND NOT EXISTS (\n                      SELECT 1\n                      FROM model_versions AS unexpected_version\n                      WHERE unexpected_version.pipeline_run_id = run.id\n                  )\n              )\n              OR EXISTS (\n                  SELECT 1\n                  FROM model_versions AS version_row\n                  WHERE version_row.pipeline_run_id = run.id\n                    AND version_row.selected_candidate_id = winner.id\n                    AND version_row.dataset_id = run.dataset_id\n                    AND version_row.feature_set_version_id = winner.feature_set_version_id\n                    AND version_row.runtime_environment_id IS NOT NULL\n                    AND version_row.model_artifact_id IS NOT NULL\n                    AND version_row.feature_manifest_artifact_id IS NOT NULL\n              )\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM preprocessing_steps AS step\n              WHERE step.pipeline_run_id = run.id\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM model_evaluations AS holdout\n              WHERE holdout.candidate_id = winner.id\n                AND holdout.evaluation_scope = 'final_holdout'\n                AND holdout.status = 'completed'\n                AND EXISTS (\n                    SELECT 1\n                    FROM evaluation_metrics AS metric\n                    WHERE metric.model_evaluation_id = holdout.id\n                )\n                AND (\n                    (\n                        run.workflow_run_id IS NULL\n                        AND holdout.model_version_id IS NULL\n                    )\n                    OR EXISTS (\n                        SELECT 1\n                        FROM model_versions AS version_row\n                        WHERE version_row.pipeline_run_id = run.id\n                          AND version_row.selected_candidate_id = winner.id\n                          AND holdout.model_version_id = version_row.id\n                    )\n                )\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM experiment_test_predictions AS prediction\n              WHERE prediction.experiment_id = run.id\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'dependency_lock'\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'model'\n          )\n          AND EXISTS (\n              SELECT 1\n              FROM artifacts AS artifact\n              WHERE artifact.pipeline_run_id = run.id\n                AND artifact.metadata->>'role' = 'feature_manifest'\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM experiment_candidates AS candidate_row\n              WHERE candidate_row.experiment_id = run.id\n                AND NOT EXISTS (\n                    SELECT 1\n                    FROM model_hyperparameters AS parameter_row\n                    WHERE parameter_row.candidate_id = candidate_row.id\n                )\n          )\n          AND NOT EXISTS (\n              SELECT 1\n              FROM experiment_candidates AS candidate_row\n              WHERE candidate_row.experiment_id = run.id\n                AND lower(candidate_row.status) = 'trained'\n                AND (\n                    CASE\n                        WHEN jsonb_typeof(candidate_row.payload->'folds') = 'array'\n                        THEN jsonb_array_length(candidate_row.payload->'folds')\n                        ELSE 0\n                    END = 0\n                    OR (\n                        SELECT count(*)\n                        FROM cv_fold_runs AS fold\n                        WHERE fold.candidate_id = candidate_row.id\n                          AND fold.status = 'completed'\n                    ) <> CASE\n                        WHEN jsonb_typeof(candidate_row.payload->'folds') = 'array'\n                        THEN jsonb_array_length(candidate_row.payload->'folds')\n                        ELSE 0\n                    END\n                    OR EXISTS (\n                        SELECT 1\n                        FROM cv_fold_runs AS fold\n                        WHERE fold.candidate_id = candidate_row.id\n                          AND NOT EXISTS (\n                              SELECT 1\n                              FROM model_evaluations AS evaluation_row\n                              WHERE evaluation_row.candidate_id = candidate_row.id\n                                AND evaluation_row.evaluation_scope = 'cv_fold'\n                                AND evaluation_row.status = 'completed'\n                                AND evaluation_row.summary->>'fold_number'\n                                    = fold.fold_number::text\n                                AND EXISTS (\n                                    SELECT 1\n                                    FROM evaluation_metrics AS metric\n                                    WHERE metric.model_evaluation_id = evaluation_row.id\n                                )\n                          )\n                    )\n                    OR NOT EXISTS (\n                        SELECT 1\n                        FROM model_evaluations AS evaluation_row\n                        WHERE evaluation_row.candidate_id = candidate_row.id\n                          AND evaluation_row.evaluation_scope = 'cv_aggregate'\n                          AND evaluation_row.status = 'completed'\n                          AND EXISTS (\n                              SELECT 1\n                              FROM evaluation_metrics AS metric\n                              WHERE metric.model_evaluation_id = evaluation_row.id\n                          )\n                    )\n                )\n          )\n    )\n    ) END;\n$function$\n"
     },
     {
       "name": "prevent_canonical_column_mutation",
@@ -2096,7 +2638,7 @@
     },
     {
       "name": "prevent_experiment_lineage_violation",
-      "definition": "CREATE OR REPLACE FUNCTION public.prevent_experiment_lineage_violation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    parent_row record;\nBEGIN\n    IF TG_OP = 'UPDATE' THEN\n        IF NEW.parent_pipeline_run_id IS DISTINCT FROM OLD.parent_pipeline_run_id\n            OR NEW.change_set IS DISTINCT FROM OLD.change_set\n            OR NEW.intent IS DISTINCT FROM OLD.intent THEN\n            RAISE EXCEPTION\n                'experiments.parent_pipeline_run_id, change_set and intent are insert-only';\n        END IF;\n        IF OLD.source_dataset_id IS NOT NULL\n            AND NEW.source_dataset_id IS DISTINCT FROM OLD.source_dataset_id THEN\n            RAISE EXCEPTION 'experiments.source_dataset_id is write-once';\n        END IF;\n        IF NEW.split_plan_id IS DISTINCT FROM OLD.split_plan_id THEN\n            IF OLD.split_plan_id IS NOT NULL THEN\n                RAISE EXCEPTION 'experiments.split_plan_id is write-once';\n            END IF;\n            IF OLD.scientific_evidence_locked_at IS NOT NULL THEN\n                RAISE EXCEPTION\n                    'experiments.split_plan_id cannot be set after the run is locked';\n            END IF;\n        END IF;\n    END IF;\n    IF NEW.change_set IS NOT NULL THEN\n        SELECT workspace_id, project_id, source_dataset_id, split_plan_id\n          INTO parent_row\n          FROM experiments\n         WHERE id = NEW.parent_pipeline_run_id;\n        IF NOT FOUND OR parent_row.workspace_id IS DISTINCT FROM NEW.workspace_id THEN\n            RAISE EXCEPTION 'branch parent must exist in the same workspace';\n        END IF;\n        IF NEW.project_id IS NULL\n            OR NEW.project_id IS DISTINCT FROM parent_row.project_id THEN\n            RAISE EXCEPTION 'branch must share project_id with its parent';\n        END IF;\n        IF NEW.source_dataset_id IS NULL\n            OR NEW.source_dataset_id IS DISTINCT FROM parent_row.source_dataset_id THEN\n            RAISE EXCEPTION 'branch must share source_dataset_id with its parent';\n        END IF;\n        IF parent_row.split_plan_id IS NULL\n            OR NEW.split_plan_id IS DISTINCT FROM parent_row.split_plan_id THEN\n            RAISE EXCEPTION 'branch must share split_plan_id with its parent';\n        END IF;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_experiment_lineage_violation()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    parent_row record;\nBEGIN\n    IF TG_OP = 'UPDATE' THEN\n        IF NEW.parent_pipeline_run_id IS DISTINCT FROM OLD.parent_pipeline_run_id\n            OR NEW.change_set IS DISTINCT FROM OLD.change_set\n            OR NEW.intent IS DISTINCT FROM OLD.intent THEN\n            RAISE EXCEPTION\n                'experiments.parent_pipeline_run_id, change_set and intent are insert-only';\n        END IF;\n        IF NEW.evidence_mode IS DISTINCT FROM OLD.evidence_mode THEN\n            RAISE EXCEPTION 'experiments.evidence_mode is insert-only';\n        END IF;\n        IF OLD.source_dataset_id IS NOT NULL\n            AND NEW.source_dataset_id IS DISTINCT FROM OLD.source_dataset_id THEN\n            RAISE EXCEPTION 'experiments.source_dataset_id is write-once';\n        END IF;\n        IF NEW.split_plan_id IS DISTINCT FROM OLD.split_plan_id THEN\n            IF OLD.split_plan_id IS NOT NULL THEN\n                RAISE EXCEPTION 'experiments.split_plan_id is write-once';\n            END IF;\n            IF OLD.scientific_evidence_locked_at IS NOT NULL THEN\n                RAISE EXCEPTION\n                    'experiments.split_plan_id cannot be set after the run is locked';\n            END IF;\n        END IF;\n    END IF;\n    IF NEW.change_set IS NOT NULL THEN\n        SELECT workspace_id, project_id, source_dataset_id, split_plan_id\n          INTO parent_row\n          FROM experiments\n         WHERE id = NEW.parent_pipeline_run_id;\n        IF NOT FOUND OR parent_row.workspace_id IS DISTINCT FROM NEW.workspace_id THEN\n            RAISE EXCEPTION 'branch parent must exist in the same workspace';\n        END IF;\n        IF NEW.project_id IS NULL\n            OR NEW.project_id IS DISTINCT FROM parent_row.project_id THEN\n            RAISE EXCEPTION 'branch must share project_id with its parent';\n        END IF;\n        IF NEW.source_dataset_id IS NULL\n            OR NEW.source_dataset_id IS DISTINCT FROM parent_row.source_dataset_id THEN\n            RAISE EXCEPTION 'branch must share source_dataset_id with its parent';\n        END IF;\n        IF parent_row.split_plan_id IS NULL\n            OR NEW.split_plan_id IS DISTINCT FROM parent_row.split_plan_id THEN\n            RAISE EXCEPTION 'branch must share split_plan_id with its parent';\n        END IF;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
     {
       "name": "prevent_llm_invocation_agent_run_clear",
@@ -2141,6 +2683,10 @@
     {
       "name": "prevent_mutation_except_retention",
       "definition": "CREATE OR REPLACE FUNCTION public.prevent_mutation_except_retention()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    xact text := coalesce(current_setting('dclab.retention_xact', true), '');\n    horizon text := coalesce(current_setting('dclab.retention_horizon', true), '');\n    retention_workspace text := coalesce(current_setting('dclab.retention_workspace', true), '');\n    deleting text := coalesce(current_setting('dclab.deleting_workspace', true), '');\n    permitted boolean := false;\nBEGIN\n    IF TG_OP = 'DELETE' OR (TG_NARGS > 0 AND TG_ARGV[0] = 'retention_update') THEN\n        IF xact <> '' THEN\n            IF xact = pg_current_xact_id()::text THEN\n                IF horizon <> '' AND retention_workspace <> '' THEN\n                    IF horizon::interval >= interval '30 days' THEN\n                        permitted := coalesce(\n                            retention_workspace::uuid = OLD.workspace_id\n                            AND OLD.created_at < now() - horizon::interval,\n                            false\n                        );\n                    END IF;\n                END IF;\n                IF NOT permitted AND deleting <> '' THEN\n                    permitted := coalesce(deleting::uuid = OLD.workspace_id, false);\n                END IF;\n            END IF;\n        END IF;\n    END IF;\n    IF NOT permitted THEN\n        RAISE EXCEPTION '% rows are append-only outside retention', TG_TABLE_NAME;\n    END IF;\n    IF TG_OP = 'DELETE' THEN\n        RETURN OLD;\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
+    },
+    {
+      "name": "prevent_sealed_run_model_version",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_sealed_run_model_version()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF EXISTS (\n        SELECT 1 FROM experiments AS run\n        WHERE run.id = NEW.pipeline_run_id AND run.evidence_mode = 'sealed'\n    ) THEN\n        RAISE EXCEPTION 'model_versions cannot reference a sealed pipeline run (improve try)';\n    END IF;\n    RETURN NEW;\nEND;\n$function$\n"
     },
     {
       "name": "prevent_visualization_mutation",

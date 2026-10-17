@@ -16,6 +16,15 @@ import {
   type SessionUser,
   type SessionWorkspace,
 } from "@/lib/infrastructure/session";
+import { storePreview } from "./view-as";
+
+function safeTabStorage(): Storage | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
 
 const WorkspaceOptionSchema = z.object({
   id: z.string(),
@@ -119,6 +128,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       /* local sign-out still proceeds */
     }
     applyUser(null);
+    // D1: a "View as" preview never outlives the session that started it.
+    storePreview(typeof window === "undefined" ? null : safeTabStorage(), null);
     clearWorkspaceQueries(queryClient);
     setUser(null);
     notifySessionChanged();

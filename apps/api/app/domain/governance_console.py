@@ -9,7 +9,7 @@ pair) and a verdict summary only.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
@@ -98,6 +98,16 @@ class R3EvidenceRead(_Wire):
     demotion_allowed: bool | None = None
 
 
+class TestedCasesRead(_Wire):
+    """"Tested cases so far" for a decision point (D6a): a scalar summary of the newest live, digest-verified
+    R3 run of the current (release, model) pair, partition ``both``. Never the report body."""
+
+    agreement_rate: float = Field(description="Share of the answered cases where the AI agreed with the rule.")
+    n: int = Field(description="Answered cases of the run.")
+    run_id: UUID
+    recorded_at: datetime
+
+
 class DecisionPointLevelRead(_Wire):
     key: str
     stage: str
@@ -116,6 +126,7 @@ class DecisionPointLevelRead(_Wire):
     model_id: str | None = None
     open_incidents: dict[str, int] = Field(default_factory=dict)
     r3_evidence: R3EvidenceRead | None = None
+    tested: TestedCasesRead | None = Field(default=None, description="null: not tested yet (no live R3 run).")
 
 
 class BudgetPeriodRead(_Wire):
@@ -146,6 +157,26 @@ class IncidentRead(_Wire):
     status: str
     opened_at: datetime
     evidence: dict[str, Any] = Field(description="Ids, codes, counts, digests only (scalars, capped).")
+    resolved_at: datetime | None = None
+    resolved_by: ActorRef | None = None
+    resolution: str | None = Field(default=None, description="Plain text written by the person who resolved it.")
+
+
+class AssistantModelRead(_Wire):
+    role: Literal["lead"] = "lead"
+    model: str = Field(description="The model the router picks for the assistant under the effective policy.")
+    provider: str | None = None
+    price_is_upper_bound: bool = Field(description="Its price is a conservative bound, not yet confirmed.")
+
+
+class LedgerSpendRead(_Wire):
+    """This UTC month's AI spend of the workspace summed from the ledger (``llm_invocations``), every purpose."""
+
+    period_start: date
+    spent_micros: int
+    calls: int = Field(description="Model calls answered by a provider this month.")
+    currency: Literal["USD"] = "USD"
+    price_is_upper_bound: bool = Field(description="Some of it was priced with an unconfirmed (upper-bound) price.")
 
 
 class PolicyFieldChange(_Wire):
@@ -200,6 +231,19 @@ class GovernanceRead(_Wire):
     open_incidents: list[IncidentRead]
     policy_changes: list[PolicyChangeRead]
     recent_changes: list[RecentChangeRead]
+    # D6a (defaults keep earlier recorded responses readable):
+    assistant_beta: bool = Field(default=False, description="The workspace's ai_assistant_beta flag (DCLab staff set it).")
+    model_in_use: AssistantModelRead | None = None
+    month_spend: LedgerSpendRead | None = None
+    incidents: list[IncidentRead] = Field(default_factory=list,
+                                          description="Open and resolved incidents, newest first (at most 50).")
+    provider_notice: str = Field(default="", description="Fixed text: where assistant chat text goes.")
+    # D6b (AI settings budget form): what an approver edits and whether they may accept their own proposal.
+    policy_head: dict[str, Any] | None = Field(
+        default=None, description="Owners/admins in a person's session only: the workspace's accepted AiPolicyV1 head, "
+        "the base a new proposal edits (null: no head yet, the platform policy applies; and for everyone else).")
+    sole_approver: bool = Field(default=False, description="The caller is this workspace's only owner/admin, so the "
+                                "API lets them accept a proposal they made themselves.")
 
 
 # --- commands -------------------------------------------------------------------------------------
@@ -224,6 +268,10 @@ class SwitchChangeRequest(_Wire):
                             description="all_ai | agent:<key> | provider:<name> | purpose:<key> (never global_ai).")
     state: Literal["on", "off"]
     reason: Text2000
+
+
+class IncidentResolveRequest(_Wire):
+    resolution: Text2000
 
 
 class ReplayToolRead(_Wire):

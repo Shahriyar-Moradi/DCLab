@@ -14,9 +14,9 @@ import { StepBar, type Step } from "@/components/studio/StepBar";
 import { Term } from "@/components/studio/Term";
 import {
   ActionKeys, TASK_OPTIONS, WizardInputError, WIZARD_STEPS, buildSpecBody, constraintMetricOptions, createProblemSpec, createProject, dataStepProblem,
-  mapWizardError, objectiveProblem, primaryMetricOptions, singleFlight, startExperiment, uploadDataset, useProjectDatasets,
+  plainWizardError, objectiveProblem, primaryMetricOptions, singleFlight, startExperiment, uploadDataset, useProjectDatasets,
   useProjectExperiments, useStudioExperiment, useWizardInvalidation, type ConstraintDraft, type PlainError, type TaskType,
-  type UploadedDataset, type WizardStepId,
+  type UploadedDataset, type WizardContext, type WizardStepId,
 } from "@/lib/application";
 import { plainText, projectHref } from "@/lib/application/command-search";
 import { metricInfo } from "@/lib/application/studio-goal";
@@ -96,6 +96,7 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
   // One action in flight at a time: a second click or Enter while busy joins the running call.
   const workRef = useRef<() => Promise<void>>(async () => {});
   const busyRef = useRef(false);
+  const context = useRef<WizardContext>("project");
   const flight = useRef(singleFlight(() => workRef.current())).current;
   const run = (work: () => Promise<void>) => {
     if (!busyRef.current) {
@@ -106,7 +107,7 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
         try {
           await work();
         } catch (caught) {
-          setError(mapWizardError(caught));
+          setError(plainWizardError(caught, context.current));
         } finally {
           busyRef.current = false;
           setBusy(false);
@@ -122,10 +123,12 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
     if (!datasetId && file) {
       let pid = project;
       if (!pid) {
+        context.current = "project";
         const created = await createProject({ name: projectName.trim(), key: keys.keyFor("project", projectName.trim()) });
         pid = created.id;
         setCreatedProject(pid);
       }
+      context.current = "upload";
       const upload = await uploadDataset({ projectId: pid, file, key: keys.keyFor("upload", `${pid}:${file.name}:${file.size}:${file.lastModified}`) });
       setUploaded(upload);
       setDatasetId(upload.id);
@@ -139,7 +142,9 @@ export function NewRunWizard({ projectId }: { projectId?: string }) {
     if (problem) throw new WizardInputError(problem);
     if (!project || !datasetId) throw new Error("Choose the data first.");
     const body = buildSpecBody(task, target, objective);
+    context.current = "goal";
     const spec = await createProblemSpec({ projectId: project, body, key: keys.keyFor("spec", `${project}:${datasetId}:${JSON.stringify(body)}`) });
+    context.current = "run";
     const experiment = await startExperiment({
       projectId: project, datasetId, problemSpecId: spec.id, key: keys.keyFor("run", `${spec.id}:${datasetId}`),
     });

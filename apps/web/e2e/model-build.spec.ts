@@ -105,6 +105,8 @@ test("Model Build inspector, live stages, code, candidates, and downloads", asyn
     new RegExp(`/lab/runs/${String(upload.run_id)}|/projects/[0-9a-f-]{36}/experiments/[0-9a-f-]{36}`),
   );
 
+  // V7-A4: the full model-build record is the "Build record" tab of the run inspector.
+  await page.getByRole("tab", { name: "Build record" }).click({ timeout: 120_000 });
   const modelBuild = page.getByRole("heading", { name: "Model build", exact: true });
   await expect(modelBuild).toBeVisible({ timeout: 120_000 });
   const rail = page.locator("ol.model-build-rail");
@@ -150,7 +152,7 @@ test("Model Build inspector, live stages, code, candidates, and downloads", asyn
   const candidateCount = await candidateCards.count();
   expect(candidateCount).toBeGreaterThan(1);
   await candidateCards.first().evaluate((node) => (node as HTMLElement).click());
-  await expect(page.locator("dt").first()).toBeVisible();
+  await expect(page.getByRole("tabpanel", { name: "Build record" }).locator("dt:visible").first()).toBeVisible();
   await candidateCards.nth(Math.min(1, candidateCount - 1)).evaluate((node) => (node as HTMLElement).click());
 
   await page.getByRole("button", { name: /CV training/ }).evaluate((node) => {

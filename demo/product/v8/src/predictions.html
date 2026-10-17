@@ -1,0 +1,55 @@
+<!-- title: Predictions · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Northwind churn › <b>Predictions</b> -->
+<!-- status: ok | Working today -->
+<div class="page-head">
+  <div><h1>Predictions <span class="pill ok">Churn model v1 · in use</span></h1><p class="sub">Every Monday the model in use scores the newest customer file uploaded for scoring, and lists the customers with the highest scores, with what the model used for each.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-mock="download">Download CSV</button></div>
+</div>
+
+<div class="grid cols-3">
+  <div class="card"><div class="stat"><span class="v">6,412</span><span class="l">customers flagged (12.5%)</span></div></div>
+  <div class="card"><div class="stat"><span class="v">51,296</span><span class="l">customers scored this week</span></div></div>
+  <div class="card"><div class="stat"><span class="v">Mon 02:00</span><span class="l">last scored · 28 Sep · UTC · weekly scoring</span></div></div>
+</div>
+
+<div class="tabs" data-tabs="pred">
+  <button data-tab="list" aria-selected="true">This week’s list</button>
+  <button data-tab="score">Score a new file</button>
+  <button data-tab="schedule">Weekly scoring</button>
+</div>
+
+<div data-tabpanel="pred:list" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>Customer</th><th class="r">Score</th><th>Flagged?</th><th>Top 3 reasons (what the model used, not causes)</th></tr></thead>
+    <tbody>
+      <tr><td><code>C-48112</code></td><td class="r">0.91</td><td><span class="pill crit">yes</span></td><td>Days since last login: high (top 5%), raised the score · Fee change in 3 months: high (top 20%), raised the score · Days left on contract: low (bottom 10%), raised the score</td></tr>
+      <tr><td><code>C-10377</code></td><td class="r">0.87</td><td><span class="pill crit">yes</span></td><td>Days left on contract: low (bottom 10%), raised the score · Support tickets in 90 days: high (top 10%), raised the score · Days since last login: high (top 20%), raised the score</td></tr>
+      <tr><td><code>C-22930</code></td><td class="r">0.84</td><td><span class="pill crit">yes</span></td><td>Support tickets in 90 days: high (top 10%), raised the score · Late payments in 6 months: high (top 10%), raised the score · Fee change in 3 months: high (top 20%), raised the score</td></tr>
+      <tr><td><code>C-31877</code></td><td class="r">0.79</td><td><span class="pill crit">yes</span></td><td>Days since last login: high (top 20%), raised the score · Plan type: family_5g, raised the score · Days left on contract: low (bottom 10%), raised the score</td></tr>
+      <tr><td><code>C-07429</code></td><td class="r">0.72</td><td><span class="pill crit">yes</span></td><td>Fee change in 3 months: high (top 20%), raised the score · Months as a customer: low (bottom 20%), raised the score · Late payments in 6 months: high (top 20%), raised the score</td></tr>
+      <tr><td><code>C-55103</code></td><td class="r">0.58</td><td><span class="pill crit">yes</span></td><td>Days since last login: high (top 30%), raised the score · Days left on contract: low (bottom 30%), raised the score · Support tickets in 90 days: medium, raised the score</td></tr>
+      <tr><td><code>C-19846</code></td><td class="r">0.34</td><td><span class="pill crit">yes</span></td><td>Fee change in 3 months: medium, raised the score · Months as a customer: low (bottom 30%), raised the score · Days since last login: medium, lowered the score</td></tr>
+      <tr><td><code>C-60215</code></td><td class="r">0.27</td><td><span class="pill gray">no</span></td><td>Days since last login: medium, raised the score · Fee change in 3 months: low, lowered the score · Months as a customer: high (top 30%), lowered the score</td></tr>
+      <tr class="dim"><td colspan="4">Flagged means a score of 0.31 or more (the locked threshold). Showing 8 of 51,296 rows, highest scores first; at most the first 10,000 rows show on screen, the CSV has every row.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Reasons name what the model used for a score, not causes: they say which inputs moved the score up or down compared with the model’s average row. They come from the model’s own share of each column in a row’s score. Scores rank rows from most to least likely; they are not exact chances. The list is chosen from the files you scored in this browser tab and the weeks the schedule scored.</p>
+</div>
+
+<div data-tabpanel="pred:score">
+  <div class="card">
+    <h3>Score a new file</h3>
+    <label class="field">Model<select aria-label="Model"><option>Churn model v1 · in use · approved</option><option>Churn model v5 · waiting for approval</option></select></label>
+    <label class="upload-box"><b>Choose a customer file</b><span class="small muted">CSV, TSV, JSON, Parquet or Excel. It must have the columns the model needs; missing or extra columns are named before scoring.</span><input type="file"></label>
+    <p class="small muted">Scored with v1 means checked against its approval; another model can still score a file by hand. Demo only: the file is not read or sent anywhere.</p>
+  </div>
+</div>
+
+<div data-tabpanel="pred:schedule">
+  <div class="card">
+    <h3>Weekly scoring <span class="pill ok">on</span></h3>
+    <dl class="kv"><dt>When</dt><dd>Every Monday at 02:00 UTC (04:00 your time)</dd><dt>What it scores</dt><dd>The newest file uploaded for scoring since the last run</dd><dt>With which model</dt><dd>The model in use, only if it has an approval; otherwise nothing</dd><dt>Runs as</dt><dd>Sam Rivera, the last person who saved it</dd><dt>Last run</dt><dd>Mon 28 Sep · 51,296 customers · 6,412 flagged</dd><dt>Next run</dt><dd>Mon 5 Oct, 02:00 UTC</dd></dl>
+    <div class="toolbar"><button class="btn" type="button" data-mock="edit">Change</button><button class="btn" type="button" data-mock="edit">Turn off</button></div>
+    <p class="small muted">Weekly scoring never retrains, never fetches data and never switches the model. A file uploaded with an access token can also be picked up. Changes take one confirm step that says exactly what will happen.</p>
+  </div>
+</div>

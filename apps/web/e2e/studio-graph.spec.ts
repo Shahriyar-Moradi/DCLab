@@ -46,7 +46,7 @@ test("Graph page: lineage, stale marker after a dataset ref move, drawer impact,
   await page.getByLabel("Data file").setInputFiles({ name: "churn.csv", mimeType: "text/csv", buffer: Buffer.from(churnCsv(300)) });
   await page.getByRole("button", { name: "Upload and continue" }).click();
   await page.getByLabel("Task").selectOption("binary");
-  await page.getByLabel("Target column").selectOption("churn");
+  await page.getByRole("combobox", { name: "Target column" }).selectOption("churn");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Train" }).click();
@@ -84,7 +84,7 @@ test("Graph page: lineage, stale marker after a dataset ref move, drawer impact,
   await page.getByRole("button", { name: /^Use this data.*churn-q3/ }).click();
   await page.getByLabel("Why (saved with the change)").fill("Newer quarter of data");
   await page.locator("form").getByRole("button", { name: "Use this data", exact: true }).click();
-  await expect(page.getByRole("row", { name: /churn-q3/ })).toContainText("in use");
+  await expect(page.getByRole("row", { name: /^churn-q3 ·/ })).toContainText("in use"); // not the upload-log row (churn-q3.csv)
   await expect(page.locator("p", { hasText: /History\. is churn-q3/ }).first()).toBeVisible();
   const refsAfter = (await (await page.request.get(`/api/backend/v1/projects/${projectId}/refs`)).json()) as { items: Array<{ ref_kind: string; version: number }> };
   expect(refsAfter.items.find((r) => r.ref_kind === "dataset")?.version).toBeGreaterThanOrEqual(2);

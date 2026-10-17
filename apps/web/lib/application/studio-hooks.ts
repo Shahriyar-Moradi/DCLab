@@ -21,7 +21,19 @@ const ProjectSummarySchema = z.object({
     model_version_id: z.string(), version: z.string(), experiment_id: z.string(),
     selection_metric: nullableString, metric_scope: z.literal("cv_aggregate").optional(), cv_metrics: z.record(z.string(), z.number()).optional(),
   }).nullable().optional(),
-  latest_run: z.object({ experiment_id: z.string(), status: z.string(), created_at: z.string(), ended_at: nullableString }).nullable().optional(),
+  latest_run: z.object({
+    experiment_id: z.string(), status: z.string(), created_at: z.string(), ended_at: nullableString, run_number: z.number().nullable().optional(),
+    // V7 BE-A: where an unfinished run is, from its latest recorded event (never estimated).
+    progress: z.object({
+      stage: nullableString, model_family: nullableString, fold_number: z.number().nullable().optional(), folds_planned: z.number().nullable().optional(),
+      candidates_finished: z.number().optional(), updated_at: nullableString, fold_completed: z.boolean().optional(),
+    }).nullable().optional(),
+  }).nullable().optional(),
+  /** Furthest point reached and this caller's waiting decisions for the project (V7 BE-A). */
+  stage: z.string().optional(),
+  waiting_decisions: z.number().optional(),
+  /** Unfinished runs of the project, all of them (not only the latest). */
+  running_count: z.number().optional(),
 });
 export type StudioProjectSummary = z.infer<typeof ProjectSummarySchema>;
 
@@ -63,6 +75,10 @@ const ExperimentItemSchema = z.object({
   split_plan_id: nullableString,
   has_change_set: z.boolean().optional(),
   ended_at: nullableString,
+  /** `sealed`: an improvement-loop try, judged on cross-validation only (the final test set was not used). */
+  evidence_mode: z.enum(["scored", "sealed"]).optional(),
+  /** D8a: who started it (`you` / `person` / `connected_tool` / `assistant` / `rules`), from existing records; null when none says. */
+  started_by: nullableString,
 });
 export type StudioExperimentItem = z.infer<typeof ExperimentItemSchema>;
 const ExperimentPageSchema = z.object({ items: z.array(ExperimentItemSchema), limit: z.number(), next_cursor: nullableString });
@@ -79,7 +95,12 @@ export const StudioExperimentSchema = z.object({
   failure_reason: nullableString,
   target_column: nullableString,
   task_type: nullableString,
+  started_by: nullableString,
   lineage: z.object({ parent_experiment_id: nullableString, split_plan_id: nullableString, problem_spec_id: nullableString, source_dataset_id: nullableString, execution_request_id: nullableString }),
+  /** D2a: worker attempts of the run's job, oldest first (closed codes only; empty for older runs). */
+  attempts: z.array(z.object({
+    attempt: z.number(), outcome: z.string(), failure_class: nullableString, started_at: z.string(), ended_at: nullableString, duration_seconds: z.number().nullable().optional(),
+  })).optional(),
 });
 export type StudioExperiment = z.infer<typeof StudioExperimentSchema>;
 
@@ -104,6 +125,13 @@ export function useStudioProjects() {
   return useQuery({
     queryKey: workspaceQueryKey("v1", "projects"),
     queryFn: ({ signal }) => v1Get("/v1/projects", z.array(StudioProjectListItemSchema), { signal }),
+    // Home's "Running now" shows each live run's fold: re-read every 10 s while any project has a run in progress;
+    // a failed read stops the polling (the page shows the error instead).
+    refetchInterval: (query) => {
+      if (query.state.status === "error") return false;
+      const live = query.state.data?.some((p) => (p.summary?.running_count ?? 0) > 0 || LIVE.has(p.summary?.latest_run?.status ?? ""));
+      return live ? 10_000 : false;
+    },
   });
 }
 
@@ -139,7 +167,15 @@ export function useStudioExperiment(experimentId: string | undefined) {
     queryFn: ({ signal }) => v1Get("/v1/experiments/{experiment_id}", StudioExperimentSchema, { params: { experiment_id: experimentId! }, signal }),
     enabled: isUuid(experimentId),
     retry: false,
-    refetchInterval: (query) => (LIVE.has(query.state.data?.status ?? "") ? 2000 : false),
+    // A finished run's worker try is closed a moment after the run itself: keep reading until no try says "running", for
+    // at most 2 minutes after the run ended (a try stuck as running is then left as the read says).
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (LIVE.has(data?.status ?? "")) return 2000;
+      const ended = Date.parse(data?.ended_at ?? data?.started_at ?? "");
+      const recent = !Number.isNaN(ended) && Date.now() - ended < 120_000;
+      return recent && (data?.attempts ?? []).some((a) => a.outcome === "running") ? 2000 : false;
+    },
   });
 }
 

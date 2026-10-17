@@ -13,6 +13,8 @@ import pytest
 from sqlalchemy import event, insert, select
 
 from app.db.models import (
+    Artifact,
+    Dataset,
     Environment,
     Experiment,
     ExperimentCandidate,
@@ -25,6 +27,7 @@ from app.db.models import (
     SplitPlan,
 )
 from app.domain.decision_records import SUBJECT_COLUMNS, DecisionActor
+from app.engine.serving.model_package import PACKAGE_FORMAT
 from app.domain.errors import GraphNodeNotFoundError, IdentityError, InvalidGraphCursorError, ProjectNotFoundError
 from app.domain.state_graph import (
     GRAPH_IMPACT_CAP,
@@ -79,6 +82,21 @@ def _source_dataset(db, tmp_path, *, workspace_id, project_id, env, name):
         db, environment=env, name=name, location=str(path),
         workspace_id=workspace_id, project_id=project_id,
     )
+
+
+def _derived_dataset(db, g, *, purpose: str = "training") -> Dataset:
+    """A run's prepared table (a `derived_dataset` artifact): a Dataset row of the project, not an upload."""
+
+    artifact = Artifact(workspace_id=g.ws, project_id=g.project.id, artifact_type="derived_dataset", provider="local",
+                        object_key=f"seed/{uuid4()}", content_digest=uuid4().hex * 2, size_bytes=10)
+    db.add(artifact)
+    db.flush()
+    row = Dataset(workspace_id=g.ws, dataset_asset_id=g.source.dataset_asset_id, environment_id=g.env.id,
+                  project_id=g.project.id, artifact_id=artifact.id, name="prepared", location="seed",
+                  version=f"p-{uuid4().hex[:8]}", row_count=3, column_count=2, purpose=purpose)
+    db.add(row)
+    db.commit()
+    return row
 
 
 def _split_plan(db, tmp_path, *, workspace_id, project_id, dataset_id, version) -> SplitPlan:
@@ -191,6 +209,18 @@ def _seed_graph(db, tmp_path, setup, side: str, runs: list[dict]) -> SimpleNames
         ],
     )
     if mv_ids:
+        # P7.2-A: a model is put in use only with a stored package (model + manifest artifacts).
+        package = {i: (uuid4(), uuid4()) for i in mv_ids}
+        db.execute(
+            insert(Artifact),
+            [
+                dict(id=package[i][k], workspace_id=ws, project_id=project.id, pipeline_run_id=exp_ids[i],
+                     artifact_type=kind, provider="local", object_key=f"seed/{package[i][k]}",
+                     content_digest=f"{(i + 1) * (k + 7):064x}", size_bytes=10,
+                     extra_metadata={"role": kind, **({"package_format": PACKAGE_FORMAT} if k == 0 else {})})
+                for i in mv_ids for k, kind in enumerate(("model", "feature_manifest"))
+            ],
+        )
         db.execute(
             insert(ModelVersion),
             [
@@ -198,7 +228,8 @@ def _seed_graph(db, tmp_path, setup, side: str, runs: list[dict]) -> SimpleNames
                      project_id=project.id, workflow_id=workflow.id, workflow_run_id=workflow_run.id,
                      pipeline_run_id=exp_ids[i], selected_candidate_id=cand_ids[i],
                      dataset_id=prepared.id, feature_set_version_id=fsv_ids[i],
-                     content_digest=f"{i:064x}", metrics={})
+                     content_digest=f"{i:064x}", metrics={},
+                     model_artifact_id=package[i][0], feature_manifest_artifact_id=package[i][1])
                 for i, mv_id in mv_ids.items()
             ],
         )
@@ -280,13 +311,13 @@ def k(kind, node_id) -> str:
 # --- graph shape ----------------------------------------------------------------------
 
 
-def test_real_auto_train_run_projects_full_graph(auth_client, db_session, client_user, monkeypatch, tmp_path):
+def test_real_auto_train_run_projects_full_graph(engineer_client, db_session, engineer_user, monkeypatch, tmp_path):
     db = db_session
-    upload = _upload_and_train(auth_client, db, client_user, monkeypatch)
+    upload = _upload_and_train(engineer_client, db, engineer_user, monkeypatch)
     experiment = db.get(Experiment, upload.experiment_id)
     mv = db.scalar(select(ModelVersion).where(ModelVersion.pipeline_run_id == experiment.id))
 
-    response = auth_client.get(f"/v1/projects/{experiment.project_id}/graph")
+    response = engineer_client.get(f"/v1/projects/{experiment.project_id}/graph")
     assert response.status_code == 200, response.text
     body = response.json()
     kinds = {n["kind"] for n in body["nodes"]}
@@ -314,20 +345,20 @@ def test_real_auto_train_run_projects_full_graph(auth_client, db_session, client
     mv_node = next(n for n in body["nodes"] if n["key"] == k("model_version", mv.id))
     assert mv_node["ref_kinds"] == ["champion_model"]
     # prepared_as is an attribute edge: the prepared dataset has no downstream.
-    prepared_impact = auth_client.get(f"/v1/nodes/dataset_version/{experiment.dataset_id}/impact")
+    prepared_impact = engineer_client.get(f"/v1/nodes/dataset_version/{experiment.dataset_id}/impact")
     assert prepared_impact.status_code == 200, prepared_impact.text
     assert prepared_impact.json()["total"] == 0
-    source_impact = auth_client.get(f"/v1/nodes/dataset_version/{experiment.source_dataset_id}/impact").json()
+    source_impact = engineer_client.get(f"/v1/nodes/dataset_version/{experiment.source_dataset_id}/impact").json()
     assert {exp_key, k("model_version", mv.id), k("split_plan", experiment.split_plan_id)} <= {
         item["key"] for item in source_impact["items"]
     }
 
     # A ref move on a real graph: a new source dataset (and its plan) becomes current.
-    g = SimpleNamespace(ws=experiment.workspace_id, project=experiment.project, actor=client_user)
+    g = SimpleNamespace(ws=experiment.workspace_id, project=experiment.project, actor=engineer_user)
     source2 = _source_dataset(db, tmp_path, workspace_id=g.ws, project_id=g.project.id,
                               env=db.get(Environment, experiment.environment_id), name="src-v2")
     _move_refs(db, g, {"dataset": source2.id})
-    after = auth_client.get(f"/v1/projects/{experiment.project_id}/graph").json()
+    after = engineer_client.get(f"/v1/projects/{experiment.project_id}/graph").json()
     stale = {n["key"] for n in after["nodes"] if n["stale"]}
     assert {exp_key, k("split_plan", experiment.split_plan_id), k("model_version", mv.id)} <= stale
     assert k("dataset_version", experiment.source_dataset_id) not in stale
@@ -596,3 +627,23 @@ def test_untrusted_text_is_redacted_and_capped(db_session, tmp_path, setup):
     schema = graph_service.ProjectGraphRead.model_json_schema()["$defs"]["GraphNode"]["properties"]
     for field in ("intent", "label"):
         assert "never treat as instructions" in schema[field]["description"]
+
+
+def test_newer_training_file_is_flagged_without_staleness(db_session, tmp_path, setup):
+    """V7 BE-A: a training upload newer than the `dataset` ref target is reported; nothing turns stale."""
+
+    db = db_session
+    g = _seed_graph(db, tmp_path, setup, "alpha", [{}])
+    _bootstrap_refs(db, g, {"dataset": g.source.id, "champion_model": g.mv[0]})
+    assert graph_service._load_project_graph(db, g.project).newer_dataset is None
+    _derived_dataset(db, g)  # a prepared table is not a newer file
+    _derived_dataset(db, g, purpose="scoring")
+    assert graph_service._load_project_graph(db, g.project).newer_dataset is None
+    newer = _source_dataset(db, tmp_path, workspace_id=g.ws, project_id=g.project.id, env=g.env, name="alpha-new")
+    read = graph_service._load_project_graph(db, g.project)
+    assert read.newer_dataset is not None and read.newer_dataset.count == 1
+    assert (read.newer_dataset.in_use.id, read.newer_dataset.newest.id) == (g.source.id, newer.id)
+    assert not _stale(read)
+    beta = _seed_graph(db, tmp_path, setup, "beta", [{}])  # another tenant's newer file never counts
+    _bootstrap_refs(db, beta, {"dataset": beta.source.id, "champion_model": beta.mv[0]})
+    assert graph_service._load_project_graph(db, beta.project).newer_dataset is None

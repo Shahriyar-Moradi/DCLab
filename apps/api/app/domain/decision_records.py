@@ -37,6 +37,14 @@ DECISION_TYPES = (
     "decision_point_resolved",
     "proposal_reverted",
     "operating_point_chosen",
+    "scoring_schedule_changed",
+    "monitoring_outcomes_linked",
+    "target_confirmed",
+    "test_design_confirmed",
+    "goal_metric_confirmed",
+    "goal_rule_confirmed",
+    "retrain_policy_changed",
+    "monitoring_thresholds_changed",
 )
 DECISION_WINNER_LOCKED = "winner_locked"
 DECISION_SPLIT_PLAN_CREATED = "split_plan_created"
@@ -54,10 +62,32 @@ DECISION_OPERATING_POINT_CHOSEN = "operating_point_chosen"
 # Written only by their owning service (the ProblemSpec lock path, the operating-point
 # service), never via the generic ``record()`` / ``supersede()``.
 SERVICE_ONLY_DECISION_TYPES = RULE_ONLY_DECISION_TYPES | {"problem_spec_locked", DECISION_OPERATING_POINT_CHOSEN}
+# A person saving the project's weekly scoring schedule: written only by
+# ``scoring_schedule_service.save_schedule``, never recorded or corrected generically.
+DECISION_SCORING_SCHEDULE_CHANGED = "scoring_schedule_changed"
+# P7.4-A: a person linking a file of real outcomes for monitoring: written only by
+# ``monitoring_service.link_outcomes``, never recorded or corrected generically.
+DECISION_MONITORING_OUTCOMES_LINKED = "monitoring_outcomes_linked"
 # Phase 6 reserves these for agent proposals and AI decision points (ADR 0008 §7);
 # only their owning services (P6.6-A and later) write them.
+# D3a: who confirmed the goal (target, test design, ranking metric, business rule): written only by
+# ``goal_decision_service`` when the confirmation or the goal version is saved; never corrected.
+GOAL_CONFIRMATION_DECISION_TYPES = {
+    "target": "target_confirmed",
+    "test_design": "test_design_confirmed",
+    "metric": "goal_metric_confirmed",
+    "rule": "goal_rule_confirmed",
+}
+# D5a (ADR 0012): an owner or administrator changing the project's retrain policy: written only by
+# ``retrain_service.set_policy``, never recorded or corrected generically.
+DECISION_RETRAIN_POLICY_CHANGED = "retrain_policy_changed"
+# D5b (ADR 0012 D4): an owner or administrator changing the project's monitoring thresholds: written
+# only by ``monitoring_service.set_thresholds``, never recorded or corrected generically.
+DECISION_MONITORING_THRESHOLDS_CHANGED = "monitoring_thresholds_changed"
 RESERVED_DECISION_TYPES = frozenset(
-    {"proposal_accepted", "proposal_rejected", "decision_point_resolved", "proposal_reverted"}
+    {"proposal_accepted", "proposal_rejected", "decision_point_resolved", "proposal_reverted",
+     DECISION_SCORING_SCHEDULE_CHANGED, DECISION_MONITORING_OUTCOMES_LINKED, DECISION_RETRAIN_POLICY_CHANGED,
+     DECISION_MONITORING_THRESHOLDS_CHANGED, *GOAL_CONFIRMATION_DECISION_TYPES.values()}
 )
 # Accepted rows of these types exist only together with their ref move
 # (``project_ref_service.move_ref``); they are never corrected in place.
@@ -103,7 +133,12 @@ RULE_WINNER_LOCKED_BACKFILL = "selection.cv_winner.backfill.v1"
 RULE_REFS_BOOTSTRAP = "refs.bootstrap.v1"
 RULE_HOLDOUT_PLANNER_PREFIX = "holdout.planner"
 REFS_BOOTSTRAP_RATIONALE = "first locked model; not a comparison"
-CODE_OWNED_RULES = frozenset({RULE_WINNER_LOCKED, RULE_WINNER_LOCKED_BACKFILL, RULE_REFS_BOOTSTRAP})
+# D5a (ADR 0012): the retrain rule proposes switching to a retrained model (never moves a ref).
+RULE_RETRAIN_CHALLENGER = "retrain.challenger.v1"
+CODE_OWNED_RULES = frozenset(
+    {RULE_WINNER_LOCKED, RULE_WINNER_LOCKED_BACKFILL, RULE_REFS_BOOTSTRAP, RULE_RETRAIN_CHALLENGER})
+# The only rules ``propose_ref_move`` accepts; accepting or rejecting stays a person's act.
+RULES_PROPOSING_REF_MOVES = frozenset({RULE_RETRAIN_CHALLENGER})
 _HOLDOUT_PLANNER_RULE = re.compile(r"^holdout\.planner\.v[A-Za-z0-9_]{1,32}$")
 # ADR 0008 §7: a decision point's deterministic policy (``decision_point.<registry key>.v1``)
 # is the actor of its ``decision_point_resolved`` record, also when a Jev value is applied.
@@ -178,7 +213,9 @@ DETAIL_CARRIED_FROM_AGENT = "carried_from_agent_proposal"
 DETAIL_SERVICE_ATTACHED_EVIDENCE = "service_attached_evidence"
 RULE_CHAMPION_FINAL_EVALUATION = "champion.final_evaluation.v1"
 RESERVED_DETAIL_KEYS = frozenset(
-    {DETAIL_REF_MOVES, DETAIL_CARRIED_FROM_AGENT, DETAIL_SERVICE_ATTACHED_EVIDENCE, "skipped_refs"}
+    # improve_run_id: only the improve service writes an acceptance record that names a loop
+    # (ADR 0007 §7); readers trust ``improve_runs.acceptance_record_id`` alone.
+    {DETAIL_REF_MOVES, DETAIL_CARRIED_FROM_AGENT, DETAIL_SERVICE_ATTACHED_EVIDENCE, "skipped_refs", "improve_run_id"}
 )
 
 # /v1 read bounds.
@@ -326,6 +363,14 @@ DecisionType = Literal[
     "decision_point_resolved",
     "proposal_reverted",
     "operating_point_chosen",
+    "scoring_schedule_changed",
+    "monitoring_outcomes_linked",
+    "target_confirmed",
+    "test_design_confirmed",
+    "goal_metric_confirmed",
+    "goal_rule_confirmed",
+    "retrain_policy_changed",
+    "monitoring_thresholds_changed",
 ]
 
 _UNTRUSTED = (

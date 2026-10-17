@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Settings · DCLab demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="settings.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Admin › <b>Settings</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch" title="Admins only: preview what another role sees. Your rights and every request stay yours."><span>View as</span><select id="role-switch"><option value="admin">Admin (your own view)</option><option value="ds">Data scientist</option><option value="analyst">Analyst (view only)</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant <span class="beta">Beta</span></button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Settings</h1><p class="sub">Who is in the workspace and what each role can do, usage and cost, and (coming) notifications and integrations.</p></div>
+</div>
+<div class="statusrow"><a class="stag warn" href="real.html" title="See what is real today">Partly working · notifications and integrations have no screen yet</a></div>
+
+<div class="tabs" data-tabs="set">
+  <button data-tab="roles" aria-selected="true">People &amp; roles</button>
+  <button data-tab="usage">Usage &amp; cost</button>
+  <button data-tab="notif">Notifications</button>
+  <button data-tab="integ">Integrations</button>
+</div>
+
+<div data-tabpanel="set:roles" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead>
+    <tbody>
+      <tr><td>Sam Rivera</td><td>sam@northwind.example</td><td>Admin · Owner</td><td>Jun 2026</td></tr>
+      <tr><td>Maya Chen</td><td>maya@northwind.example</td><td>Data scientist</td><td>Jun 2026</td></tr>
+      <tr><td>Jon Park</td><td>jon@northwind.example</td><td>Analyst (view only)</td><td>Jul 2026</td></tr>
+      <tr><td>Lena Ortiz</td><td>lena@northwind.example</td><td>Business user</td><td>Aug 2026</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Only owners and administrators see this list; access tokens never read people’s emails. Adding people is not available in Studio yet: contact DCLab.</p>
+  <div class="tbl card"><table>
+    <thead><tr><th>Role</th><th>Read projects</th><th>Run ML (upload, runs, scoring, approvals)</th><th>Manage people</th><th>Approve AI rules</th></tr></thead>
+    <tbody>
+      <tr><td><b>Admin</b></td><td>Yes</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td><b>Data scientist</b></td><td>Yes</td><td>Yes</td><td>No</td><td>No</td></tr>
+      <tr><td><b>Analyst (view only)</b></td><td>Yes</td><td>No</td><td>No</td><td>No</td></tr>
+      <tr><td><b>Business user</b></td><td>Only the Business view</td><td>No</td><td>No</td><td>No</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Admins can preview another role with <b>View as</b> in the top bar. It changes only what this browser tab shows; your rights and every request stay yours. There is no role switcher.</p>
+</div>
+
+<div data-tabpanel="set:usage">
+  <div class="card">
+    <h3>This month <span class="sp">an estimate from DCLab’s own records, not an invoice</span></h3>
+    <div class="grid cols-3">
+      <div class="stat kpi"><span class="l">Compute</span><span class="v">412 min</span><span class="small muted">of 2,000 in your plan</span><div class="meter"><i style="width:21%"></i></div></div>
+      <div class="stat kpi"><span class="l">AI spend</span><span class="v">$0.00</span><span class="small muted">of $25 · AI is off</span><div class="meter ai"><i style="width:0%"></i></div></div>
+      <div class="stat kpi"><span class="l">Storage</span><span class="v">3.1 GB</span><span class="small muted">of 50 GB</span><div class="meter"><i style="width:6%"></i></div></div>
+    </div>
+    <p class="small muted">The real screen also has a 31-day chart and the plan limits per kind of work.</p>
+  </div>
+</div>
+
+<div data-tabpanel="set:notif">
+  <div class="card">
+    <div class="notice-planned"><span class="pill warn">Partly working</span><span>Built on the server and switched off until an email service is chosen. There is no screen yet; this is how it will look.</span></div>
+    <h3>Email me when</h3>
+    <div class="switch-row"><span><b>A decision needs me</b><small>For example, switching to a retrained model.</small></span><button class="ai-switch" type="button" role="switch" aria-checked="true" data-toggle><span>Email: <b>on</b></span><i aria-hidden="true"></i></button></div>
+    <div class="switch-row"><span><b>A run finished</b><small>Runs you started.</small></span><button class="ai-switch" type="button" role="switch" aria-checked="false" data-toggle><span>Email: <b>off</b></span><i aria-hidden="true"></i></button></div>
+    <div class="switch-row"><span><b>A run failed</b><small>Runs you started.</small></span><button class="ai-switch" type="button" role="switch" aria-checked="true" data-toggle><span>Email: <b>on</b></span><i aria-hidden="true"></i></button></div>
+    <div class="switch-row"><span><b>Weekly scoring result</b><small>Schedules you saved.</small></span><button class="ai-switch" type="button" role="switch" aria-checked="false" data-toggle><span>Email: <b>off</b></span><i aria-hidden="true"></i></button></div>
+    <div class="switch-row"><span><b>A drift alert</b><small>On a model in use.</small></span><button class="ai-switch" type="button" role="switch" aria-checked="true" data-toggle><span>Email: <b>on</b></span><i aria-hidden="true"></i></button></div>
+    <div class="switch-row"><span><b>A plan limit is near</b><small>Admins only.</small></span><button class="ai-switch" type="button" role="switch" aria-checked="true" data-toggle><span>Email: <b>on</b></span><i aria-hidden="true"></i></button></div>
+    <p class="small muted">Email delivery is off: no email service is chosen, so nothing is sent. Emails have no unsubscribe link yet.</p>
+  </div>
+</div>
+
+<div data-tabpanel="set:integ">
+  <div class="card">
+    <div class="notice-planned"><span class="pill warn">Partly working</span><span>Signed webhooks are built on the server and switched off by default. There is no screen to add, test or remove one yet; this is how it will look.</span></div>
+    <h3>Webhooks <span class="sp">DCLab calls your address when something happens</span></h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Address</th><th>Events</th><th>Last delivery</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><code>https://hooks.northwind.example/dclab</code></td><td>Decision needed · drift alert · weekly scoring result</td><td>Mon 02:14 · delivered</td><td><button class="btn sm" type="button" data-mock="edit">Send a test</button> <button class="btn sm" type="button" data-mock="edit">New secret</button></td></tr>
+      </tbody>
+    </table></div>
+    <p class="small muted">Up to 5 addresses per workspace and 6 events (decision needed, run finished, run failed, weekly scoring result, drift alert, plan limit near). Each call is signed; the secret is shown once and can be replaced. Reading data from where it already lives is not planned yet: upload a file or use <a href="connect.html">Connect</a>.</p>
+  </div>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v8"></script>
+<script src="guide.js"></script>
+</body>
+</html>

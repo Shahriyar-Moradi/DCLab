@@ -52,6 +52,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.domain.errors import RunQuotaExceededError
 from app.domain.idempotency import (
     IDEMPOTENCY_KEY_HEADER,
     is_reserved_idempotency_key,
@@ -157,8 +158,10 @@ def domain_error(exc: Exception, *, status_code: int | None = None, code: str | 
         details = dict(public)
         found = details.pop("code", None)
         message = details.pop("message", None) or str(exc)
-        return V1APIError(status, code or found, str(message), details=details)
-    return V1APIError(status, code or getattr(exc, "code", None), str(exc) or None)
+        return V1APIError(status, code or found, str(message), details=details,
+                          retryable=getattr(exc, "retryable", None))
+    return V1APIError(status, code or getattr(exc, "code", None), str(exc) or None,
+                      retryable=getattr(exc, "retryable", None))
 
 
 def _route_template(request: Request) -> str:
@@ -276,6 +279,18 @@ async def _validation_error_handler(request: Request, exc: RequestValidationErro
     )
 
 
+async def _run_limit_error_handler(request: Request, exc: RunQuotaExceededError) -> Response:
+    """A run or plan limit (P3.1-B2 / P8.4-A 429) raised where a route does not map it itself (the
+    legacy Labs and admin upload paths): the /v1 envelope on /v1, ``{"detail": ...}`` elsewhere."""
+
+    if not is_v1_path(request.url.path):
+        return JSONResponse({"detail": exc.legacy_detail()}, status_code=exc.status_code,
+                            headers={"Cache-Control": "no-store"})
+    error = domain_error(exc)
+    return v1_error_response(request, error.status_code, error.code, error.message, details=error.details,
+                             retryable=error.retryable)
+
+
 async def _unhandled_error_handler(request: Request, exc: Exception) -> Response:
     if not is_v1_path(request.url.path):
         # Starlette's own production response for non-/v1 surfaces (unchanged).
@@ -287,6 +302,7 @@ def install_v1_conventions(app: FastAPI) -> None:
     app.add_exception_handler(V1APIError, _v1_api_error_handler)
     app.add_exception_handler(StarletteHTTPException, _http_error_handler)
     app.add_exception_handler(RequestValidationError, _validation_error_handler)
+    app.add_exception_handler(RunQuotaExceededError, _run_limit_error_handler)
     app.add_exception_handler(Exception, _unhandled_error_handler)
 
 

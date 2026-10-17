@@ -27,6 +27,9 @@ Transport only: ``agents/governance`` owns every state change.
   record without its final digest as ``not_comparable``). Serialized per run, 5 per run and 20 per viewer per 10
   minutes (429), 30 s wall limit (504). Lead and assistant runs are ``409 not_replayable``. It runs in the
   request thread (a worker job is a follow-up).
+* ``POST /v1/governance/incidents/{incident_id}/resolve`` (D6a): a workspace owner/admin closes an open
+  incident of this workspace with a plain-text resolution (human only, ``Idempotency-Key``). Platform
+  incidents and other tenants' ids read as absent (404); resolving never restores a level or a switch.
 * There is no HTTP route that raises a platform level: promotions go through ``r3_evaluation_service``.
 
 **Rendering contract.** Rationales, reasons and incident evidence strings are plain text.
@@ -51,6 +54,7 @@ from app.agents.governance.policy import (
     accept_policy,
     propose_policy,
 )
+from app.agents.governance.incidents import resolve_incident
 from app.agents.governance.switches import flip_off, re_enable
 from app.agents.harness.replay import ReplayRefused, replay
 from app.api.deps import request_service_token, request_workspace_id, require_workspace_read
@@ -63,10 +67,12 @@ from app.api.v1_conventions import (
     idempotency_binding,
     idempotency_key_header,
 )
-from app.db.models import AgentEvent, AgentRun, AiPolicy, AiSwitch, User
+from app.db.models import AgentEvent, AgentRun, AiIncident, AiPolicy, AiSwitch, User
 from app.db.session import get_db
 from app.domain.governance_console import (
     GovernanceRead,
+    IncidentRead,
+    IncidentResolveRequest,
     PolicyAcceptRequest,
     PolicyChangeRead,
     PolicyProposalRequest,
@@ -86,6 +92,8 @@ router = APIRouter(prefix="/v1", tags=["v1"], responses=error_responses(*COMMON_
 
 RESOURCE_POLICY = "ai_policy"
 RESOURCE_SWITCH = "ai_switch"
+RESOURCE_INCIDENT = "ai_incident"
+_RESOLVE = "POST /v1/governance/incidents/{incident_id}/resolve"
 _PROPOSE = "POST /v1/governance/policy"
 _ACCEPT = "POST /v1/governance/policy/{proposal_id}/accept"
 _SWITCH = "POST /v1/governance/switches"
@@ -286,3 +294,33 @@ def change_governance_switch(payload: SwitchChangeRequest, request: Request, res
                     execute=execute, read=lambda row: console.switch_read(db, row), location="/v1/governance",
                     allowed=lambda db_, u, ws: (console.viewer_for(db_, u, ws).can_switch_off if payload.state == "off"
                                                 else console.viewer_for(db_, u, ws).can_approve))
+
+
+@router.post("/governance/incidents/{incident_id}/resolve", response_model=IncidentRead,
+             responses=_COMMAND_RESPONSES)
+def resolve_governance_incident(incident_id: UUID, payload: IncidentResolveRequest, request: Request,
+                                response: Response, user: User = Depends(require_human_reader),
+                                db: Session = Depends(get_db),
+                                idempotency_key: str | None = Depends(idempotency_key_header)) -> IncidentRead:
+    """Resolve an open incident of this workspace (owner/admin; a person, never a token). The resolution is plain
+    text. Resolving never restores a level or re-enables a switch: those stay separate human acts. An incident
+    already resolved is ``409 incident_not_open``; another workspace's or a platform incident is 404."""
+
+    workspace_id = request_workspace_id(request)
+
+    def execute(bind: Callable[[Any], None]) -> AiIncident:
+        found = db.scalar(select(AiIncident.status).where(  # locked: a concurrent resolve waits, then 409
+            AiIncident.id == incident_id, AiIncident.workspace_id == workspace_id).with_for_update())
+        if found is None:
+            raise V1APIError(404, "not_found", "incident not found")
+        if found != "open":
+            raise V1APIError(409, "incident_not_open", "the incident is already resolved")
+        row = resolve_incident(db, incident_id=incident_id, actor=user, resolution=payload.resolution)
+        bind(row.id)
+        db.commit()
+        return row
+
+    return _command(request, response, db, user, operation=_RESOLVE, resource_kind=RESOURCE_INCIDENT,
+                    model=AiIncident, body=payload.model_dump(mode="json"), path_params={"incident_id": incident_id},
+                    header_key=idempotency_key, execute=execute, read=lambda row: console.incident_read(db, row),
+                    location="/v1/governance", allowed=lambda db_, u, ws: console.viewer_for(db_, u, ws).can_approve)

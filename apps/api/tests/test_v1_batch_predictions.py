@@ -10,6 +10,7 @@ proves the pre-pipeline transforms (here a datetime -> epoch action) are replaye
 from __future__ import annotations
 
 import io
+import re
 from uuid import UUID, uuid4
 
 import numpy as np
@@ -18,9 +19,14 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
-from app.db.models import BatchPrediction, ExecutionRequest, Experiment, MlJob, ModelVersion
+from app.config import get_settings
+from app.db.models import Artifact, BatchPrediction, ExecutionRequest, Experiment, MlJob, ModelVersion
+from app.domain.batch_predictions import REASON_METHODS
+from app.engine.explain import REASON_COLUMNS, display_names
 from app.engine.lab.auto_prepare import build_preprocessor, engineer_features
 from app.engine.serving.batch_scoring import ScoringError, prepare_features, score_frame, scoring_spec
+from app.engine.serving.model_package import read_package, sha256_hex
+from app.services.artifact_service import read_artifact_bytes
 from app.services.ml_job_service import process_next_job
 from app.services.service_token_service import create_service_token
 from test_v1_contract_conventions import _assert_envelope, _headers
@@ -122,6 +128,21 @@ def _download(client, setup, prediction_id: str, headers=None) -> pd.DataFrame: 
     return pd.read_csv(io.BytesIO(response.content), float_precision="round_trip")
 
 
+def _assert_reason_names(out: pd.DataFrame, features: list[str]) -> None:
+    """Every reason names one of the model's input columns (readably, never an encoded column)
+    and says the direction; none shows a number from the row. Numbers are described by the
+    model's training quantiles (its package carries the training reference)."""
+
+    texts = [text for text in out[list(REASON_COLUMNS)].to_numpy().ravel() if isinstance(text, str)]
+    assert texts
+    for text in texts:
+        name = re.match(r"^(.+?): ", text)
+        assert name and name.group(1) in display_names(features), text
+        assert re.search(r", (raised|lowered) the (score|predicted value|predicted class's)", text), text
+        assert "__" not in text and not re.search(r"\d\.\d", text), text
+    assert any(re.search(r": (?:high \(top|low \(bottom|mid-range)", text) for text in texts), texts[:10]
+
+
 def _holdout(experiment: Experiment) -> pd.DataFrame:
     """The run's own (single) holdout scoring, keyed by the raw source row."""
 
@@ -150,11 +171,12 @@ def test_binary_scoring_end_to_end(client, db_session, setup, monkeypatch):  # n
     refused = _root(client, setup, scoring["id"])
     _assert_envelope(refused, 409, "dataset_purpose_scoring")
 
-    # The API only queues: it never unpickles a model.
+    # The API only queues: it never loads a model (package or pickle).
     def no_model_load(*_args, **_kwargs):
         raise AssertionError("the API process must not load a model")
 
     monkeypatch.setattr("joblib.load", no_model_load)
+    monkeypatch.setattr("skops.io.loads", no_model_load)
     key = _key()
     created = _predict(client, setup, mv_id, scoring["id"], key=key)
     assert created.status_code == 202, created.text
@@ -190,6 +212,17 @@ def test_binary_scoring_end_to_end(client, db_session, setup, monkeypatch):  # n
     assert contract["target_column"] == "label" and contract["target_column_ignored"] is True
     assert done["output"]["download_path"] == f"/v1/predictions/{body['id']}/download"
     assert db.get(ExecutionRequest, job.execution_request_id).status == "completed"
+    # P7.1-A: scored from the model package, whose manifest is the version's pinned feature manifest.
+    assert db.get(ExecutionRequest, job.execution_request_id).result_summary["model_format"] == "package_v1"
+    version = client.get(f"/v1/model-versions/{mv_id}", headers=_h(setup)).json()
+    assert version["saved_format"] == "package_v1"
+    refs = {ref["role"]: ref for ref in version["artifacts"]}
+    assert refs["model"]["mime_type"] == "application/zip" and refs["preprocessor"]["artifact_type"] == "preprocessor"
+    package = read_artifact_bytes(db, workspace_id=setup["alpha"].id, artifact_id=UUID(refs["model"]["id"]))
+    manifest = read_package(package).manifest
+    assert sha256_hex(read_package(package).manifest_bytes) == refs["feature_manifest"]["content_digest"]
+    assert manifest["training_run_id"] == str(experiment.id) and manifest["features"] == features
+    assert manifest["cv_metrics"]["mean"] == experiment.result["best_single"]["cv_mean"]
 
     out = _download(client, setup, body["id"])
     assert len(out) == len(frame) and list(out["row_number"]) == list(range(1, len(frame) + 1))
@@ -200,6 +233,15 @@ def test_binary_scoring_end_to_end(client, db_session, setup, monkeypatch):  # n
     mine = out.set_index(out["row_number"] - 1).loc[holdout.index]
     np.testing.assert_allclose(mine["probability"], holdout["probability"].astype(float), rtol=0, atol=1e-9)
     assert (mine["label"].to_numpy() == holdout["y_pred"].astype(int).to_numpy()).all()
+    # P7.7-A: per-row reasons appended after every existing column, in the file's own column
+    # names; the read and the request summary say how they were made (no row values there).
+    assert list(out.columns)[-3:] == list(REASON_COLUMNS)
+    reasons = done["reasons"]
+    assert reasons["available"] is True and reasons["top_k"] == 3 and reasons["rows_explained"] == len(frame)
+    assert reasons["method"] in REASON_METHODS and reasons["additive"] is (reasons["method"] != "occlusion")
+    summary = db.get(ExecutionRequest, job.execution_request_id).result_summary
+    assert summary["reasons_method"] == reasons["method"] and summary["reasons"] == reasons
+    _assert_reason_names(out, features)
 
     # A finished prediction is frozen in PostgreSQL.
     with pytest.raises(DBAPIError, match="immutable"):
@@ -264,6 +306,19 @@ def test_regression_scoring_parquet_and_transient_failure(client, db_session, se
     holdout = _holdout(experiment)
     mine = out.set_index(out["row_number"] - 1).loc[holdout.index]
     np.testing.assert_allclose(mine["prediction"], holdout["y_pred"].astype(float), rtol=0, atol=1e-9)
+    assert done["reasons"]["available"] is True and list(out.columns)[-3:] == list(REASON_COLUMNS)
+    _assert_reason_names(out, experiment.result["best_single"]["features"])
+
+    # P7.7-A: reasons turned off -> the same columns as before and a read that says so.
+    with monkeypatch.context() as off_switch:
+        off_switch.setattr(get_settings(), "batch_reasons_enabled", False)
+        off_id = _predict(client, setup, mv_id, scoring["id"]).json()["id"]
+        assert _work(db, off_id).status == "completed"
+    off = client.get(f"/v1/predictions/{off_id}", headers=_h(setup)).json()
+    assert off["reasons"]["available"] is False and off["reasons"]["method"] is None
+    assert off["reasons"]["unavailable_reason"] == "per-row reasons are turned off on this server"
+    off_out = _download(client, setup, off_id)
+    assert list(off_out.columns) == list(out.columns)[:-3]
 
     # A transient worker error is retried by the queue, then fails with generic text.
     def storage_down(*_args, **_kwargs):
@@ -302,6 +357,152 @@ def test_multiclass_scoring_maps_labels_back(client, db_session, setup):  # noqa
     mine = out.set_index(out["row_number"] - 1).loc[holdout.index]
     assert (mine["label"].to_numpy() == holdout["y_pred"].to_numpy()).all()
     np.testing.assert_allclose(mine[columns].max(axis=1), holdout["probability"].astype(float), atol=1e-9)
+    texts = [text for text in out[list(REASON_COLUMNS)].to_numpy().ravel() if isinstance(text, str)]
+    assert texts and all("the predicted class's" in text for text in texts)
+    # A scoring finished before P7.7-A recorded nothing about reasons: the read says so.
+    request = db.get(ExecutionRequest, db.get(BatchPrediction, UUID(prediction_id)).execution_request_id)
+    request.result_summary = {k: v for k, v in request.result_summary.items() if k not in {"reasons", "reasons_method"}}
+    db.commit()
+    legacy = client.get(f"/v1/predictions/{prediction_id}", headers=_h(setup)).json()["reasons"]
+    assert legacy["available"] is False and legacy["unavailable_reason"].startswith("not recorded")
+
+
+# --- P7.1-A: a model saved before the package format is quarantined ------------------------
+
+
+def test_legacy_pickle_model_is_quarantined(client, db_session, setup, monkeypatch, caplog):  # noqa: F811
+    """A run written the pre-P7.1-A way (a pickle, no package) is stored as a quarantined model:
+    the read says so, the worker loads it only where legacy models are allowed (with a
+    warning and a ``legacy_quarantined`` result), and refuses it otherwise."""
+
+    import joblib
+
+    from app.config import get_settings
+
+    def legacy_writer(pipeline, *_args, **_kwargs):
+        buffer = io.BytesIO()
+        joblib.dump(pipeline, buffer)
+        return buffer.getvalue()
+
+    monkeypatch.setattr("app.engine.experiments.runner._saved_package", legacy_writer)
+    monkeypatch.setattr("app.engine.experiments.runner.PACKAGE_FILENAME", "model.joblib")
+    db = db_session
+    frame = _frame("regression", seed=8)
+    experiment, mv_id = _trained(client, db, setup, frame, "amount")
+    monkeypatch.undo()
+    version = client.get(f"/v1/model-versions/{mv_id}", headers=_h(setup)).json()
+    assert version["saved_format"] == "legacy_quarantined"
+    scoring = _upload(client, setup, frame.drop(columns=["amount"]))
+
+    with caplog.at_level("WARNING", logger="app.services.batch_prediction_service"):
+        allowed = _predict(client, setup, mv_id, scoring["id"]).json()["id"]
+        assert _work(db, allowed).status == "completed"  # tests/dev: legacy models allowed by default
+    assert any("QUARANTINED legacy pickle" in record.getMessage() for record in caplog.records)
+    request = db.get(ExecutionRequest, db.get(BatchPrediction, UUID(allowed)).execution_request_id)
+    assert request.result_summary["model_format"] == "legacy_quarantined"
+
+    monkeypatch.setattr(get_settings(), "legacy_pickle_models_enabled", False)  # as production by default
+    refused = _predict(client, setup, mv_id, scoring["id"]).json()["id"]
+    job = _work(db, refused)
+    assert (job.status, job.attempts) == ("failed", 1)  # deterministic: never retried
+    body = client.get(f"/v1/predictions/{refused}", headers=_h(setup)).json()
+    assert body["status"] == "failed" and body["error_code"] == "unsupported_model"
+    assert body["error_message"] == (
+        "this model version was saved in an older format that this server does not load; "
+        "train it again to score new data"
+    )
+
+
+def test_parquet_decimal_and_date_columns_train_into_a_package_and_score(client, db_session, setup):  # noqa: F811
+    """P7.1-A (review SF-4): Parquet decimal / date32 columns (Python objects in pandas) reach
+    training through the prepared CSV as numbers and dates, so the winner is packaged; a
+    Parquet scoring file with the same columns scores."""
+
+    import datetime
+    import decimal
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    db = db_session
+    frame = _frame("regression", seed=6)
+
+    def parquet(rows: pd.DataFrame) -> bytes:
+        table = pa.table({
+            **{name: rows[name].tolist() for name in ("customer_id", "plan", "code", "visits")},
+            "spend": pa.array([None if pd.isna(v) else decimal.Decimal(f"{v:.2f}") for v in rows["spend"]],
+                              pa.decimal128(8, 2)),
+            "signup_date": pa.array([datetime.date.fromisoformat(v) for v in rows["signup_date"]], pa.date32()),
+            **({"amount": rows["amount"].tolist()} if "amount" in rows else {}),
+        })
+        buffer = io.BytesIO()
+        pq.write_table(table, buffer)
+        return buffer.getvalue()
+
+    def upload(data: bytes, purpose: str) -> dict:
+        response = client.post(
+            "/v1/datasets", headers=_h(setup, setup["alpha_admin"], key=_key(), workspace=setup["alpha"]),
+            data={"project_id": str(setup["alpha_project"].id), "purpose": purpose},
+            files={"file": ("rows.parquet", data, "application/vnd.apache.parquet")},
+        )
+        assert response.status_code == 201, response.text
+        return response.json()
+
+    dataset = upload(parquet(frame), "training")
+    root = _root(client, setup, dataset["id"], target_column="amount")
+    assert root.status_code == 202, root.text
+    job = db.scalar(select(MlJob).where(MlJob.pipeline_run_id == UUID(root.json()["id"])))
+    assert process_next_job(db, job_id=job.id, claimed_by="p71-test").status == "completed"
+    db.expire_all()
+    mv_id = db.scalar(select(ModelVersion.id).where(ModelVersion.pipeline_run_id == UUID(root.json()["id"])))
+    assert client.get(f"/v1/model-versions/{mv_id}", headers=_h(setup)).json()["saved_format"] == "package_v1"
+    scoring = upload(parquet(frame.drop(columns=["amount"])), "scoring")
+    prediction_id = _predict(client, setup, mv_id, scoring["id"]).json()["id"]
+    assert _work(db, prediction_id).status == "completed"
+    done = client.get(f"/v1/predictions/{prediction_id}", headers=_h(setup)).json()
+    assert done["status"] == "completed" and done["rows_out"] == len(frame), done
+
+
+def test_a_packaging_failure_fails_the_run_without_spending_the_final_test(client, db_session, setup, monkeypatch):  # noqa: F811
+    """P7.1-A (ML review): the package is built between the final fit and the final test, so a
+    run whose winner cannot be saved fails with a plain reason and leaves no selection decision,
+    no final evaluation and no extra look on its split plan."""
+
+    from app.db.models import ModelEvaluation, ModelSelectionDecision
+    from app.engine.serving.model_package import PACKAGE_NOT_SAVED, ModelPackageError
+    from app.services.experiment_verdict_service import plan_looks
+
+    def no_safe_format(*_args, **_kwargs):
+        raise ModelPackageError("internal detail at /tmp/run")
+
+    monkeypatch.setattr("app.engine.experiments.runner.build_package", no_safe_format)
+    db = db_session
+    dataset = _upload(client, setup, _frame("binary", seed=12), purpose="training")
+    root = _root(client, setup, dataset["id"], target_column="label")
+    assert root.status_code == 202, root.text
+    experiment_id = UUID(root.json()["id"])
+    job = db.scalar(select(MlJob).where(MlJob.pipeline_run_id == experiment_id))
+    job.max_attempts = 1  # (the queue retries training failures; one attempt is enough here)
+    db.commit()
+    assert process_next_job(db, job_id=job.id, claimed_by="p71-test").status == "failed"
+    db.expire_all()
+    experiment = db.get(Experiment, experiment_id)
+    assert experiment.status == "FAILED"
+    read = client.get(f"/v1/experiments/{experiment_id}", headers=_h(setup)).json()
+    assert read["failure_reason"] == PACKAGE_NOT_SAVED  # the allowlisted plain sentence, no internals
+    for model in (ModelSelectionDecision, ModelEvaluation):
+        column = model.pipeline_run_id if model is ModelSelectionDecision else model.candidate_id
+        query = select(model).where(model.workspace_id == experiment.workspace_id)
+        if model is ModelSelectionDecision:
+            query = query.where(column == experiment_id)
+        else:
+            from app.db.models import ExperimentCandidate
+
+            query = query.join(ExperimentCandidate, ExperimentCandidate.id == column).where(
+                ExperimentCandidate.experiment_id == experiment_id)
+        assert db.scalars(query).first() is None
+    looks, _comparisons = plan_looks(db, experiment.workspace_id, experiment.split_plan_id)
+    assert experiment_id not in looks  # no look spent on the plan
 
 
 # --- upload purpose and fail-closed replay (no training) ----------------------------------
@@ -433,3 +634,72 @@ def test_dates_parse_with_the_training_format_and_fail_closed_otherwise():
     assert caught.value.code == "unsupported_transform"
     iso, _facts = prepare_features(pd.DataFrame({"event_date": ["2024-04-03", None]}), legacy_spec)
     assert iso["event_date"].iloc[0] == pd.Timestamp("2024-04-03").timestamp()
+
+
+# --- P7.2-A: scoring with the model in use carries its release --------------------------------
+
+
+def test_scoring_carries_the_release_of_the_model_in_use_and_rechecks_it(client, db_session, setup):  # noqa: F811
+    from app.db.models import ModelRelease
+
+    db = db_session
+    frame = _frame("binary", n=200)
+    experiment, mv_id = _trained(client, db, setup, frame, "label")
+    scoring = _upload(client, setup, frame.drop(columns=["label"]).head(40))
+
+    # The first run's rule put it in use, but no person approved it: no release is claimed.
+    unapproved = _predict(client, setup, mv_id, scoring["id"])
+    assert unapproved.status_code == 202, unapproved.text
+    assert unapproved.json()["model_release_id"] is None and unapproved.json()["release"] is None
+
+    # A person approves the model in use (the existing "Put this model in use" route).
+    project_id = experiment.project_id
+    refs = {r["ref_kind"]: r for r in client.get(f"/v1/projects/{project_id}/refs", headers=_h(setup)).json()["items"]}
+    model = db.get(ModelVersion, mv_id)
+    companions = [{"ref_kind": "feature_recipe", "target_id": str(model.feature_set_version_id),
+                   "expected_version": refs["feature_recipe"]["version"]}] if "feature_recipe" in refs else []
+    approve = client.post(
+        f"/v1/projects/{project_id}/refs/champion_model",
+        json={"target_id": str(mv_id), "rationale": "approved for scoring", "companion_moves": companions,
+              "evidence_refs": [{"kind": "candidate", "id": str(model.selected_candidate_id),
+                                 "scope": "final_holdout"}]},
+        headers=_h(setup, key=_key(), **{"If-Match": refs["champion_model"]["etag"]}),
+    )
+    assert approve.status_code == 200, approve.text
+    release = db.scalar(select(ModelRelease).where(ModelRelease.model_version_id == mv_id))
+    assert release.saved_format == "package_v1"
+
+    approved = _predict(client, setup, mv_id, scoring["id"])
+    assert approved.status_code == 202, approved.text
+    assert approved.json()["model_release_id"] == str(release.id) and approved.json()["release"]["is_current"]
+    assert _work(db, approved.json()["id"]).status == "completed"
+    read = client.get(f"/v1/predictions/{approved.json()['id']}", headers=_h(setup)).json()
+    assert read["status"] == "completed" and read["release"]["id"] == str(release.id)
+
+    # The model artifact's recorded package format (what the loader branches on) no longer matches
+    # the approved saved format: refused before anything is loaded or scored.
+    artifact_id = model.model_artifact_id
+    package_format = db.get(Artifact, artifact_id).extra_metadata["package_format"]
+    queued = _predict(client, setup, mv_id, scoring["id"]).json()
+    db.execute(text("UPDATE artifacts SET metadata = metadata - 'package_format' WHERE id = :id"), {"id": artifact_id})
+    db.commit()
+    _work(db, queued["id"])
+    db.expire_all()
+    flipped = db.get(BatchPrediction, UUID(queued["id"]))
+    assert (flipped.status, flipped.error_code, flipped.output_artifact_id, flipped.rows_out) == (
+        "failed", "release_mismatch", None, None)
+    db.execute(text("UPDATE artifacts SET metadata = jsonb_set(metadata, '{package_format}', to_jsonb(CAST(:f AS text))) "
+                    "WHERE id = :id"), {"f": package_format, "id": artifact_id})
+    db.commit()
+
+    # TOCTOU: the release no longer pins this package (simulated by bypassing the append-only
+    # trigger): the worker refuses with a clear code instead of scoring under the approval.
+    queued = _predict(client, setup, mv_id, scoring["id"]).json()
+    db.execute(text("ALTER TABLE model_releases DISABLE TRIGGER model_releases_append_only"))
+    db.execute(text("UPDATE model_releases SET package_manifest_digest = :d WHERE id = :id"),
+               {"d": "0" * 64, "id": release.id})
+    db.execute(text("ALTER TABLE model_releases ENABLE TRIGGER model_releases_append_only"))
+    db.commit()
+    _work(db, queued["id"])
+    failed = db.get(BatchPrediction, UUID(queued["id"]))
+    assert (failed.status, failed.error_code, failed.model_release_id) == ("failed", "release_mismatch", release.id)

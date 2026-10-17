@@ -3,9 +3,9 @@
   "case": "default",
   "exchanges": [
     {
-      "input_digest": "60c6865d0b65543825126e2f89f5603a4b493b1d11df087895eddbd741870679",
+      "input_digest": "77aacbb61cead03fefe4418bdfa9e1565e5c2612d79e3a78629882de72e7d264",
       "instructions_digest": "f7f8fc307580447e911ae727e88c48c29cbca511714df9865841f2e7bcf27b3a",
-      "model": "gpt-6-luna",
+      "model": "claude-sonnet-5-5",
       "output": {
         "confidence": 0.6,
         "leakage_suspects": [],

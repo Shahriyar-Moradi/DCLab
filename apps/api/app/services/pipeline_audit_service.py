@@ -2,7 +2,7 @@
 
 The advisory auditor is a gateway caller (ADR 0009 §4; ledger purpose ``pipeline_audit_<mode>``,
 registry key ``experiment.review`` via ``LEGACY_PURPOSE_KEYS``): the ``verifier`` role's model
-(``gpt-6-luna`` routine, ``gpt-6.1-sol`` deep), CV-scoped, holdout-free evidence
+(``claude-sonnet-5-5`` for routine and deep since 2026-10-16), CV-scoped, holdout-free evidence
 (``verification_evidence``) tagged with the run's dataset, and one ``llm_invocations``
 row written by the gateway with this module's legacy wording. With ``AI_ENABLED`` off
 (its own flag was retired in P6.9-A; kill switches act per call) nothing is called and
@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.agents import legacy
 from app.agents.governance.decision_points import LEGACY_PURPOSE_KEYS
 from app.agents.gateway.contract import LedgerNote, Refusal
+from app.agents.gateway.router import provider_for
 from app.agents.governance.platform_default import PLATFORM_DEFAULT
 from app.config import Settings, get_settings
 from app.db.models import ClientLabUpload, Experiment, MlRunVerification
@@ -43,7 +44,8 @@ AUDITOR_PROMPT_VERSION = 2  # app/agents/prompts/pipeline_auditor/v2.md: no hold
 PROMPT_VERSION = f"pipeline-auditor-v{AUDITOR_PROMPT_VERSION}"
 OUTPUT_SCHEMA_VERSION = 1
 # The verifier role's default model (routine) and the deep audit's model from its allowlist.
-VERIFIER_MODELS = {"routine": PLATFORM_DEFAULT.models.roles.verifier.default, "deep": "gpt-6.1-sol"}
+VERIFIER_MODELS = {"routine": PLATFORM_DEFAULT.models.roles.verifier.default,
+                   "deep": PLATFORM_DEFAULT.models.roles.verifier.default}  # LEGACY deep: "gpt-6.1-sol"
 _METADATA_SECTIONS = {"package_schema_version", "data_handling_notice", "allowed_evidence_refs", "profile_summary"}
 _CV_SECTIONS = {"candidate_summary", "selection", "deterministic_verification"}
 
@@ -240,6 +242,7 @@ def request_pipeline_verification(
     config = settings or get_settings()
     audit_mode = "deep" if deep else "routine"
     model = VERIFIER_MODELS[audit_mode]
+    provider = provider_for(model) or "anthropic"
     # P6.9-A: the auditor's own flag is retired; AI_ENABLED gates it, kill switches act per call.
     enabled = bool(getattr(config, "ai_enabled", False))
     started_at = datetime.now(UTC)
@@ -258,7 +261,7 @@ def request_pipeline_verification(
             reason="LLM used: NO — advisory provider was disabled or unavailable.",
             status="not_used",
             validator_verdict="not_run",
-            provider="openai",
+            provider=provider,
             model=model,
             started_at=started_at,
         )
@@ -276,7 +279,7 @@ def request_pipeline_verification(
         deterministic_status=str(deterministic.get("overall_status") or "NOT_VERIFIABLE"),
         deterministic_checks=list(deterministic.get("checks") or []),
         deterministic_schema_version=int(deterministic.get("schema_version") or 1),
-        llm_provider="openai",
+        llm_provider=provider,
         llm_model=model,
         llm_status="pending",
         prompt_version=PROMPT_VERSION,
@@ -293,7 +296,7 @@ def request_pipeline_verification(
         report_ = dict(llm_report or {})
         return {
             "audit_mode": audit_mode,
-            "provider": "openai",
+            "provider": attempt.llm_provider,
             "model": attempt.llm_model,
             "evidence_digest": package.digest,
             "redaction_summary": package.redaction_summary,
@@ -355,7 +358,7 @@ def request_pipeline_verification(
                     "llm_invocation_id": str(attempt.llm_invocation_id) if attempt.llm_invocation_id else None,
                     "verification_id": str(attempt.id),
                     "audit_mode": audit_mode,
-                    "provider": "openai",
+                    "provider": attempt.llm_provider,
                     "model": attempt.llm_model,
                     "evidence_digest": package.digest,
                     "deterministic_status": attempt.deterministic_status,

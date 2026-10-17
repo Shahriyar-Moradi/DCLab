@@ -12,11 +12,12 @@ from app.db.models import (
     DatasetAsset,
     Experiment,
     MlJob,
+    UserRole,
     Visualization,
 )
 from app.domain.execution_requests import OPERATION_MODEL_BUILD, REQUEST_ACCEPTED, SOURCE_API
 from app.services.artifact_service import store_artifact
-from app.services.auth_service import create_access_token
+from app.services.auth_service import create_access_token, create_user
 from app.services.lab_service import seed_dogfood
 from app.services.lineage_service import create_pipeline_run, create_workflow_run
 from app.services.observability_service import append_ml_run_event
@@ -129,20 +130,28 @@ def test_v1_projects_and_datasets_are_workspace_scoped(client, db_session, tmp_p
     assert foreign_dataset.status_code == 404
 
 
-def test_v1_execution_request_returns_id_and_status_without_enqueueing(
-    auth_client, db_session, client_user
-):
+def test_v1_execution_request_returns_id_and_status_without_enqueueing(client, db_session):
+    engineer = create_user(
+        db_session,
+        email="engineer@client.test",
+        password="engineer-pass-123",
+        role=UserRole.ML_ENGINEER,
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    db_session.commit()
+    headers = _auth_headers(engineer, DEFAULT_WORKSPACE_ID)
     project = create_project(
         db_session,
-        actor=client_user,
+        actor=engineer,
         workspace_id=DEFAULT_WORKSPACE_ID,
         name="V1 project",
         slug=f"v1-{uuid4().hex[:8]}",
     )
     db_session.commit()
     before_jobs = db_session.scalar(select(func.count(MlJob.id))) or 0
-    created = auth_client.post(
+    created = client.post(
         "/v1/execution-requests",
+        headers=headers,
         json={
             "operation": OPERATION_MODEL_BUILD,
             "project_id": str(project.id),
@@ -161,8 +170,9 @@ def test_v1_execution_request_returns_id_and_status_without_enqueueing(
     after_jobs = db_session.scalar(select(func.count(MlJob.id))) or 0
     assert after_jobs == before_jobs
 
-    replay = auth_client.post(
+    replay = client.post(
         "/v1/execution-requests",
+        headers=headers,
         json={
             "operation": OPERATION_MODEL_BUILD,
             "project_id": str(project.id),
@@ -175,8 +185,9 @@ def test_v1_execution_request_returns_id_and_status_without_enqueueing(
     assert replay.headers["Idempotent-Replayed"] == "true"
 
     # P3.1-A digest binding: the same key with a different request is refused.
-    conflict = auth_client.post(
+    conflict = client.post(
         "/v1/execution-requests",
+        headers=headers,
         json={
             "operation": OPERATION_MODEL_BUILD,
             "idempotency_key": "v1-once",
@@ -186,7 +197,7 @@ def test_v1_execution_request_returns_id_and_status_without_enqueueing(
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "idempotency_key_conflict"
 
-    fetched = auth_client.get(f"/v1/execution-requests/{body['id']}")
+    fetched = client.get(f"/v1/execution-requests/{body['id']}", headers=headers)
     assert fetched.status_code == 200
     assert fetched.json()["id"] == body["id"]
     assert fetched.json()["status"] == REQUEST_ACCEPTED

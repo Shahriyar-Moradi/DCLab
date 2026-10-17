@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildFlow, flowRunStatuses, projectModelId, stepForPath, type FlowInput } from "./studio-flow.ts";
+import { buildFlow, flowRunStatuses, nextStepFor, NEXT_STEP_ORDER, projectModelId, stepForPath, stepScreenForPath, type FlowInput } from "./studio-flow.ts";
 
 const P = "11111111-1111-4111-8111-111111111111";
 const SPLIT = "22222222-2222-4222-8222-222222222222";
@@ -32,14 +32,17 @@ test("steps whose page needs an id link only when the project has one", () => {
   assert.equal(href.goal, `/projects/${P}/splits/${SPLIT}`);
   assert.equal(href.predictions, `/projects/${P}/predictions`);
   assert.equal(href.data, `/projects/${P}/data`);
+  // V7 UI-C: without a test design Goal opens the project-level Goal page (the goal from the problem spec).
   const none = buildFlow({ ...base, targets: { split_plan: "not-a-uuid" } });
-  assert.equal(none.find((s) => s.id === "goal")?.href, null);
+  assert.equal(none.find((s) => s.id === "goal")?.href, `/projects/${P}/goal`);
   assert.equal(none.find((s) => s.id === "predictions")?.href, null);
 });
 
 test("routes map to steps; History and unknown paths belong to none", () => {
   assert.equal(stepForPath(`/projects/${P}/pipeline/abc`, P), "experiments");
   assert.equal(stepForPath(`/projects/${P}/splits/${SPLIT}`, P), "goal");
+  assert.equal(stepForPath(`/projects/${P}/goal`, P), "goal");
+  assert.equal(stepScreenForPath(`/projects/${P}/goal`, P), "goal");
   assert.equal(stepForPath(`/projects/${P}/models/${MODEL}`, P), "models");
   assert.equal(stepForPath(`/projects/${P}/predictions`, P), "predictions");
   assert.equal(stepForPath(`/projects/${P}/decisions`, P), null);
@@ -70,4 +73,31 @@ test("Predictions opens as soon as the project has any model; the model in use i
   assert.equal(projectModelId([{ kind: "experiment", id: A }]), null);
   assert.equal(projectModelId([n("not-a-uuid")]), null);
   assert.equal(projectModelId(undefined), null);
+});
+
+const ALL_STEPS = new Set(["data", "goal", "experiments", "improve", "models", "predictions", "monitoring", "history"]);
+const next = (path: string, targets: FlowInput["targets"] = { split_plan: SPLIT, project_model: MODEL }, available: ReadonlySet<string> = ALL_STEPS) =>
+  nextStepFor({ projectId: P, pathname: `/projects/${P}/${path}`, available, targets });
+
+test("Next step follows the flow order data -> goal -> experiments -> improve -> model -> predictions -> monitoring -> history", () => {
+  assert.deepEqual(NEXT_STEP_ORDER.map((s) => s.id), ["data", "goal", "experiments", "improve", "models", "predictions", "monitoring", "history"]);
+  const chain = [["data", `/projects/${P}/splits/${SPLIT}`], [`splits/${SPLIT}`, `/projects/${P}/experiments`], ["experiments", `/projects/${P}/improve`],
+    ["improve", `/projects/${P}/models`], ["models", `/projects/${P}/predictions`], ["predictions", `/projects/${P}/monitoring`], ["monitoring", `/projects/${P}/decisions`]];
+  for (const [from, to] of chain) assert.equal(next(from)?.href, to, from);
+});
+
+test("Next step is hidden on the last step and outside the step screens", () => {
+  assert.equal(next("decisions"), null);
+  for (const path of [`experiments/${SPLIT}`, "experiments/compare", `models/${MODEL}`, `data/${SPLIT}`, "graph", `pipeline/${SPLIT}`, "lab", "__proto__"]) assert.equal(next(path), null, path);
+  assert.equal(nextStepFor({ projectId: "nope", pathname: "/projects/nope/data", available: ALL_STEPS, targets: {} }), null);
+  assert.equal(stepScreenForPath(`/projects/${P}/splits/not-a-uuid`, P), null);
+  assert.equal(stepScreenForPath(`/projects/${P}/data/`, P), "data");
+});
+
+test("Next step skips a step whose page does not exist yet (no test design, no model, not built)", () => {
+  assert.equal(next("data", { split_plan: null })?.href, `/projects/${P}/goal`);
+  assert.equal(next("goal", { split_plan: null })?.id, "experiments");
+  assert.equal(next("models", { split_plan: SPLIT, project_model: null })?.id, "monitoring");
+  assert.equal(next("experiments", undefined, new Set(["data", "experiments", "models", "history"]))?.id, "models");
+  assert.equal(next("monitoring", undefined, new Set(["monitoring"])), null);
 });

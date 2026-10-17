@@ -1,0 +1,18 @@
+<!-- title: Projects · DCLab demo -->
+<!-- crumbs: Northwind Telecom › <b>Projects</b> -->
+<!-- status: ok | Working today -->
+<div class="page-head">
+  <div><h1>Projects</h1><p class="sub">Every project in this workspace. Each one goes from a customer file to a model you can trust.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-wizard>New project</button></div>
+</div>
+
+<div class="tbl card"><table>
+  <thead><tr><th>Project</th><th>Goal</th><th>Where it is</th><th class="r">CV score of the model in use</th><th>Model in use</th><th>Last run</th></tr></thead>
+  <tbody>
+    <tr><td><a href="data.html"><b>Northwind churn</b></a></td><td>Catch ≥ 80% of churners</td><td><span class="pill warn">2 decisions waiting</span></td><td class="r">PR-AUC 0.70</td><td>Churn model v1 · LightGBM</td><td>Run 5 · finished Wed</td></tr>
+    <tr><td><b>Late payment risk</b></td><td>Best recall while precision ≥ 0.60</td><td><span class="pill warn">1 decision waiting</span></td><td class="r">PR-AUC 0.48</td><td>Late payment model v1 · random forest</td><td>Loop Try 2 · finished Thu</td></tr>
+    <tr><td><b>Plan upgrade</b></td><td>Recall ≥ 0.60</td><td><span class="pill run">Training</span></td><td class="r">—</td><td>None yet</td><td>Run 1 · fold 3 of 5</td></tr>
+  </tbody>
+</table></div>
+<p class="small muted">The score column is the cross-validation score of the model in use, not the best run’s.</p>
+<div class="card"><h3>Starting a project</h3><p class="small muted">New project is a three-step dialog: a name and a file; what to predict and the rule for success; then the test design the rules suggest, stated in words. Training starts only after you confirm, and your confirmation is saved as “Suggested by the rules · Confirmed by you”. The longer four-step page is still linked from the dialog. Everything is a form; no AI is needed.</p></div>

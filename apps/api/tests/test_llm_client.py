@@ -89,7 +89,7 @@ def test_happy_path_returns_the_validated_decision_through_the_gateway(run, db_s
     # legacy rows keep a narrowed summary, so the gateway cache is not used for them
     assert len(ai.fake.calls) == 2
     call = ai.fake.calls[0]
-    assert (call.model, call.temperature, call.output_schema) == ("gpt-6-luna", 0.0, MissingValueDecisionV3)
+    assert (call.model, call.temperature, call.output_schema) == ("claude-sonnet-5-5", 0.0, MissingValueDecisionV3)
     assert call.instructions.startswith(SYSTEM_PROMPT.rstrip())
     fields = sent(call)
     assert fields["column"] == {"untrusted_text": "TotalCharges"}
@@ -98,7 +98,7 @@ def test_happy_path_returns_the_validated_decision_through_the_gateway(run, db_s
     assert {"sample_rows", "cooccurring_values"}.isdisjoint(fields)
     assert "other_value" not in json.dumps(fields) and SENTINEL not in call.input_json
     row = _rows(db_session)[0]
-    assert (row.status, row.llm_used, row.provider, row.model) == ("completed", True, "fake", "gpt-6-luna")
+    assert (row.status, row.llm_used, row.provider, row.model) == ("completed", True, "fake", "claude-sonnet-5-5")
     assert (row.agent_role, row.decision_point_key, row.prompt_version) == (
         "legacy_decision", "column.missing_value_action", "missing_value:v3")
     assert (row.data_class, row.outcome_scope, row.experiment_id) == ("aggregates", "none", run.experiment_id)

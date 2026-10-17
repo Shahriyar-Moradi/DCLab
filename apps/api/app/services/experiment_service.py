@@ -15,14 +15,15 @@ at its next stage or candidate checkpoint.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, case, func, or_, select, tuple_
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, case, exists, func, or_, select, tuple_
+from sqlalchemy.orm import Session, aliased
 
 from app.config import get_settings, publication_enforced
 from app.db.models import (
@@ -35,6 +36,7 @@ from app.db.models import (
     IngestionRun,
     LlmInvocation,
     MlJob,
+    MlJobAttempt,
     ModelSelectionDecision,
     ModelVersion,
     ProblemSpec,
@@ -60,11 +62,20 @@ from app.domain.experiment_resources import (
     ExperimentListItem,
     ExperimentMetrics,
     ExperimentPage,
+    ExperimentAttemptRead,
     ExperimentDetailRead,
     ExperimentWinner,
+    FeatureContractColumnRead,
+    FeatureContractRead,
+    MODEL_VERSION_PAGE_DEFAULT,
+    MODEL_VERSION_PAGE_MAX,
+    ModelPackageCheckRead,
+    ModelPackageVerificationRead,
     ModelVersionArtifactRef,
     ModelVersionLineage,
     ModelVersionResourceRead,
+    ProjectModelVersionItem,
+    ProjectModelVersionPage,
 )
 from app.domain.findings import ExperimentFindingsRead, findings_read
 from app.domain.model_card import (
@@ -72,6 +83,7 @@ from app.domain.model_card import (
     THRESHOLD_CAVEAT,
     TOP_DRIVERS,
     ModelCardBaseline,
+    ModelCardConfusion,
     ModelCardConstraint,
     ModelCardCrossValidation,
     ModelCardData,
@@ -93,8 +105,11 @@ from app.domain.model_card import (
     render_markdown,
 )
 from app.domain.ml_jobs import JOB_CANCELLED, JOB_COMPLETED, JOB_FAILED, JOB_QUEUED, JOB_RUNNING
+from app.domain.pipeline_run_branch import EVIDENCE_MODE_SEALED, SEALED_FINAL_TEST_NOTE
 from app.engine.evaluation.metrics import LOWER_IS_BETTER
 from app.engine.modeling.objective import DEFAULT_THRESHOLD
+from app.engine.serving.model_package import saved_format
+from app.services.model_release_service import release_for_version
 from app.engine.lab.open_ingest import _from_columns as preview_from_columns
 from app.services.audience_projection import public_diagnostic, public_failure
 from app.services.authorization_service import can_perform_ml_write, can_read_workspace
@@ -393,7 +408,84 @@ def _metrics(db: Session, experiment: Experiment) -> ExperimentMetrics | None:
     )
 
 
-def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_id: UUID) -> ExperimentDetailRead:
+def _attempts(db: Session, workspace_id: UUID, job_id: UUID) -> list[ExperimentAttemptRead]:
+    """D2a: the job's attempts (closed codes only), oldest first."""
+
+    rows = db.scalars(
+        select(MlJobAttempt)
+        .where(MlJobAttempt.workspace_id == workspace_id, MlJobAttempt.ml_job_id == job_id)
+        .order_by(MlJobAttempt.attempt.asc())
+    ).all()
+    return [
+        ExperimentAttemptRead(
+            attempt=row.attempt,
+            started_at=row.started_at,
+            ended_at=row.ended_at,
+            duration_seconds=(
+                round(max(0.0, (row.ended_at - row.started_at).total_seconds()), 3) if row.ended_at is not None else None
+            ),
+            outcome=row.outcome,
+            failure_class=row.failure_class,
+        )
+        for row in rows
+    ]
+
+
+_RULE_STARTS = frozenset({"system", "schedule"})
+
+
+def started_by(db: Session, workspace_id: UUID, experiments: list[Experiment],
+               viewer_id: UUID | None) -> dict[UUID, str | None]:
+    """D8a ``started_by`` of each run from existing records, in at most five workspace-scoped
+    statements: a service token's execution request or improve loop (``connected_tool``) > an
+    accepted AI proposal whose command started it (``assistant``) > an automatic retrain or a
+    system / scheduled workflow run (``rules``) > the person behind the improve loop, workflow run
+    or retrain (``you`` for ``viewer_id``, else ``person``). ``viewer_id`` is None for tokens/agents."""
+
+    from app.db.models import AgentProposal, ImproveIteration, ImproveRun, ProjectDecisionRecord, RetrainRequest
+
+    ids = [row.id for row in experiments]
+    if not ids:
+        return {}
+    tokens = set(db.scalars(select(ExecutionRequest.pipeline_run_id).where(
+        ExecutionRequest.workspace_id == workspace_id, ExecutionRequest.pipeline_run_id.in_(ids),
+        ExecutionRequest.initiated_by_service_token_id.is_not(None))))
+    loops = {exp: (token, user) for exp, token, user in db.execute(
+        select(ImproveIteration.experiment_id, ImproveRun.created_by_service_token_id, ImproveRun.created_by_user_id)
+        .join(ImproveRun, (ImproveRun.workspace_id == ImproveIteration.workspace_id)
+              & (ImproveRun.id == ImproveIteration.improve_run_id))
+        .where(ImproveIteration.workspace_id == workspace_id, ImproveIteration.experiment_id.in_(ids)))}
+    pdr, executed = ProjectDecisionRecord, ProjectDecisionRecord.details["executed"]
+    ai = set(db.scalars(select(executed["id"].astext).join(
+        AgentProposal, (AgentProposal.workspace_id == pdr.workspace_id) & (AgentProposal.decision_record_id == pdr.id))
+        .where(pdr.workspace_id == workspace_id, pdr.decision_type == "proposal_accepted",
+               executed["kind"].astext == "experiment", executed["id"].astext.in_([str(i) for i in ids]))))
+    retrains = {exp: (origin, user) for exp, origin, user in db.execute(
+        select(RetrainRequest.experiment_id, RetrainRequest.origin, RetrainRequest.requested_by_user_id)
+        .where(RetrainRequest.workspace_id == workspace_id, RetrainRequest.experiment_id.in_(ids)))}
+    run_ids = [row.workflow_run_id for row in experiments if row.workflow_run_id is not None]
+    runs = {run: (kind, user) for run, kind, user in db.execute(
+        select(WorkflowRun.id, WorkflowRun.initiated_by_type, WorkflowRun.requested_by)
+        .where(WorkflowRun.workspace_id == workspace_id, WorkflowRun.id.in_(run_ids)))} if run_ids else {}
+    out: dict[UUID, str | None] = {}
+    for row in experiments:
+        loop, retrain = loops.get(row.id), retrains.get(row.id)
+        kind, user = runs.get(row.workflow_run_id, (None, None))
+        if row.id in tokens or (loop is not None and loop[0] is not None) or kind == "agent":
+            out[row.id] = "connected_tool"
+        elif str(row.id) in ai:
+            out[row.id] = "assistant"
+        elif (retrain is not None and retrain[0] == "auto") or kind in _RULE_STARTS:
+            out[row.id] = "rules"
+        else:
+            person = loop[1] if loop is not None else user or (retrain[1] if retrain is not None else None)
+            you = viewer_id is not None and person == viewer_id
+            out[row.id] = None if person is None else "you" if you else "person"
+    return out
+
+
+def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_id: UUID,
+                    agent: bool = False) -> ExperimentDetailRead:
     _require_read(db, actor, workspace_id)
     experiment, status = _load(db, workspace_id, experiment_id)
     workflow_run = (
@@ -407,12 +499,13 @@ def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_
         .order_by(ExecutionRequest.created_at.desc())
         .limit(1)
     )
-    cancel_requested_at = db.scalar(
-        select(MlJob.cancel_requested_at)
+    job = db.execute(
+        select(MlJob.id, MlJob.cancel_requested_at)
         .where(MlJob.workspace_id == workspace_id, MlJob.pipeline_run_id == experiment.id)
         .order_by(MlJob.created_at.desc())
         .limit(1)
-    )
+    ).first()
+    cancel_requested_at = job.cancel_requested_at if job is not None else None
     task = dict((experiment.result or {}).get("task") or {})
     completed = status == "completed"
     diff = None
@@ -434,6 +527,9 @@ def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_
             256,
         ),
         intent=_intent(experiment),
+        started_by=started_by(db, workspace_id, [experiment], None if agent else actor.id)[experiment.id],
+        evidence_mode=experiment.evidence_mode,
+        evidence_note=SEALED_FINAL_TEST_NOTE if experiment.evidence_mode == EVIDENCE_MODE_SEALED else None,
         lineage=ExperimentLineage(
             parent_experiment_id=experiment.parent_pipeline_run_id,
             split_plan_id=experiment.split_plan_id,
@@ -446,6 +542,7 @@ def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_
         change_set=public_diagnostic(experiment.change_set) if experiment.change_set is not None else None,
         metrics=_metrics(db, experiment) if completed else None,
         diff_vs_parent=diff,
+        attempts=_attempts(db, workspace_id, job.id) if job is not None else [],
     )
 
 
@@ -480,8 +577,10 @@ def list_experiments(
     has_change_set: bool | None = None,
     cursor: str | None = None,
     limit: int = 50,
+    agent: bool = False,
 ) -> ExperimentPage:
-    """Experiments of the workspace, newest first; the cursor is bound to the filters."""
+    """Experiments of the workspace, newest first; the cursor is bound to the filters. ``agent``:
+    a service token or agent reads (``started_by`` never says ``you``)."""
 
     _require_read(db, actor, workspace_id)
     limit = max(1, min(int(limit), EXPERIMENT_PAGE_MAX))
@@ -526,6 +625,7 @@ def list_experiments(
     if len(rows) > limit:
         last = page[-1][0]
         next_cursor = sign_cursor(scope, [last.created_at.isoformat(), str(last.id)])
+    starters = started_by(db, workspace_id, [row for row, _state in page], None if agent else actor.id)
     return ExperimentPage(
         items=[
             ExperimentListItem(
@@ -539,7 +639,9 @@ def list_experiments(
                 split_plan_id=row.split_plan_id,
                 source_dataset_id=row.source_dataset_id,
                 has_change_set=row.change_set is not None,
+                evidence_mode=row.evidence_mode,
                 intent=_intent(row),
+                started_by=starters[row.id],
             )
             for row, state in page
         ],
@@ -621,10 +723,11 @@ def model_version_read(
     )
     artifact_ids = {getattr(row, column): role for role, column in _MODEL_ARTIFACT_ROLES if getattr(row, column)}
     artifacts = (
-        db.scalars(select(Artifact).where(Artifact.workspace_id == workspace_id, Artifact.id.in_(artifact_ids)))
+        list(db.scalars(select(Artifact).where(Artifact.workspace_id == workspace_id, Artifact.id.in_(artifact_ids))))
         if artifact_ids
         else []
     )
+    model_artifact = next((item for item in artifacts if artifact_ids[item.id] == "model"), None)
     return ModelVersionResourceRead(
         id=row.id,
         workspace_id=row.workspace_id,
@@ -661,6 +764,243 @@ def model_version_read(
             ),
             key=lambda ref: ref.role,
         ),
+        saved_format=saved_format(model_artifact.extra_metadata) if model_artifact is not None else None,
+        release=release_for_version(db, workspace_id=workspace_id, model_version=row) if ref_kinds else None,
+        package_verification=package_verification_read(model_artifact),
+    )
+
+
+_PACKAGE_NOTE = (
+    "Checked once by the worker when it saved the model, before the final test and on training rows only; "
+    "every scoring checks the file's digests again before using it."
+)
+
+
+def package_verification_read(model_artifact: Artifact | None) -> ModelPackageVerificationRead | None:
+    """V7 B4: the build-time checks the worker stored with the model artifact (no model is loaded here)."""
+
+    from app.engine.serving.model_package import VERIFICATION_FORMAT
+
+    if model_artifact is None:
+        return None
+    if saved_format(model_artifact.extra_metadata) != "package_v1":
+        return ModelPackageVerificationRead(
+            status="not_applicable", note="This model is not saved as a model package, so the file checks do not apply.")
+    stored = (model_artifact.extra_metadata or {}).get("verification")
+    parity = stored.get("parity") if isinstance(stored, dict) else None
+    if not isinstance(stored, dict) or stored.get("format") != VERIFICATION_FORMAT or not isinstance(parity, dict):
+        return ModelPackageVerificationRead(
+            status="not_recorded",
+            note="This model was saved before the file checks were recorded; every scoring still checks its digests.")
+    rows = int(parity["rows"]) if isinstance(parity.get("rows"), int) else None
+    same = parity.get("passed") is True
+    try:
+        checked_at = datetime.fromisoformat(str(stored.get("checked_at")))
+    except ValueError:
+        checked_at = None
+    return ModelPackageVerificationRead(
+        status="verified", checked_at=checked_at, rows_compared=rows, row_source="training_partition",
+        comparison="exact", tolerance=_num(parity.get("tolerance")), max_abs_difference=_num(parity.get("max_abs_difference")),
+        note=_PACKAGE_NOTE,
+        checks=[
+            ModelPackageCheckRead(check="opens", passed=stored.get("opens") is True,
+                                  text="The saved file opens with the worker's safe loader (no pickle)."),
+            ModelPackageCheckRead(check="digests", passed=stored.get("digests") is True,
+                                  text="Every part of the file matches the SHA-256 digest recorded when it was saved."),
+            ModelPackageCheckRead(
+                check="same_predictions", passed=same,
+                text=f"{rows if rows is not None else 'Sample'} training rows score "
+                     f"{'exactly the same' if same else 'differently'} with the saved file as with the trained model."),
+        ],
+    )
+
+
+# --- project model versions (GET /v1/projects/{id}/model-versions, V7 B2) -------------------
+
+
+def _at_locked_threshold(task_type: str | None, result: dict[str, Any]) -> dict[str, float]:
+    """Binary: threshold-dependent CV metrics as fold means at the locked threshold (empty when the
+    threshold is the default 0.5, where the CV aggregate already holds them)."""
+
+    threshold = dict(result.get("decision_threshold") or {})
+    locked = _num(threshold.get("value"))
+    out: dict[str, float] = {}
+    if task_type == "binary" and locked is not None and locked != DEFAULT_THRESHOLD:
+        rows = [row for row in threshold.get("per_fold") or [] if isinstance(row, dict)]
+        for key in _THRESHOLD_DEPENDENT:
+            values = [_num(row.get(key)) for row in rows]
+            if values and None not in values:
+                out[key] = sum(values) / len(values)  # type: ignore[arg-type]
+    return out
+
+
+def list_project_model_versions(
+    db: Session, *, actor: User, workspace_id: UUID, project_id: UUID, cursor: str | None = None,
+    limit: int = MODEL_VERSION_PAGE_DEFAULT,
+) -> ProjectModelVersionPage:
+    """The project's model versions, newest first, with each locked winner's CV metrics (never a
+    final-test value) and where it stands: in use, waiting for approval (an open proposed
+    ``champion_promoted`` record), approved earlier, or not in use. A fixed number of statements
+    per page. Raises ``IdentityError`` / ``ProjectNotFoundError`` / ``InvalidCursorError``."""
+
+    from app.db.models import EvaluationMetric, ModelEvaluation, ModelRelease, ProjectDecisionRecord
+    from app.domain.decision_records import STATE_PROPOSED
+    from app.services.model_release_service import current_release
+
+    get_project(db, actor=actor, workspace_id=workspace_id, project_id=project_id)
+    limit = max(1, min(int(limit), MODEL_VERSION_PAGE_MAX))
+    scope = f"model-versions:{workspace_id}:{project_id}"
+    stmt = select(ModelVersion).where(ModelVersion.workspace_id == workspace_id, ModelVersion.project_id == project_id)
+    if cursor is not None and cursor.strip():
+        message = "cursor is not a model version list cursor for this project"
+        try:
+            stamp, last_id = open_cursor(cursor, scope, message=message)
+            created_at, row_id = datetime.fromisoformat(stamp), UUID(last_id)
+            if created_at.tzinfo is None:
+                raise ValueError(message)
+        except (InvalidCursorError, ValueError, TypeError) as exc:
+            raise InvalidCursorError(message) from exc
+        stmt = stmt.where(tuple_(ModelVersion.created_at, ModelVersion.id) < tuple_(created_at, row_id))
+    rows = list(db.scalars(stmt.order_by(ModelVersion.created_at.desc(), ModelVersion.id.desc()).limit(limit + 1)))
+    page = rows[:limit]
+    next_cursor = sign_cursor(scope, [page[-1].created_at.isoformat(), str(page[-1].id)]) if len(rows) > limit else None
+    ids, run_ids = [row.id for row in page], [row.pipeline_run_id for row in page]
+    experiments = {row.id: row for row in db.scalars(
+        select(Experiment).where(Experiment.workspace_id == workspace_id, Experiment.id.in_(run_ids)))} if page else {}
+    selections = {run: (candidate, metric) for run, candidate, metric in db.execute(
+        select(ModelSelectionDecision.pipeline_run_id, ModelSelectionDecision.selected_candidate_id,
+               ModelSelectionDecision.selection_metric)
+        .where(ModelSelectionDecision.workspace_id == workspace_id, ModelSelectionDecision.pipeline_run_id.in_(run_ids)))}
+    candidates = {row.id: row for row in db.scalars(select(ExperimentCandidate).where(
+        ExperimentCandidate.workspace_id == workspace_id,
+        ExperimentCandidate.id.in_([row.selected_candidate_id for row in page])))} if page else {}
+    # Same gate as the model-version read: metrics only once the run's evidence is locked for this winner.
+    locked = {
+        row.id for row in page
+        if (run := experiments.get(row.pipeline_run_id)) is not None and run.scientific_evidence_locked_at is not None
+        and (selections.get(run.id) or (None,))[0] == row.selected_candidate_id
+    }
+    cv: dict[UUID, dict[str, float]] = {}
+    winners = [row.selected_candidate_id for row in page if row.id in locked]
+    if winners:
+        for candidate_id, name, value in db.execute(
+            select(ModelEvaluation.candidate_id, EvaluationMetric.metric_name, EvaluationMetric.metric_value)
+            .join(EvaluationMetric, EvaluationMetric.model_evaluation_id == ModelEvaluation.id)
+            .where(ModelEvaluation.workspace_id == workspace_id, ModelEvaluation.candidate_id.in_(winners),
+                   ModelEvaluation.evaluation_scope == "cv_aggregate")
+        ):
+            cv.setdefault(candidate_id, {})[str(name)] = float(value)
+    champion = db.scalar(select(ProjectRef.model_version_id).where(
+        ProjectRef.workspace_id == workspace_id, ProjectRef.project_id == project_id,
+        ProjectRef.ref_kind == "champion_model"))
+    current = current_release(db, workspace_id=workspace_id, project_id=project_id)
+    approvals = dict(db.execute(
+        select(ModelRelease.model_version_id, func.max(ModelRelease.created_at))
+        .where(ModelRelease.workspace_id == workspace_id, ModelRelease.project_id == project_id,
+               ModelRelease.model_version_id.in_(ids))
+        .group_by(ModelRelease.model_version_id)).all()) if page else {}
+    pdr, successor = ProjectDecisionRecord, aliased(ProjectDecisionRecord)
+    pending: dict[UUID, UUID] = {}
+    for version_id, decision_id in (db.execute(
+        select(pdr.model_version_id, pdr.id)
+        .where(pdr.workspace_id == workspace_id, pdr.project_id == project_id,
+               pdr.decision_type == "champion_promoted", pdr.state == STATE_PROPOSED, pdr.model_version_id.in_(ids),
+               ~exists().where(successor.supersedes_id == pdr.id, successor.workspace_id == pdr.workspace_id))
+        .order_by(pdr.event_at.desc(), pdr.id.desc())) if page else []):
+        pending.setdefault(version_id, decision_id)
+    stored = {row.id: row for row in db.scalars(select(Artifact).where(
+        Artifact.workspace_id == workspace_id,
+        Artifact.id.in_([row.model_artifact_id for row in page if row.model_artifact_id])))} if page else {}
+    items = []
+    for row in page:
+        run, candidate = experiments.get(row.pipeline_run_id), candidates.get(row.selected_candidate_id)
+        result = dict(run.result or {}) if run is not None and row.id in locked else {}
+        in_use = champion == row.id
+        status = ("in_use" if in_use else "waiting_for_approval" if row.id in pending
+                  else "approved_earlier" if row.id in approvals else "not_in_use")
+        artifact = stored.get(row.model_artifact_id) if row.model_artifact_id else None
+        items.append(ProjectModelVersionItem(
+            id=row.id, version=row.version, created_at=row.created_at, experiment_id=row.pipeline_run_id,
+            candidate_key=candidate.candidate_key if candidate is not None else None,
+            family=(candidate.model_family or None) if candidate is not None else None,
+            algorithm=(candidate.algorithm or None) if candidate is not None else None,
+            split_plan_id=run.split_plan_id if run is not None else None,
+            saved_format=saved_format(artifact.extra_metadata) if artifact is not None else None,
+            selection_metric=(selections.get(row.pipeline_run_id) or (None, None))[1] if row.id in locked else None,
+            cv=cv.get(row.selected_candidate_id, {}),
+            cv_at_locked_threshold=_at_locked_threshold(dict(result.get("task") or {}).get("task_type"), result),
+            decision_threshold=_num(dict(result.get("decision_threshold") or {}).get("value")),
+            status=status, in_use=in_use,
+            approved_for_scoring=in_use and current is not None and current.model_version_id == row.id,
+            waiting_for_approval=row.id in pending, pending_decision_id=pending.get(row.id),
+            last_approved_at=approvals.get(row.id),
+        ))
+    return ProjectModelVersionPage(project_id=project_id, model_in_use_id=champion, items=items,
+                                   next_cursor=next_cursor, limit=limit)
+
+
+# --- feature contract (GET /v1/model-versions/{id}/feature-contract, V7 B3) ----------------
+
+CONTRACT_NAME_MAX = 1024
+
+
+def model_feature_contract(
+    db: Session, *, actor: User, workspace_id: UUID, model_version_id: UUID
+) -> FeatureContractRead | None:
+    """The input columns a scoring file must have (names, roles, training dtypes, date flag),
+    read from the version's stored feature manifest (JSON, capped, digest-checked; no model is
+    loaded). Allowed values, date formats and every other value-bearing field are left out.
+    None when the version is unknown or another tenant's; 409 without a readable manifest."""
+
+    from app.engine.serving.model_package import MANIFEST_MAX_BYTES
+    from app.services.artifact_service import ArtifactTooLargeError, read_artifact_bytes
+    from app.storage._hashing import sha256_bytes
+
+    _require_read(db, actor, workspace_id)
+    row = db.scalar(
+        select(ModelVersion).where(ModelVersion.id == model_version_id, ModelVersion.workspace_id == workspace_id))
+    if row is None:
+        return None
+    unavailable = ExperimentRequestError(
+        "feature_contract_unavailable", "this model version has no readable feature manifest", status_code=409)
+    artifact = db.scalar(select(Artifact).where(
+        Artifact.id == row.feature_manifest_artifact_id, Artifact.workspace_id == workspace_id,
+    )) if row.feature_manifest_artifact_id is not None else None
+    if artifact is None or int(artifact.size_bytes or 0) > MANIFEST_MAX_BYTES:
+        raise unavailable
+    try:
+        data = read_artifact_bytes(db, workspace_id=workspace_id, artifact_id=artifact.id, max_bytes=MANIFEST_MAX_BYTES)
+        manifest = json.loads(data.decode("utf-8")) if sha256_bytes(data) == artifact.content_digest else None
+    except (ArtifactTooLargeError, UnicodeDecodeError, ValueError, RecursionError) as exc:
+        raise unavailable from exc
+    if not isinstance(manifest, dict):
+        raise unavailable
+    contract = manifest.get("feature_contract")
+    if isinstance(contract, dict) and isinstance(contract.get("columns"), list):
+        columns = [
+            FeatureContractColumnRead(
+                name=str(item["name"])[:CONTRACT_NAME_MAX],
+                role=item.get("role") if item.get("role") in ("numeric", "categorical") else None,
+                training_dtype=str(item["training_dtype"])[:64] if item.get("training_dtype") is not None else None,
+                required=item.get("required") is not False,
+                is_date="date_format_recorded" in item,
+            )
+            for item in contract["columns"] if isinstance(item, dict) and item.get("name") is not None
+        ]
+        target = contract.get("target_column")
+        return FeatureContractRead(
+            model_version_id=row.id, status="available", contract_format=str(contract.get("format") or "")[:64] or None,
+            column_count=len(columns), columns=columns,
+            target_column=str(target)[:CONTRACT_NAME_MAX] if target is not None else None,
+            unknown_columns=str(contract.get("unknown_columns") or "")[:64] or None,
+            unseen_categories=str(contract.get("unseen_categories") or "")[:64] or None,
+            contract_digest=str(contract.get("digest") or "")[:64] or None, manifest_digest=artifact.content_digest,
+        )
+    names = [str(name)[:CONTRACT_NAME_MAX] for name in manifest.get("features") or [] if name is not None] \
+        if isinstance(manifest.get("features"), list) else []
+    return FeatureContractRead(
+        model_version_id=row.id, status="names_only", column_count=len(names),
+        columns=[FeatureContractColumnRead(name=name) for name in names], manifest_digest=artifact.content_digest,
     )
 
 
@@ -710,14 +1050,9 @@ def _card_cv(task_type: str | None, result: dict[str, Any], cv: dict[str, float]
              best: dict[str, Any], strategy: str | None) -> ModelCardCrossValidation:
     threshold = dict(result.get("decision_threshold") or {})
     locked = _num(threshold.get("value"))
-    at_locked: dict[str, float] = {}
+    at_locked = _at_locked_threshold(task_type, result)
     note = None
     if task_type == "binary" and locked is not None and locked != DEFAULT_THRESHOLD:
-        rows = [row for row in threshold.get("per_fold") or [] if isinstance(row, dict)]
-        for key in _THRESHOLD_DEPENDENT:
-            values = [_num(row.get(key)) for row in rows]
-            if values and None not in values:
-                at_locked[key] = sum(values) / len(values)  # type: ignore[arg-type]
         note = (
             "Threshold-dependent cross-validation metrics (precision, recall, specificity, F1, accuracy, "
             f"balanced accuracy) in the fold aggregate are at the default {fmt(DEFAULT_THRESHOLD)} threshold; the "
@@ -820,6 +1155,26 @@ def _card_risks(experiment: Experiment) -> ModelCardRisks:
     return ModelCardRisks(investigated=findings.investigated, items=items, text=text)
 
 
+def _final_confusion(result: dict[str, Any], winner_key: str | None, task_type: str | None) -> ModelCardConfusion | None:
+    """V7 B1: the 2x2 counts of the run's single final evaluation (binary, at the locked threshold),
+    as the run recorded them for the locked winner; None when absent or inconsistent."""
+
+    stored = result.get("final_test_evaluation")
+    if task_type != "binary" or not winner_key or not isinstance(stored, dict) or stored.get("candidate_id") != winner_key:
+        return None
+    matrix = (stored.get("metrics") or {}).get("confusion_matrix") if isinstance(stored.get("metrics"), dict) else None
+    if not isinstance(matrix, dict) or not all(
+        isinstance(matrix.get(key), int) and not isinstance(matrix.get(key), bool) and matrix[key] >= 0
+        for key in ("tp", "fp", "fn", "tn")
+    ):
+        return None
+    counts = {key: int(matrix[key]) for key in ("tp", "fp", "fn", "tn")}
+    total = sum(counts.values())
+    if stored.get("test_row_count") is not None and stored.get("test_row_count") != total:
+        return None
+    return ModelCardConfusion(**counts, rows=total)
+
+
 def model_card_read(
     db: Session, *, actor: User, workspace_id: UUID, model_version_id: UUID, include_final_evaluation: bool = False
 ) -> ModelCardRead | None:
@@ -829,7 +1184,8 @@ def model_card_read(
     Everything that says how good the model is comes from CV/out-of-fold evidence; the
     only final-holdout read is ``winner_evidence``'s single locked-winner evaluation,
     which fills ``final_evaluation`` alone and only with ``include_final_evaluation``
-    (fail-closed: callers that are not session humans get it withheld).
+    (fail-closed: callers that are not session humans get it withheld), together with that
+    same evaluation's binary counts from the run's ``final_test_evaluation`` record (V7 B1).
     ``ModelVersion.metrics`` and candidate ``test_metrics`` are never read.
     """
 
@@ -931,6 +1287,7 @@ def model_card_read(
             value=holdout.get(str(selection_metric)),
             metrics=holdout,
             decision_threshold=_num(evidence.get("decision_threshold")),
+            confusion=_final_confusion(result, candidate.candidate_key if candidate is not None else None, task_type),
         )
         if holdout
         else ModelCardFinalEvaluation(status="missing", note="No final evaluation was recorded for this run.")

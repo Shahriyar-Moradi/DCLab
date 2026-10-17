@@ -1,0 +1,60 @@
+<!-- title: AI settings · DCLab demo -->
+<!-- crumbs: Northwind Telecom › Admin › <b>AI settings</b> -->
+<!-- status: off | Built, switched off -->
+<!-- status: plan | Screen: Planned (with the assistant beta) -->
+<!-- planned: 1 -->
+<div class="page-head">
+  <div><h1>AI settings <span class="beta">Beta</span></h1><p class="sub">Whether the assistant beta is on for this workspace, which AI model it uses, what it costs, what it may see, and what it may do. Everything works with AI off.</p></div>
+</div>
+
+<div class="grid cols-3">
+  <div class="card"><h3>Assistant beta for this workspace</h3>
+    <div class="switch-row"><span><b>AI on or off</b><small>Off by default. Off means every action is a button.</small></span><button class="ai-switch" type="button" role="switch" aria-checked="false" data-toggle><span>AI: <b>off</b></span><i aria-hidden="true"></i></button></div>
+    <p class="small muted">The beta is offered to a workspace by DCLab, then an admin turns it on here.</p></div>
+  <div class="card"><div class="stat"><span class="v">$0.00</span><span class="l">AI spend this month · limit $25</span></div><div class="meter ai"><i style="width:0%"></i></div><p class="small muted">Each conversation is limited to $1.00 and each answer to $0.25.</p></div>
+  <div class="card"><h3>AI model</h3><p class="big-sentence">Claude Sonnet 5.5</p><p class="small muted">One model for every AI task. Its price is not confirmed yet, so costs shown are estimates.</p></div>
+</div>
+
+<div class="card">
+  <h3>What the assistant may do <span class="sp">per kind of decision · read only during the beta</span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Kind of decision</th><th>Setting</th><th>Highest it could ever be</th><th>How it was earned</th></tr></thead>
+    <tbody>
+      <tr><td>Treat a column as a number, category or date</td><td>Ask first</td><td>Automatic, you can undo</td><td class="locked">Locked until earned · not tested yet</td></tr>
+      <tr><td>Fill empty values</td><td>Ask first</td><td>Automatic, you can undo</td><td class="locked">Locked until earned · not tested yet</td></tr>
+      <tr><td>Which model families to train</td><td>Ask first</td><td>Automatic, you can undo</td><td class="locked">Locked until earned · not tested yet</td></tr>
+      <tr><td>Leave out ID-like columns</td><td>Ask first</td><td>Ask first</td><td>Always ask: never automatic</td></tr>
+      <tr><td>Suggest the next run</td><td>Ask first</td><td>Ask first</td><td>Always ask: never automatic</td></tr>
+      <tr><td>Change the test design</td><td>Ask first</td><td>Ask first</td><td>Always ask: never automatic</td></tr>
+      <tr><td>Switch the model in use</td><td>Ask first</td><td>Ask first</td><td>Always ask: only a person switches</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">During the beta the assistant only suggests; a person accepts every suggestion. “Automatic” stays locked until the assistant has earned it on tested cases, with the real model, real spend and no open problem reports. None are tested yet.</p>
+</div>
+
+<div class="card example-mark">
+  <h3>Coming next: what AI may do on its own</h3>
+  <p class="small muted">Not built yet. Once the assistant is out of testing, this card will list each kind of decision, whether it must ask first or may act on its own and let you undo it, and how it earned that. Today AI is off by default and nothing lets AI act on its own.</p>
+  <div class="tbl" aria-hidden="true"><table>
+    <thead><tr><th>Kind of decision</th><th>Setting</th><th>How it was earned</th></tr></thead>
+    <tbody>
+      <tr><td>Fill empty values</td><td>On its own, you can undo</td><td>Matched the rules in tested past cases</td></tr>
+      <tr><td>Which model families to train</td><td>Ask first</td><td>Not enough tested cases</td></tr>
+      <tr><td>Change the test design</td><td>Always ask</td><td>Never automatic</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="grid cols-2">
+  <div class="card">
+    <h3>What AI is allowed to see</h3>
+    <p class="big-sentence">Raw rows are never sent to an AI model.</p>
+    <p class="small muted">Only column names, types and summary statistics, and never final-test numbers. <b>What a person types in the assistant is sent to the AI provider (Anthropic)</b> to answer. Every call is logged with its cost.</p>
+  </div>
+  <div class="card">
+    <h3>Problem reports</h3>
+    <div class="empty">None open. Nothing has gone wrong with AI in this workspace.</div>
+    <div class="toolbar"><button class="btn danger" type="button" data-mock="edit">Turn AI off now</button></div>
+    <p class="small muted">Any owner or administrator can turn AI off at once. Turning it back on needs an approver.</p>
+  </div>
+</div>

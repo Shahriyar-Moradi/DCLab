@@ -11,6 +11,7 @@ import { formatTimestamp, type ClientLabProblem, type ClientLabRun } from "@/lib
 import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import { useRef, useState, type KeyboardEvent } from "react";
+import { actionErrorSentence } from "@/lib/application/api-error-text";
 
 export function ProblemWorkspace({ problems }: { problems: ClientLabProblem[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(problems[0]?.use_case ?? null);
@@ -146,7 +147,7 @@ function SelectedProblem({ problem }: { problem: ClientLabProblem }) {
         </div>
         {runTrial.isError ? (
           <p className="mt-3 text-body text-oxblood" role="alert">
-            {runTrial.error.message}
+            {actionErrorSentence(runTrial.error, "running the trial")}
           </p>
         ) : null}
         {lastRun ? <TrialResult run={lastRun} /> : null}

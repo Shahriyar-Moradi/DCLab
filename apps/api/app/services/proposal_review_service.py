@@ -38,7 +38,7 @@ from sqlalchemy.orm import Session, aliased
 
 from app.agents.tools.catalog import ToolError
 from app.agents.tools.catalog import get as get_tool
-from app.agents.tools.shaping import HOLDOUT_KEY, strip_holdout
+from app.agents.tools.shaping import HOLDOUT_KEY, holdout_free_text, strip_holdout
 from app.db.models import AgentProposal, AgentRun, Experiment, ProjectDecisionRecord, User
 from app.domain.agent_records import AGENT_SUBJECT_COLUMNS
 from app.domain.decision_records import (
@@ -112,7 +112,7 @@ def proposal_read(row: AgentProposal, *, agent: bool) -> ProposalRead:
     rationale = row.proposed_rationale
     reasons = list(row.validator_reasons or [])
     if agent:  # free text for an agent reader: nothing that names the holdout
-        rationale = None if rationale and HOLDOUT_KEY.search(rationale) else rationale
+        rationale = holdout_free_text(rationale)
         reasons = [r for r in strip_holdout(reasons) if not (isinstance(r, str) and HOLDOUT_KEY.search(r))]
     return ProposalRead(
         id=row.id, project_id=row.project_id, source="jev" if row.semantic_answer_id else "agent_run",
@@ -397,12 +397,8 @@ def _write_record(ctx: _Ctx, decision_type: str, state: str, rationale: str, ext
     except InvalidDecisionRecordError:  # free text (a tool argument) the record refuses: keep the digest only
         details.pop("tool_arguments", None)
         details = drs.clean_json_object({**details, "arguments_omitted": True}, label="details")
-    proposed_text = (row.proposed_rationale or "").strip()
-    if proposed_text:  # the agent's text, always untrusted (never the record's own rationale)
-        try:
-            details = drs.clean_json_object({**details, "proposed_rationale": proposed_text[:1000]}, label="details")
-        except InvalidDecisionRecordError:
-            details["proposed_rationale_omitted"] = True
+    # The agent's text, always untrusted (never the record's own rationale).
+    details = drs.with_proposed_rationale(details, row.proposed_rationale)
     record = drs.build_record(
         workspace_id=ctx.workspace_id, project_id=row.project_id, actor=ctx.actor, decision_type=decision_type,
         state=state, subject_kind=kind, subject_id=subject.id if subject is not None else None,
@@ -588,7 +584,8 @@ def _t_propose_spec(ctx: _Ctx, args: dict[str, Any]):
     def command(hook: Callable[[Any], None]) -> Any:
         fields = {k: v for k, v in args.items() if k not in ("project_id", "rationale")}
         spec = create_problem_spec(ctx.db, actor=ctx.user, workspace_id=ctx.workspace_id,
-                                   project_id=ctx.row.project_id, status="locked", **fields)
+                                   project_id=ctx.row.project_id, status="locked", record_goal="assistant",
+                                   **fields)
         ctx.db.flush()
         result = _move_refs(ctx, {"problem_spec": spec.id}, [drs.evidence_ref("problem_spec", spec.id)],
                             args["rationale"], None)
@@ -612,6 +609,20 @@ def _t_run(ctx: _Ctx, args: dict[str, Any]):
 
 def _t_branch(ctx: _Ctx, args: dict[str, Any]):
     return _branch(ctx, UUID(str(args["experiment_id"])), list(args["changes"]), args["intent"]), "experiment"
+
+
+def _t_improve(ctx: _Ctx, args: dict[str, Any]):
+    """The assistant's ``improve`` (L1): a person accepting it starts the loop as themself (a loop
+    never accepts a try on its own; the try's acceptance is a second, separate person's act)."""
+
+    from app.services.improve.service import start_improve_run
+
+    def command(hook: Callable[[Any], None]) -> Any:
+        return start_improve_run(ctx.db, actor=ctx.user, workspace_id=ctx.workspace_id,
+                                 start_experiment_id=UUID(str(args["experiment_id"])), goal=args["goal"],
+                                 budget=args.get("budget"), agent_proposed=True, before_commit=hook)
+
+    return command, "improve_run"
 
 
 def _t_predict(ctx: _Ctx, args: dict[str, Any]):
@@ -646,10 +657,12 @@ def _check_champion(ctx: _Ctx, model: Any) -> None:
             Experiment.scientific_evidence_locked_at.is_not(None))) or 0)
 
 
-def _move_refs(ctx: _Ctx, targets: dict[str, UUID], evidence: list[dict[str, str]], rationale: str,
+def _move_refs(ctx: _Ctx, targets: dict[str, UUID], evidence: list[dict[str, str]], proposed: str | None,
                facts: dict[str, Any] | None):
     """A ref move as the accepting person: they send the versions they saw; a champion also moves the
-    model's recipe and carries the model's own final evaluation (a human may see it)."""
+    model's recipe and carries the model's own final evaluation (a human may see it). The record (and a
+    champion's release, P7.2-A) carries the PERSON's reason (or the default accept text); the agent's
+    ``proposed`` text is kept only as untrusted ``details.proposed_rationale``."""
 
     from app.db.models import FeatureSetVersion, ModelVersion
 
@@ -677,7 +690,8 @@ def _move_refs(ctx: _Ctx, targets: dict[str, UUID], evidence: list[dict[str, str
                             ref_kinds=missing)
     moves = [prs.RefMove(kind, target, given[kind]) for kind, target in kinds.items()]
     return prs.move_ref(ctx.db, workspace_id=ctx.workspace_id, project_id=ctx.row.project_id, actor=ctx.actor,
-                        moves=moves, rationale=rationale, evidence_refs=evidence, facts=facts,
+                        moves=moves, rationale=_text(ctx, _default_rationale(ctx, "accepted")),
+                        proposed_rationale=proposed, evidence_refs=evidence, facts=facts,
                         idempotency_key=f"accept:{ctx.row.id}")
 
 
@@ -709,6 +723,7 @@ _TOOLS: dict[str, Callable[[_Ctx, dict[str, Any]], Any]] = {
     "run_experiment": _t_run,
     "branch_experiment": _t_branch,
     "predict": _t_predict,
+    "improve": _t_improve,
     "record_decision": _t_record,
 }
 
@@ -720,7 +735,7 @@ def _create_draft(ctx: _Ctx, args: dict[str, Any], hook: Callable[[Any], None]) 
 
     fields = {k: v for k, v in args.items() if k not in ("project_id", "rationale")}
     spec = create_problem_spec(ctx.db, actor=ctx.user, workspace_id=ctx.workspace_id, project_id=ctx.row.project_id,
-                               status="draft", **fields)
+                               status="draft", record_goal="assistant", **fields)
     ctx.db.flush()
     hook(spec)
     ctx.db.commit()

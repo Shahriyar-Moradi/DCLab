@@ -2,11 +2,19 @@
 
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { WorkspaceSelector } from "@/app/components/layout/WorkspaceSelector";
-import { STUDIO_BACKEND_FEATURES, studioNavigationForUser } from "@/app/components/layout/app-navigation";
+import { useSignOutToLogin } from "@/app/components/layout/use-sign-out";
+import { studioNavigationForUser } from "@/app/components/layout/app-navigation";
+import { AiSuggestions } from "@/app/components/studio-app/AiSuggestions";
+import { AssistantPanel } from "@/app/components/studio-app/AssistantPanel";
+import { Pill } from "@/components/studio/Pill";
+import { useGovernance } from "@/lib/application/studio-home-hooks";
+import { BETA_LABEL, SUGGESTIONS_FLAG, assistantGate, readFlag, writeFlag } from "@/lib/application/studio-assistant";
 import { CommandBar } from "@/components/studio/CommandBar";
 import { Crumbs, type Crumb } from "@/components/studio/Crumbs";
+import { GlossaryDialog } from "@/components/studio/GlossaryDialog";
+import { ScreenStatusProvider } from "@/components/studio/ScreenStatusTag";
 import { Shell } from "@/components/studio/Shell";
 import { useCommandSearch, useProjectRefs, useSession, useStudioProject } from "@/lib/application";
 import { useProjectGraph } from "@/lib/application/studio-data-hooks";
@@ -16,6 +24,9 @@ import { badgeText } from "@/lib/application/studio-inbox";
 import { offSidebarCrumb } from "@/lib/application/studio-names";
 import { isUuid, MIN_QUERY_LENGTH, plainText } from "@/lib/application/command-search";
 import { displayName } from "@/lib/infrastructure/session";
+import { accountRoleLabel } from "@/lib/application/role-labels";
+import { previewCanOpen, previewNavigation } from "@/lib/application/view-as";
+import { PreviewRoleContext, useViewAs, ViewAsBanner, ViewAsControl, ViewAsGate } from "./ViewAs";
 
 function StudioCommandBar({ projectId }: { projectId?: string }) {
   const search = useCommandSearch(projectId);
@@ -46,12 +57,17 @@ export function StudioFrame({ children }: { children: ReactNode }) {
   const params = useParams<{ id?: string }>();
   const projectId = pathname.startsWith("/projects/") && isUuid(params.id) ? params.id : undefined;
   const { user, loaded, activeWorkspace, activeWorkspaceId, workspaceSwitching } = useSession();
+  const signOutToLogin = useSignOutToLogin();
   const project = useStudioProject(projectId);
   const refs = useProjectRefs(projectId);
   const graph = useProjectGraph(projectId);
   const targetOf = (kind: string) => refs.data?.items.find((ref) => ref.ref_kind === kind)?.target.id ?? null;
   // The Goal and Predictions pages need an id (the test design, the model in use); they are listed once the project has one (Predictions: any model, the one in use preferred).
-  const nav = studioNavigationForUser(user, projectId, { split_plan: targetOf("split_plan"), project_model: targetOf("champion_model") ?? projectModelId(graph.data?.nodes) }).map((group) =>
+  const targets = { split_plan: targetOf("split_plan"), project_model: targetOf("champion_model") ?? projectModelId(graph.data?.nodes) };
+  // "View as" (admins only): the sidebar and screen availability of another role, on this browser tab only; the session and every request stay the admin's.
+  const viewAs = useViewAs(user);
+  const preview = viewAs.role;
+  const nav = (preview ? previewNavigation(preview, projectId, targets) : studioNavigationForUser(user, projectId, targets)).map((group) =>
     group.id === "project" && project.data?.name ? { ...group, label: `Project · ${plainText(project.data.name, 60)}` } : group,
   );
   // One cheap counts read (refetched once a minute); the sidebar badge never needs the list.
@@ -63,6 +79,24 @@ export function StudioFrame({ children }: { children: ReactNode }) {
     // Inside a project only the project's own items can be "current"; the workspace Projects item would match every project page.
     .filter(({ item, path }) => item.href.includes("?") ? false : projectId && !projectItems.has(item.id) ? pathname === path : pathname === path || pathname.startsWith(`${path}/`))
     .sort((a, b) => b.path.length - a.path.length)[0]?.item;
+
+  // Assistant (Beta, D6b): the toggle exists only when the governance read says AI is available AND the workspace has the beta.
+  const governance = useGovernance(!!user && !preview);
+  const assistantShown = !preview && assistantGate(governance.data) === "available";
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const assistantToggle = useRef<HTMLButtonElement>(null);
+  // Closing (button, Escape) returns focus to the toggle.
+  const closeAssistant = () => {
+    setAssistantOpen(false);
+    requestAnimationFrame(() => assistantToggle.current?.focus());
+  };
+  // Per-screen AI suggestions (item 21): off by default, a per-person choice kept in this browser when storage allows.
+  const [suggestionsOn, setSuggestionsOn] = useState(false);
+  useEffect(() => setSuggestionsOn(readFlag(() => window.localStorage, SUGGESTIONS_FLAG)), []);
+  const toggleSuggestions = () => {
+    writeFlag(() => window.localStorage, SUGGESTIONS_FLAG, !suggestionsOn);
+    setSuggestionsOn(!suggestionsOn);
+  };
 
   const crumbs: Crumb[] = [{ label: activeWorkspace?.name ?? "Workspace", href: "/home" }];
   if (projectId) {
@@ -78,24 +112,35 @@ export function StudioFrame({ children }: { children: ReactNode }) {
   if (!loaded) body = <p role="status">Loading your workspace…</p>;
   else if (!user) body = <p>Your session ended. <Link href="/login">Sign in again</Link>.</p>;
   else if (workspaceSwitching) body = <p role="status">Switching workspace…</p>;
+  else if (preview && !previewCanOpen(preview, pathname)) body = <ViewAsGate role={preview} onStop={() => viewAs.choose(null)} />;
 
   return (
+    <ScreenStatusProvider>
     <Shell
       nav={nav}
       currentHref={current?.href}
       badges={{ inbox: badgeText(counts.data?.needs_decision) }}
-      workspace={activeWorkspace ? { name: activeWorkspace.name, detail: activeWorkspace.kind } : undefined}
+      workspace={activeWorkspace ? { name: activeWorkspace.name, detail: `${activeWorkspace.kind} workspace · ${accountRoleLabel(user, activeWorkspace)}` } : undefined}
       user={user ? { name: displayName(user), detail: user.email } : undefined}
+      onSignOut={user ? signOutToLogin : undefined}
       crumbs={<Crumbs items={crumbs} />}
       // Keyed by workspace: a switch drops results and aborts requests made for the old one.
       commandBar={user ? <StudioCommandBar key={activeWorkspaceId ?? "none"} projectId={projectId} /> : null}
-      topbarRight={user ? <WorkspaceSelector inputId="studio-workspace" /> : null}
-      // Assistant panel (A3-UI) slot: the capability stays false until the assistant ships.
-      assistant={STUDIO_BACKEND_FEATURES.assistant ? <p>Assistant</p> : undefined}
+      topbarRight={user ? (
+        <>
+          {projectId && !preview ? <button type="button" className="btn" aria-pressed={suggestionsOn} onClick={toggleSuggestions}>AI suggestions</button> : null}
+          {assistantShown ? <button ref={assistantToggle} type="button" className="btn" aria-pressed={assistantOpen} onClick={() => (assistantOpen ? closeAssistant() : setAssistantOpen(true))}>Assistant <Pill tone="ai">{BETA_LABEL}</Pill></button> : null}
+          {viewAs.allowed ? <ViewAsControl role={preview} onChange={viewAs.choose} /> : null}<GlossaryDialog /><WorkspaceSelector inputId="studio-workspace" />
+        </>
+      ) : null}
+      assistant={assistantShown && assistantOpen ? <AssistantPanel key={activeWorkspaceId ?? "none"} pathname={pathname} onClose={closeAssistant} /> : undefined}
     >
-      <div key={activeWorkspaceId ?? "no-workspace"} style={{ display: "contents" }}>
-        {body}
+      <div key={activeWorkspaceId ?? "no-workspace"} className="contents">
+        {preview ? <ViewAsBanner role={preview} onStop={() => viewAs.choose(null)} /> : null}
+        {projectId && !preview && suggestionsOn && loaded && user ? <AiSuggestions pathname={pathname} /> : null}
+        <PreviewRoleContext.Provider value={preview}>{body}</PreviewRoleContext.Provider>
       </div>
     </Shell>
+    </ScreenStatusProvider>
   );
 }

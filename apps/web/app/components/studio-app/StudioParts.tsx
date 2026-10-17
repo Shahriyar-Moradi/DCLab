@@ -4,20 +4,23 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Banner } from "@/components/studio/Banner";
-import { FlowBar } from "@/components/studio/FlowBar";
+import { FlowBar, FlowTiles } from "@/components/studio/FlowBar";
 import { Pill, type PillTone } from "@/components/studio/Pill";
 import { useProjectExperiments, useProjectRefs, useStudioProject } from "@/lib/application";
 import { STUDIO_BACKEND_FEATURES } from "@/lib/application/studio-navigation";
 import { useProjectGraph } from "@/lib/application/studio-data-hooks";
-import { buildFlow, flowRunStatuses, projectModelId } from "@/lib/application/studio-flow";
+import { buildFlow, flowRunStatuses, nextStepFor, projectModelId } from "@/lib/application/studio-flow";
+import { useProjectFlow } from "@/lib/application/studio-flow-hooks";
+import { flowTiles } from "@/lib/application/studio-flow-tiles";
 import { ApiError } from "@/lib/infrastructure/api-client";
+import { readErrorSentence } from "@/lib/application/api-error-text";
 
-/** "No backend, no element": an explicit empty state that names the prompt that ships it. */
-export function PhaseEmpty({ title, phase, children }: { title: string; phase: string; children?: ReactNode }) {
+/** "No backend, no element": an explicit empty state. The plan's internal id (`phase`) is kept in code, never shown. */
+export function PhaseEmpty({ title, children }: { title: string; phase: string; children?: ReactNode }) {
   return (
     <div className="empty" role="note">
       <p><b>{title}</b></p>
-      <p>Planned in {phase}.{children ? " " : ""}{children}</p>
+      <p>Not built yet.{children ? " " : ""}{children}</p>
     </div>
   );
 }
@@ -26,7 +29,8 @@ export function QueryNotice({ error, what }: { error: unknown; what: string }) {
   if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
     return <Banner tone="warn">This {what} does not exist in the active workspace, or you cannot see it.</Banner>;
   }
-  return <Banner tone="crit">Could not load the {what}. {error instanceof Error ? error.message : ""}</Banner>;
+  // D8b: a fixed sentence by status; the server's message is never shown.
+  return <Banner tone="crit">{readErrorSentence(error, what)}</Banner>;
 }
 
 export function formatWhen(value: string | null | undefined): string {
@@ -38,17 +42,37 @@ export function formatWhen(value: string | null | undefined): string {
 export const STATUS_TONE: Record<string, PillTone> = {
   completed: "ok", running: "ai", queued: "gray", cancelling: "warn", needs_input: "warn",
   failed: "crit", cancelled: "gray", skipped: "gray", accepted: "ok", proposed: "warn", rejected: "crit", superseded: "gray",
+  alert: "crit", // V7 UI-E: a drift alert in the Inbox
+  reporting: "ai", // D8a: results are still being saved (not finished)
 };
 
-/** Pill tone of a run status; own keys only (a status such as `__proto__` is gray). */
-export const statusTone = (status: string): PillTone => (Object.hasOwn(STATUS_TONE, status) ? STATUS_TONE[status] : "gray");
+/** Pill tone of a run status (case-insensitive); own keys only (a status such as `__proto__` is gray). */
+export const statusTone = (status: string): PillTone => {
+  const key = Object.hasOwn(STATUS_TONE, status) ? status : status.toLowerCase();
+  return Object.hasOwn(STATUS_TONE, key) ? STATUS_TONE[key] : "gray";
+};
 
 const REF_LABEL: Record<string, string> = {
   champion_model: "Model in use", problem_spec: "Goal", split_plan: "Test design", dataset: "Data", feature_recipe: "Features",
 };
 
 const FLOW_STEPS = ["data", "goal", "experiments", "improve", "models", "predictions", "monitoring"] as const;
-const FLOW_AVAILABLE: ReadonlySet<string> = new Set(FLOW_STEPS.filter((id) => STUDIO_BACKEND_FEATURES[id] === true));
+export const FLOW_AVAILABLE: ReadonlySet<string> = new Set(FLOW_STEPS.filter((id) => STUDIO_BACKEND_FEATURES[id] === true));
+/** Step screens a "Next step" button may lead to: the flow steps plus History (the last one). */
+const NEXT_AVAILABLE: ReadonlySet<string> = new Set([...FLOW_AVAILABLE, ...(STUDIO_BACKEND_FEATURES.decisions ? ["history"] : [])]);
+
+/** The page's one forward button (V7 UI-A), at the bottom of each project step screen; none on the last step. */
+export function NextStepLink({ step }: { step: { title: string; detail: string; href: string } }) {
+  return (
+    <nav aria-label="Next step">
+      <Link className="next-step" href={step.href}>
+        <span className="ns-label">Next step</span>
+        <b>{step.title} <span aria-hidden="true">→</span></b>
+        <small>{step.detail}</small>
+      </Link>
+    </nav>
+  );
+}
 
 /** Project band above every project page: name, the project's steps (flow bar), and the versions in use behind a details row. */
 export function ProjectHeader({ projectId, children }: { projectId: string; children: ReactNode }) {
@@ -56,6 +80,7 @@ export function ProjectHeader({ projectId, children }: { projectId: string; chil
   const refs = useProjectRefs(projectId);
   const runs = useProjectExperiments(projectId);
   const graph = useProjectGraph(projectId);
+  const facts = useProjectFlow(projectId);
   const pathname = usePathname();
   const tab = useSearchParams().get("tab");
   if (project.isPending) return <p role="status">Loading project…</p>;
@@ -70,12 +95,16 @@ export function ProjectHeader({ projectId, children }: { projectId: string; chil
   const items = refs.data?.items ?? [];
   const champion = items.some((ref) => ref.ref_kind === "champion_model");
   const targetOf = (kind: string) => items.find((ref) => ref.ref_kind === kind)?.target.id ?? null;
+  const targets = { split_plan: targetOf("split_plan"), project_model: targetOf("champion_model") ?? projectModelId(graph.data?.nodes) };
   const flow = buildFlow({
     projectId, pathname, available: FLOW_AVAILABLE,
     refKinds: refs.data?.refs_initialized ? items.map((ref) => ref.ref_kind) : refs.data ? [] : null,
     runStatuses: flowRunStatuses(runs.data?.items, !!runs.data?.next_cursor), tab,
-    targets: { split_plan: targetOf("split_plan"), project_model: targetOf("champion_model") ?? projectModelId(graph.data?.nodes) },
+    targets,
   });
+  const next = nextStepFor({ projectId, pathname, available: NEXT_AVAILABLE, targets });
+  // V7 UI-B: eight tiles with a value and a note once the flow read is in; until then (or if it fails) the step names alone.
+  const tiles = facts.data ? flowTiles(facts.data, { projectId, pathname, tab, available: NEXT_AVAILABLE, targets }) : null;
   return (
     <>
       <section className="toolbar" aria-label="Project">
@@ -85,7 +114,8 @@ export function ProjectHeader({ projectId, children }: { projectId: string; chil
         {champion ? <Pill tone="ok">A model is in use</Pill> : null}
         {refs.data?.refs_initialized && !champion ? <Pill tone="gray">No model in use yet</Pill> : null}
       </section>
-      <FlowBar steps={flow} />
+      {tiles ? <FlowTiles steps={tiles} /> : <FlowBar steps={flow} />}
+      {facts.isError ? <p className="muted v7-flow-note">The details of each step could not be loaded; the steps still open their pages.</p> : null}
       {items.length > 0 ? (
         <details className="ids">
           <summary>Versions in use (details)</summary>
@@ -100,6 +130,7 @@ export function ProjectHeader({ projectId, children }: { projectId: string; chil
         </details>
       ) : null}
       {children}
+      {next ? <NextStepLink step={next} /> : null}
     </>
   );
 }

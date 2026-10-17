@@ -80,11 +80,16 @@ truth-idempotence:
 # Local API. Default dispatcher is postgres (persist and return). That leaves
 # CSV uploads on Queued unless a worker claims them — so `make run` uses the
 # in-process thread adapter unless ML_JOB_DISPATCHER is already set.
+# `run` and `worker` source .env through the shell (quoted values survive, nothing is echoed) so a
+# provider key such as DCLAB_ANTHROPIC_API_KEY reaches the process environment, where only the AI
+# gateway's provider adapter reads it (Settings never holds keys).
+LOAD_DOTENV := set -a; if [ -f .env ]; then . ./.env; fi; set +a
+
 run:
-	ML_JOB_DISPATCHER=$(or $(ML_JOB_DISPATCHER),postgres) $(UVICORN) app.main:app --reload --app-dir apps/api --host 127.0.0.1 --port $(API_PORT)
+	@$(LOAD_DOTENV); ML_JOB_DISPATCHER=$(or $(ML_JOB_DISPATCHER),postgres) exec $(UVICORN) app.main:app --reload --app-dir apps/api --host 127.0.0.1 --port $(API_PORT)
 
 worker:
-	$(dir $(PYTHON))dclab worker run
+	@$(LOAD_DOTENV); exec $(dir $(PYTHON))dclab worker run
 
 # Future: full containerized stack. Not used for day-to-day local development.
 # Stop native Postgres first if port 5432 is already taken: brew services stop postgresql@16

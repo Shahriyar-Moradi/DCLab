@@ -14,30 +14,43 @@ four statements whatever the number of projects (no N+1).
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, exists, or_, select, tuple_
+from sqlalchemy import and_, exists, func, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import distinct_on
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.db.models import (
     AgentRun,
+    BusinessQuestion,
+    BusinessQuestionReply,
+    Dataset,
+    DatasetAsset,
     EvaluationMetric,
     ExecutionRequest,
     Experiment,
+    ExperimentCandidate,
+    MlRunEvent,
     ModelEvaluation,
     ModelSelectionDecision,
     ModelVersion,
+    MonitoringWindow,
     ProblemSpec,
     ProjectDecisionRecord,
     ProjectRef,
+    RetrainComparison,
+    RetrainRequest,
+    ScoringScheduleRun,
+    SplitPlan,
     User,
     WorkflowRun,
 )
 from app.domain.agent_records import AGENT_SUBJECT_COLUMNS
+from app.domain.data_plane import DATASET_PURPOSE_TRAINING
 from app.domain.decision_records import ACTOR_AGENT, ACTOR_RULE, SUBJECT_COLUMNS
 from app.domain.errors import IdentityError, InvalidCursorError
 from app.domain.home_reads import (
@@ -50,17 +63,21 @@ from app.domain.home_reads import (
     ActivityItemRead,
     ActivityLinkRead,
     ActivityPage,
+    ActivityRunResultRead,
     ActivitySubjectRead,
     ChampionSummaryRead,
     LatestRunRead,
     ProjectGoalRead,
     ProjectSummaryRead,
+    RunProgressRead,
 )
+from app.domain.monitoring import BELOW_FLOOR
+from app.domain.scoring_schedules import OUTCOME_FAILED_TO_QUEUE, OUTCOME_QUEUED
 from app.domain.state_graph import node_key
 from app.services.authorization_service import can_read_workspace
 from app.services.cursor_codec import open_cursor, scope_digest, sign_cursor
 from app.services.experiment_service import STATUS_SQL
-from app.services.graph_service import untrusted_text
+from app.services.graph_service import untrusted_text, uploaded_file
 from app.services.project_service import get_project
 from app.services.proposal_review_service import RUN_KINDS_LISTED
 
@@ -80,16 +97,58 @@ _DECISION_LABELS: dict[str, str] = {
     "decision_point_resolved": "Decision point resolved",
     "proposal_reverted": "AI proposal reverted",
     "operating_point_chosen": "Operating point chosen",
+    "scoring_schedule_changed": "Weekly scoring schedule changed",
+    "monitoring_outcomes_linked": "Real outcomes linked for monitoring",
+    "target_confirmed": "Target confirmed",
+    "test_design_confirmed": "Test design confirmed",
+    "goal_metric_confirmed": "Ranking metric set",
+    "goal_rule_confirmed": "Business rule set",
+    "retrain_policy_changed": "Retrain policy changed",
+    "monitoring_thresholds_changed": "Monitoring thresholds changed",
 }
 # Types whose label already says what happened; the others append the state.
 _SELF_DESCRIBING = frozenset(
     {"winner_locked", "split_plan_created", "ref_initialized", "problem_spec_locked", "proposal_accepted",
-     "proposal_rejected", "decision_point_resolved", "proposal_reverted", "operating_point_chosen"}
+     "proposal_rejected", "decision_point_resolved", "proposal_reverted", "operating_point_chosen",
+     "scoring_schedule_changed", "monitoring_outcomes_linked", "target_confirmed", "test_design_confirmed",
+     "goal_metric_confirmed", "goal_rule_confirmed", "retrain_policy_changed", "monitoring_thresholds_changed"}
 )
 _RUN_FINISHED = {
     "completed": "completed", "failed": "failed", "cancelled": "cancelled", "skipped": "skipped",
 }
 _RULE_INITIATORS = frozenset({"system", "schedule"})
+UNFINISHED_RUN_STATUSES = frozenset({"queued", "running", "cancelling", "needs_input"})
+_CODE = re.compile(r"[a-z][a-z0-9_.-]{0,63}")
+
+
+def code_value(value: Any) -> str | None:
+    """A code-owned vocabulary value read back from the database (anything else is dropped)."""
+
+    return value if isinstance(value, str) and _CODE.fullmatch(value) else None
+
+
+# --- shared filters (activity, inbox, flow) ------------------------------------------------------
+
+
+def latest_window_revision(mw: Any = MonitoringWindow) -> Any:
+    """Monitoring windows are append-only revisions; reads use the highest one per week."""
+
+    newer = aliased(MonitoringWindow)
+    return ~exists().where(newer.workspace_id == mw.workspace_id, newer.project_id == mw.project_id,
+                           newer.model_version_id == mw.model_version_id, newer.window_start == mw.window_start,
+                           newer.revision > mw.revision)
+
+
+def newest_week_of_model_in_use(mw: Any = MonitoringWindow) -> Any:
+    """The newest week of the project's model in use (``champion_model`` ref)."""
+
+    later = aliased(MonitoringWindow)
+    return and_(
+        ~exists().where(later.workspace_id == mw.workspace_id, later.project_id == mw.project_id,
+                        later.model_version_id == mw.model_version_id, later.window_start > mw.window_start),
+        exists().where(ProjectRef.workspace_id == mw.workspace_id, ProjectRef.project_id == mw.project_id,
+                       ProjectRef.ref_kind == "champion_model", ProjectRef.model_version_id == mw.model_version_id),
+    )
 
 
 def decision_summary(decision_type: str, state: str) -> str:
@@ -197,12 +256,18 @@ def _run_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | Non
         ExecutionRequest.workspace_id == Experiment.workspace_id,
         ExecutionRequest.initiated_by_service_token_id.is_not(None),
     )
+    msd, cand = ModelSelectionDecision, ExperimentCandidate
     stmt = (
         select(Experiment.id, Experiment.project_id, at_column, Experiment.run_number,
                Experiment.parent_pipeline_run_id, WorkflowRun.initiated_by_type, WorkflowRun.requested_by,
-               by_token.label("by_token"), STATUS_SQL if finished else Experiment.status)
+               by_token.label("by_token"), STATUS_SQL if finished else Experiment.status,
+               msd.selection_metric, msd.selected_score, cand.model_family, cand.algorithm)
         .outerjoin(WorkflowRun, and_(WorkflowRun.id == Experiment.workflow_run_id,
                                      WorkflowRun.workspace_id == Experiment.workspace_id))
+        # The locked winner (CV selection score only; the final holdout is never read here).
+        .outerjoin(msd, and_(finished, msd.pipeline_run_id == Experiment.id, msd.workspace_id == Experiment.workspace_id,
+                             Experiment.scientific_evidence_locked_at.is_not(None)))
+        .outerjoin(cand, and_(cand.id == msd.selected_candidate_id, cand.workspace_id == msd.workspace_id))
         .where(Experiment.workspace_id == ws)
     )
     if finished:
@@ -213,9 +278,13 @@ def _run_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | Non
     if cut is not None:
         stmt = stmt.where(cut)
     items = []
-    for exp_id, proj, at, number, parent, initiator, requester, token, status in db.execute(
+    for exp_id, proj, at, number, parent, initiator, requester, token, status, metric, score, family, algo in db.execute(
         stmt.order_by(at_column.desc(), Experiment.id.desc()).limit(n)
     ).all():
+        result = None
+        if finished and code_value(metric) and score is not None:
+            result = ActivityRunResultRead(model_family=code_value(family), algorithm=code_value(algo),
+                                           metric=metric, cv_score=float(score))
         if token or initiator == "agent":
             actor = ActivityActorRead(kind="agent")
         elif initiator in _RULE_INITIATORS:
@@ -229,6 +298,7 @@ def _run_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | Non
             subject=_subject("experiment", exp_id),
             summary=f"{label} {public}" if finished else f"{label} queued",
             status=str(status) if finished else None, link=ActivityLinkRead(kind="experiment", id=exp_id),
+            run_result=result,
         ))
     return items
 
@@ -266,8 +336,177 @@ def _agent_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | N
     return items
 
 
+def _page(db: Session, stmt: Any, kind: str, at_column: Any, id_column: Any, project_column: Any,
+          project_id: UUID | None, after: _Key | None, n: int) -> list[Any]:
+    if project_id is not None:
+        stmt = stmt.where(project_column == project_id)
+    cut = keyset_before(after, kind, at_column, id_column)
+    if cut is not None:
+        stmt = stmt.where(cut)
+    return db.execute(stmt.order_by(at_column.desc(), id_column.desc()).limit(n)).all()
+
+
+def _upload_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | None, n: int,
+                  viewer_id: UUID | None) -> list[ActivityItemRead]:
+    """Uploaded files of a project (never a run's prepared table); no file name (free text)."""
+
+    stmt = (
+        select(Dataset.id, Dataset.project_id, Dataset.created_at, Dataset.purpose,
+               Dataset.uploaded_by_service_token_id, DatasetAsset.created_by)
+        .outerjoin(DatasetAsset, and_(DatasetAsset.id == Dataset.dataset_asset_id,
+                                      DatasetAsset.workspace_id == Dataset.workspace_id))
+        .where(Dataset.workspace_id == ws, Dataset.project_id.is_not(None), uploaded_file())
+    )
+    items = []
+    for ds_id, proj, at, purpose, token, creator in _page(db, stmt, "dataset_uploaded", Dataset.created_at,
+                                                          Dataset.id, Dataset.project_id, project_id, after, n):
+        actor = (ActivityActorRead(kind="agent") if token is not None else
+                 ActivityActorRead(kind="person", is_you=viewer_id is not None and creator == viewer_id))
+        noun = "Training file" if purpose == DATASET_PURPOSE_TRAINING else "Scoring file"
+        items.append(ActivityItemRead(
+            id=f"dataset_uploaded:{ds_id}", kind="dataset_uploaded", occurred_at=at, project_id=proj, actor=actor,
+            subject=_subject("dataset_version", ds_id), summary=f"{noun} uploaded", status=code_value(purpose),
+            link=ActivityLinkRead(kind="dataset_version", id=ds_id),
+        ))
+    return items
+
+
+def _final_test_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | None,
+                      n: int) -> list[ActivityItemRead]:
+    """When a run's selected model met its final test (first completed evaluation): no values."""
+
+    ev, earlier, msd = ModelEvaluation, aliased(ModelEvaluation), ModelSelectionDecision
+    stmt = (
+        select(Experiment.id, Experiment.project_id, ev.created_at, Experiment.run_number,
+               Experiment.parent_pipeline_run_id)
+        .select_from(ev)
+        .join(msd, and_(msd.selected_candidate_id == ev.candidate_id, msd.workspace_id == ev.workspace_id))
+        .join(Experiment, and_(Experiment.id == msd.pipeline_run_id, Experiment.workspace_id == msd.workspace_id))
+        .where(ev.workspace_id == ws, ev.evaluation_scope == "final_holdout", ev.status == "completed",
+               ~exists().where(earlier.workspace_id == ev.workspace_id, earlier.candidate_id == ev.candidate_id,
+                               earlier.evaluation_scope == "final_holdout", earlier.status == "completed",
+                               tuple_(earlier.created_at, earlier.id) < tuple_(ev.created_at, ev.id)))
+    )
+    return [
+        ActivityItemRead(
+            id=f"final_test_run:{exp_id}", kind="final_test_run", occurred_at=at, project_id=proj,
+            actor=ActivityActorRead(kind="rule"), subject=_subject("experiment", exp_id),
+            summary=f"Final test run once for {run_label(number, parent is not None)}",
+            link=ActivityLinkRead(kind="experiment", id=exp_id),
+        )
+        for exp_id, proj, at, number, parent in _page(db, stmt, "final_test_run", ev.created_at, Experiment.id,
+                                                      Experiment.project_id, project_id, after, n)
+    ]
+
+
+def _drift_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | None,
+                 n: int) -> list[ActivityItemRead]:
+    mw = MonitoringWindow
+    stmt = select(mw.id, mw.project_id, mw.computed_at, mw.model_version_id, mw.summary_code).where(
+        mw.workspace_id == ws, mw.status == "alert", latest_window_revision())
+    return [
+        ActivityItemRead(
+            id=f"drift_alert:{window_id}", kind="drift_alert", occurred_at=at, project_id=proj,
+            actor=ActivityActorRead(kind="rule"), subject=_subject("model_version", version_id),
+            summary=("Weekly monitoring found real outcomes below the floor (alert)" if code == BELOW_FLOOR
+                     else "Weekly monitoring found drift (alert)"), status="alert",
+            summary_code=code_value(code), link=ActivityLinkRead(kind="monitoring_window", id=window_id),
+        )
+        for window_id, proj, at, version_id, code in _page(db, stmt, "drift_alert", mw.computed_at, mw.id,
+                                                           mw.project_id, project_id, after, n)
+    ]
+
+
+def _scheduled_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | None,
+                     n: int) -> list[ActivityItemRead]:
+    run = ScoringScheduleRun
+    stmt = select(run.id, run.project_id, run.created_at, run.outcome, run.batch_prediction_id).where(
+        run.workspace_id == ws)
+    items = []
+    for run_id, proj, at, outcome, prediction in _page(db, stmt, "scheduled_scoring", run.created_at, run.id,
+                                                       run.project_id, project_id, after, n):
+        verb = ("started" if outcome == OUTCOME_QUEUED else
+                "could not start" if outcome == OUTCOME_FAILED_TO_QUEUE else "skipped")
+        items.append(ActivityItemRead(
+            id=f"scheduled_scoring:{run_id}", kind="scheduled_scoring", occurred_at=at, project_id=proj,
+            actor=ActivityActorRead(kind="rule"),
+            subject=_subject("batch_prediction", prediction) if prediction else _subject("project", proj),
+            summary=f"Weekly scoring {verb}", status=code_value(outcome),
+            link=ActivityLinkRead(kind="scoring_schedule_run", id=run_id),
+        ))
+    return items
+
+
+_RETRAIN_REQUESTED = {"person": "Retrain on newest data started", "auto": "Retrain on newest data started "
+                      "automatically", "ask": "Retrain on newest data suggested"}
+
+
+def _retrain_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | None, n: int,
+                   viewer_id: UUID | None) -> list[ActivityItemRead]:
+    """D5a: retrains asked, started (by a person or the rule) and compared (no figures)."""
+
+    rr, rc = RetrainRequest, RetrainComparison
+    items = []
+    for row_id, proj, at, origin, run, version, who in _page(
+            db, select(rr.id, rr.project_id, rr.created_at, rr.origin, rr.experiment_id, rr.incumbent_model_version_id,
+                       rr.requested_by_user_id).where(rr.workspace_id == ws),
+            "retrain_requested", rr.created_at, rr.id, rr.project_id, project_id, after, n):
+        actor = (ActivityActorRead(kind="person", is_you=viewer_id is not None and who == viewer_id)
+                 if origin == "person" else ActivityActorRead(kind="rule"))
+        items.append(ActivityItemRead(
+            id=f"retrain_requested:{row_id}", kind="retrain_requested", occurred_at=at, project_id=proj, actor=actor,
+            subject=_subject("experiment", run) if run else _subject("model_version", version),
+            summary=_RETRAIN_REQUESTED.get(str(origin), "Retrain on newest data"), status=code_value(origin),
+            link=ActivityLinkRead(kind="retrain_request", id=row_id)))
+    for row_id, proj, at, status, run in _page(
+            db, select(rc.id, rc.project_id, rc.created_at, rc.status, rc.experiment_id).where(rc.workspace_id == ws),
+            "retrain_compared", rc.created_at, rc.id, rc.project_id, project_id, after, n):
+        items.append(ActivityItemRead(
+            id=f"retrain_compared:{row_id}", kind="retrain_compared", occurred_at=at, project_id=proj,
+            actor=ActivityActorRead(kind="rule"), subject=_subject("experiment", run),
+            summary=("Retrained model compared with the model in use" if status == "compared"
+                     else "Retrained model is not comparable with the model in use"), status=code_value(status),
+            link=ActivityLinkRead(kind="retrain_comparison", id=row_id)))
+    return items
+
+
+def _question_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | None, n: int,
+                    viewer_id: UUID) -> list[ActivityItemRead]:
+    """D7a, people only: questions asked, replied to (by a business user or the data team) and closed."""
+
+    q, r = BusinessQuestion, BusinessQuestionReply
+
+    def item(kind: str, row_id: UUID, question_id: UUID, proj: UUID, at: datetime, who: UUID | None,
+             summary: str, side: str | None = None) -> ActivityItemRead:
+        return ActivityItemRead(
+            id=f"{kind}:{row_id}", kind=kind, occurred_at=at, project_id=proj, status=side,
+            actor=ActivityActorRead(kind="person", is_you=who == viewer_id), subject=_subject("project", proj),
+            summary=summary, link=ActivityLinkRead(kind="business_question", id=question_id))
+
+    items = [item("question_asked", qid, qid, proj, at, who, "Question asked to the business")
+             for qid, proj, at, who in _page(db, select(q.id, q.project_id, q.created_at, q.asked_by_user_id).where(
+                 q.workspace_id == ws), "question_asked", q.created_at, q.id, q.project_id, project_id, after, n)]
+    items += [item("question_closed", qid, qid, proj, at, who, "Question to the business closed")
+              for qid, proj, at, who in _page(db, select(q.id, q.project_id, q.closed_at, q.closed_by_user_id).where(
+                  q.workspace_id == ws, q.closed_at.is_not(None)), "question_closed", q.closed_at, q.id, q.project_id,
+                  project_id, after, n)]
+    replies = (select(r.id, r.question_id, q.project_id, r.created_at, r.author_user_id, r.author_side)
+               .join(q, and_(q.workspace_id == r.workspace_id, q.id == r.question_id)).where(r.workspace_id == ws))
+    items += [item("question_replied", rid, qid, proj, at, who, "A business user replied to a question"
+                   if side == "business" else "The data team added a follow-up to a question", side)
+              for rid, qid, proj, at, who, side in _page(db, replies, "question_replied", r.created_at, r.id,
+                                                          q.project_id, project_id, after, n)]
+    return items
+
+
 def _key(item: ActivityItemRead) -> _Key:
-    return item.occurred_at, ACTIVITY_KIND_RANK[item.kind], item.link.id
+    return item.occurred_at, ACTIVITY_KIND_RANK[item.kind], _link_key(item)
+
+
+def _link_key(item: ActivityItemRead) -> UUID:
+    """The keyset id: the item's own row (a reply's id, not its question's)."""
+
+    return UUID(item.id.rsplit(":", 1)[1]) if item.kind == "question_replied" else item.link.id
 
 
 def list_activity(
@@ -298,6 +537,12 @@ def list_activity(
         *_run_items(db, workspace_id, project_id, after, n, viewer_id, finished=True),
         *_agent_items(db, workspace_id, project_id, after, n, finished=False),
         *_agent_items(db, workspace_id, project_id, after, n, finished=True),
+        *_upload_items(db, workspace_id, project_id, after, n, viewer_id),
+        *_final_test_items(db, workspace_id, project_id, after, n),
+        *_drift_items(db, workspace_id, project_id, after, n),
+        *_scheduled_items(db, workspace_id, project_id, after, n),
+        *_retrain_items(db, workspace_id, project_id, after, n, viewer_id),
+        *(_question_items(db, workspace_id, project_id, after, n, viewer_id) if viewer_id is not None else []),
     ]
     candidates.sort(key=_key, reverse=True)
     page = candidates[:limit]
@@ -311,9 +556,11 @@ def list_activity(
 # --- project list summaries ----------------------------------------------------------------------
 
 
-def project_summaries(db: Session, *, workspace_id: UUID, project_ids: list[UUID]) -> dict[UUID, ProjectSummaryRead]:
-    """Goal, champion CV metrics and latest run of each project, in four statements (the caller has
-    already authorized workspace read and loaded ``project_ids`` from this workspace)."""
+def project_summaries(db: Session, *, workspace_id: UUID, project_ids: list[UUID], actor: User | None = None,
+                      viewer_is_agent: bool = False) -> dict[UUID, ProjectSummaryRead]:
+    """Goal, champion CV metrics, latest run (+ progress while unfinished), stage and the caller's
+    waiting decisions of each project, in a fixed number of statements (the caller has already
+    authorized workspace read and loaded ``project_ids`` from this workspace)."""
 
     if not project_ids:
         return {}
@@ -392,14 +639,74 @@ def project_summaries(db: Session, *, workspace_id: UUID, project_ids: list[UUID
         .order_by(Experiment.project_id, Experiment.created_at.desc(), Experiment.id.desc())
     )
     runs = {
-        project: LatestRunRead(experiment_id=exp_id, status=str(status), created_at=created, ended_at=ended)
-        for exp_id, project, status, created, ended in db.execute(
-            select(Experiment.id, Experiment.project_id, STATUS_SQL, Experiment.created_at, Experiment.ended_at)
+        project: LatestRunRead(experiment_id=exp_id, run_number=number, status=str(status), created_at=created,
+                               ended_at=ended)
+        for exp_id, project, number, status, created, ended in db.execute(
+            select(Experiment.id, Experiment.project_id, Experiment.run_number, STATUS_SQL, Experiment.created_at,
+                   Experiment.ended_at)
             .where(Experiment.workspace_id == ws, Experiment.id.in_(latest))
         ).all()
     }
+    running = dict(db.execute(
+        select(Experiment.project_id, func.count())
+        .where(Experiment.workspace_id == ws, Experiment.project_id.in_(project_ids),
+               STATUS_SQL.in_(sorted(UNFINISHED_RUN_STATUSES)))
+        .group_by(Experiment.project_id)
+    ).all())
+    unfinished = [run.experiment_id for run in runs.values() if run.status in UNFINISHED_RUN_STATUSES]
+    progress = run_progress(db, ws, unfinished) if unfinished else {}
+    for run in runs.values():
+        run.progress = progress.get(run.experiment_id)
+    with_data = set(db.scalars(
+        select(Dataset.project_id).distinct()
+        .where(Dataset.workspace_id == ws, Dataset.project_id.in_(project_ids),
+               Dataset.purpose == DATASET_PURPOSE_TRAINING, uploaded_file())
+    ))
+    waiting: dict[UUID, int] = {}
+    if actor is not None:
+        from app.services.inbox_read_service import needs_decision_by_project  # the inbox imports this module
+
+        waiting = needs_decision_by_project(db, actor=actor, workspace_id=ws, project_ids=project_ids,
+                                            viewer_is_agent=viewer_is_agent)
+
+    def stage(project: UUID) -> str:
+        run = runs.get(project)
+        if project in champion_ref:
+            return "model_in_use"
+        if run is not None:
+            return "running" if run.status in UNFINISHED_RUN_STATUSES else "runs_finished"
+        return "goal_set" if project in goals else "data_uploaded" if project in with_data else "no_data"
+
     return {
         project: ProjectSummaryRead(goal=goals.get(project), champion=champions.get(project),
-                                    latest_run=runs.get(project))
+                                    latest_run=runs.get(project), stage=stage(project),
+                                    waiting_decisions=waiting.get(project, 0),
+                                    running_count=int(running.get(project, 0)))
         for project in project_ids
     }
+
+
+def run_progress(db: Session, ws: UUID, experiment_ids: list[UUID]) -> dict[UUID, RunProgressRead]:
+    """Latest recorded event of each unfinished run, in one statement (``ml_run_events`` are append-only)."""
+
+    ev, done = MlRunEvent, aliased(MlRunEvent)
+    finished = (select(func.count()).where(done.experiment_id == ev.experiment_id, done.workspace_id == ev.workspace_id,
+                                           done.event_type == "candidate_completed")
+                .correlate(ev).scalar_subquery())
+    rows = db.execute(
+        select(ev.experiment_id, ev.stage, ev.event_type, ev.timestamp, ev.payload["model_family"].astext,
+               ev.payload["fold_number"].astext, finished.label("finished"), SplitPlan.validation_folds)
+        .join(Experiment, and_(Experiment.id == ev.experiment_id, Experiment.workspace_id == ev.workspace_id))
+        .outerjoin(SplitPlan, and_(SplitPlan.id == Experiment.split_plan_id, SplitPlan.workspace_id == ws))
+        .where(ev.workspace_id == ws, ev.experiment_id.in_(experiment_ids))
+        .ext(distinct_on(ev.experiment_id))
+        .order_by(ev.experiment_id, ev.sequence.desc())
+    ).all()
+    result: dict[UUID, RunProgressRead] = {}
+    for exp_id, stage, event_type, at, family, fold, count, folds in rows:
+        fold_number = int(fold) if str(event_type).startswith("cv_fold_") and str(fold or "").isdigit() else None
+        result[exp_id] = RunProgressRead(stage=code_value(stage), model_family=code_value(family),
+                                         fold_number=fold_number, folds_planned=folds,
+                                         candidates_finished=int(count or 0), updated_at=at,
+                                         fold_completed=fold_number is not None and event_type == "cv_fold_completed")
+    return result

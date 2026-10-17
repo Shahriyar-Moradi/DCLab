@@ -190,7 +190,7 @@ def redact(
     located += [(index, item) for index, entry in enumerate(transcript) for item in entry.fields]
     rendered: dict[int, Any] = {}
     for entry in transcript:
-        if entry.kind not in ("user_message", "assistant_message", "tool_result") or (
+        if entry.kind not in ("user_message", "assistant_message", "tool_result", "page_context") or (
             entry.tool_name is not None and (not isinstance(entry.tool_name, str) or not _KEY.fullmatch(entry.tool_name))
         ):
             raise GatewayRefusal("policy_denied", "transcript items carry code keys only")

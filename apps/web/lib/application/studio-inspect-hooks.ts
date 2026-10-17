@@ -6,6 +6,7 @@ import { z } from "zod";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { v1Get } from "@/lib/infrastructure/v1/client";
 import { isUuid } from "./command-search";
+import { ReleaseSummarySchema } from "./studio-releases-hooks";
 
 const nullableString = z.string().nullable().optional();
 const nullableNumber = z.number().nullable().optional();
@@ -64,6 +65,8 @@ export const ModelVersionSchema = z.object({
   candidate_key: nullableString,
   is_champion: z.boolean(),
   ref_kinds: z.array(z.string()).optional(),
+  /** P7.2-A: the approval behind this model when it is the model in use and a person approved it. */
+  release: ReleaseSummarySchema.nullable().optional(),
   lineage: z.object({
     candidate_id: z.string(),
     experiment_id: z.string(),
@@ -75,6 +78,15 @@ export const ModelVersionSchema = z.object({
   }),
   artifacts: z.array(z.object({ id: z.string(), role: z.string(), artifact_type: z.string(), content_digest: z.string(), size_bytes: z.number() })).optional(),
   metrics: z.object({ selection_metric: nullableString, selected_score: nullableNumber, cv: anyRecord.optional(), decision_threshold: nullableNumber, constraint_status: nullableString }).nullable().optional(),
+  /** P7.1-A / V7 B4 (UI-D "Saved file & checks"): how the model is saved and the checks stored when it was built. */
+  saved_format: z.enum(["package_v1", "legacy_quarantined"]).nullable().optional(),
+  package_verification: z.object({
+    status: z.string(),
+    checked_at: nullableString,
+    rows_compared: nullableNumber,
+    // Strings, not enums: a check code added later is skipped by the view model instead of failing the whole read.
+    checks: z.array(z.object({ check: z.string(), passed: z.boolean() })).optional(),
+  }).nullable().optional(),
 });
 export type StudioModelVersion = z.infer<typeof ModelVersionSchema>;
 

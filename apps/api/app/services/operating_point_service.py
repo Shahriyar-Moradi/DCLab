@@ -42,7 +42,7 @@ from app.domain.operating_points import (
     OperatingScoringRead,
     what_this_means,
 )
-from app.engine.modeling.objective import MetricConstraint, ObjectiveError, objective_from_dict
+from app.engine.modeling.objective import GOAL_LOCK_SOURCE, MetricConstraint, ObjectiveError, objective_from_dict
 from app.engine.modeling.operating_points import (
     CURVE_VERSION,
     MIN_CLASS_ROWS,
@@ -61,7 +61,7 @@ from app.services import decision_record_service as drs
 from app.services.audience_projection import public_diagnostic
 from app.services.authorization_service import can_read_workspace
 
-_LOCK_KEYS = ("value", "source", "status")  # the lock's out-of-fold fields; never holdout_*
+_LOCK_KEYS = ("value", "source", "status", "goal_metric")  # the lock's out-of-fold fields; never holdout_*
 
 
 def _load(db: Session, workspace_id: UUID, experiment_id: UUID, *, for_update: bool = False) -> Experiment:
@@ -82,6 +82,21 @@ def _chosen_head(db: Session, workspace_id: UUID, experiment_id: UUID) -> Projec
         .where(pdr.workspace_id == workspace_id, pdr.experiment_id == experiment_id,
                pdr.decision_type == DECISION_OPERATING_POINT_CHOSEN, pdr.state == STATE_ACCEPTED,
                successor.id.is_(None))
+        .order_by(pdr.recorded_at.desc(), pdr.id.desc())
+        .limit(1)
+    )
+
+
+def choice_before(db: Session, workspace_id: UUID, experiment_id: UUID, moment: Any) -> ProjectDecisionRecord | None:
+    """The operating-point choice that was current on the run at ``moment`` (the newest accepted one
+    recorded before it): the pre-registered goal the verdict read scores (P5.4-A1b)."""
+
+    pdr = ProjectDecisionRecord
+    return db.scalar(
+        select(pdr)
+        .where(pdr.workspace_id == workspace_id, pdr.experiment_id == experiment_id,
+               pdr.decision_type == DECISION_OPERATING_POINT_CHOSEN, pdr.state == STATE_ACCEPTED,
+               pdr.recorded_at < moment)
         .order_by(pdr.recorded_at.desc(), pdr.id.desc())
         .limit(1)
     )
@@ -198,7 +213,10 @@ def operating_points_from_result(
         index = curve.index_of(locked_value) if locked_value is not None else None
         reproduced = None
         if locked_value is not None and state.objective_valid:
-            reproduced = solve_lock(curve, state.objective, state.primary_metric) == locked_value
+            # An improve final run locked the goal's own metric (ADR 0007 §6.2, source improve_goal).
+            goal = state.lock["goal_metric"] if state.lock["source"] == GOAL_LOCK_SOURCE else None
+            reproduced = solve_lock(curve, state.objective, state.primary_metric,
+                                    goal if isinstance(goal, str) else None) == locked_value
         locked = locked.model_copy(update={
             # Small cells: no counts below the class-size gate (the threshold alone is shown).
             "point": _detail(curve, index, state.cost) if index is not None and state.status == "available" else None,

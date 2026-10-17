@@ -133,7 +133,9 @@ def _service_token_user(request: Request, db: Session, raw: str) -> User:
             "capability_denied", user=creator, workspace_id=principal.workspace_id,
         )
     if required in WRITE_SCOPES and not is_ml_write_role(member_role):
-        # Writes need the creator's explicit ML-write membership (never a platform role).
+        # Writes need the creator's explicit ML-write membership (never a platform role). A
+        # client_user creator resolves to viewer (explicit_workspace_role), so tokens it minted
+        # before that cap existed are read-only here.
         _deny_workspace(
             request, status.HTTP_403_FORBIDDEN,
             "workspace ML execution access is not permitted", "capability_denied",
@@ -384,7 +386,7 @@ def require_session_workspace_member(
     if (request.headers.get("Authorization") or "").strip():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "session_required", "message": "service tokens are managed from a signed-in session"},
+            detail={"code": "session_required", "message": "this route requires a signed-in session"},
         )
     return require_workspace_read(request, get_current_user(request, db), db)
 

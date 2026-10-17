@@ -8,7 +8,7 @@
  * Runtime validation stays with the caller's zod schema, as everywhere else.
  */
 import type { ZodType } from "zod";
-import { apiDownload, apiGet, apiPost, apiPostForm, newIdempotencyKey } from "../api-client";
+import { apiDownload, apiGet, apiGetTagged, apiPatch, apiPost, apiPostForm, apiPostStream, apiPut, newIdempotencyKey } from "../api-client";
 import type { components, paths } from "./schema";
 
 export { newIdempotencyKey };
@@ -116,6 +116,15 @@ export function v1Get<P extends V1Path<"get">, T>(
   return apiGet(v1Path(path, options?.params), schema, queryParams(options?.query), { signal: options?.signal });
 }
 
+/** `v1Get` that also returns the response's strong `ETag` (send it back with `ifMatch`), or null when none was sent. */
+export function v1GetTagged<P extends V1Path<"get">, T>(
+  path: P,
+  schema: ZodType<T> & ZodType<ReadableAs<V1Response<P, "get">, T>>,
+  ...[options]: OptionsArg<P, { query?: V1Query<P, "get"> & QueryArg; signal?: AbortSignal }>
+): Promise<{ data: T; etag: string | null }> {
+  return apiGetTagged(v1Path(path, options?.params), schema, queryParams(options?.query), { signal: options?.signal });
+}
+
 type CommandOptions = {
   /** Defaults to a fresh key; pass the action's key so a retried submit replays. */
   idempotencyKey?: string;
@@ -129,6 +138,33 @@ export function v1Post<P extends V1Path<"post">, T>(
   ...[options]: OptionsArg<P, CommandOptions>
 ): Promise<T> {
   return apiPost(v1Path(path, options?.params), schema, body ?? {}, withIdempotency(options?.idempotencyKey, options?.headers));
+}
+
+/** A /v1 command answered with Server-Sent Events: the raw `Response` (status already checked). */
+export function v1PostStream<P extends V1Path<"post">>(
+  path: P,
+  body: V1RequestBody<P, "post">,
+  ...[options]: OptionsArg<P, CommandOptions & { signal?: AbortSignal }>
+): Promise<Response> {
+  return apiPostStream(v1Path(path, options?.params), body ?? {}, withIdempotency(options?.idempotencyKey, options?.headers), options?.signal);
+}
+
+export function v1Put<P extends V1Path<"put">, T>(
+  path: P,
+  schema: ZodType<T> & ZodType<ReadableAs<V1Response<P, "put">, T>>,
+  body: V1RequestBody<P, "put">,
+  ...[options]: OptionsArg<P, CommandOptions>
+): Promise<T> {
+  return apiPut(v1Path(path, options?.params), schema, body ?? {}, withIdempotency(options?.idempotencyKey, options?.headers));
+}
+
+export function v1Patch<P extends V1Path<"patch">, T>(
+  path: P,
+  schema: ZodType<T> & ZodType<ReadableAs<V1Response<P, "patch">, T>>,
+  body: V1RequestBody<P, "patch">,
+  ...[options]: OptionsArg<P, CommandOptions>
+): Promise<T> {
+  return apiPatch(v1Path(path, options?.params), schema, body ?? {}, withIdempotency(options?.idempotencyKey, options?.headers));
 }
 
 export function v1PostForm<P extends V1Path<"post">, T>(

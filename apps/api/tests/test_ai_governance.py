@@ -18,6 +18,7 @@ from app.agents.governance import decision_points as dp
 from app.agents.governance.platform_default import (
     CAPS,
     PLATFORM_DEFAULT,
+    ROLE_NAMES,
     SEED_ACTOR_RULE,
     fake_provider_allowed,
 )
@@ -40,6 +41,7 @@ from app.agents.governance.policy import (
     set_level,
 )
 from app.agents.governance.seed import seed_platform_governance
+from app.agents.semantic.releases import RELEASES
 from app.agents.governance.switches import (
     SwitchHeldByIncident,
     effective_switches,
@@ -99,7 +101,9 @@ def gov(db_session):
     ns.platform_admin = user(UserRole.DCLAB_ADMIN, None, "staff")
     ns.project = create_project(db, actor=ns.owner, workspace_id=ns.ws_a, name="Gov").id
     ns.release = _insert(db, "prompt_releases", {
-        "agent_key": "jev:column.semantic_role", "version": 1, "prompt_digest": "a" * 64,
+        # the code's current release version (2 since the 2026-10-16 move to Claude), so sync keeps this row
+        "agent_key": "jev:column.semantic_role", "version": RELEASES["column.semantic_role"].version,
+        "prompt_digest": "a" * 64,
         "output_schema_digest": "b" * 64, "status": "released", "released_at": datetime.now(UTC),
     })
     db.commit()
@@ -171,9 +175,11 @@ def test_seed_is_idempotent_and_platform_default_is_within_caps(db_session, gov)
     assert count == 1
     assert cap_violations(PLATFORM_DEFAULT, CAPS) == []
     roles = PLATFORM_DEFAULT.models.roles
-    assert (roles.lead.default, roles.specialist.per_agent, roles.legacy_decision.default,
-            roles.jev.default) == ("gpt-6.1-sol", {"dataset_investigator": "gpt-6-luna"}, "gpt-6-luna",
-                                   "jev-1.13.0")
+    # every role, Jev included, on Claude Sonnet 5.5 since 2026-10-16 (legacy gpt / jev ids commented out)
+    assert (roles.lead.default, roles.specialist.per_agent, roles.legacy_decision.default, roles.verifier.default,
+            roles.jev.default) == ("claude-sonnet-5-5", {"dataset_investigator": "claude-sonnet-5-5"},
+                                   "claude-sonnet-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5")
+    assert {model for role in ROLE_NAMES for model in getattr(roles, role).allowed} == {"claude-sonnet-5-5"}
     assert PLATFORM_DEFAULT.budgets.workspace_month_micros == 25_000_000
     assert PLATFORM_DEFAULT.data.max_class == "aggregates" and not PLATFORM_DEFAULT.data.user_text_to_jev
     assert Settings().ai_enabled is False
@@ -254,7 +260,7 @@ def test_effective_policy_merges_and_is_tenant_isolated(db_session, gov):
     ("changes", "path"),
     [
         ({"data__max_class": "sample_values"}, "data.max_class"),
-        ({"models__roles__lead__allowed": ["gpt-6.1-sol", "gpt-9"]}, "models.roles.lead.allowed"),
+        ({"models__roles__lead__allowed": ["claude-sonnet-5-5", "gpt-6.1-sol"]}, "models.roles.lead.allowed"),
         ({"limits__assistant_turn__steps": 9}, "limits.assistant_turn.steps"),
         ({"budgets__workspace_month_micros": 26_000_000}, "budgets.workspace_month_micros"),
         ({"autonomy__ops__auto_release": True}, "autonomy.ops.auto_release"),

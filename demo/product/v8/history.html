@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>History · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="history.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>History</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch" title="Admins only: preview what another role sees. Your rights and every request stay yours."><span>View as</span><select id="role-switch"><option value="admin">Admin (your own view)</option><option value="ds">Data scientist</option><option value="analyst">Analyst (view only)</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant <span class="beta">Beta</span></button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>History</h1><p class="sub">Every decision and event in this project: who, what, the evidence, and where a correction is allowed.</p></div>
+</div>
+<div class="statusrow"><a class="stag ok" href="real.html" title="See what is real today">Working today</a></div>
+
+<div class="banner warn"><div class="sp"><b>A newer file exists.</b> Customer data · Sep 2026 was uploaded after the file the model in use was built on (Jun 2026). A retrained model on it waits for your decision.</div><a class="btn sm" href="monitoring.html">Open Monitoring</a></div>
+
+<div class="tabs" data-tabs="hist">
+  <button data-tab="log" aria-selected="true">Log</button>
+  <button data-tab="lineage">Lineage</button>
+</div>
+
+<div data-tabpanel="hist:log" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>When</th><th>Who</th><th>What</th><th>Evidence</th><th>Correct</th></tr></thead>
+    <tbody data-hist-top></tbody>
+    <tbody>
+      <tr><td>Wed</td><td><span class="who-pill">A rule</span></td><td>Compared the retrained model with the model in use</td><td>Same kind of test, latest months · 9,610 rows</td><td>—</td></tr>
+      <tr><td>Wed</td><td><span class="who-pill">A rule</span></td><td>Run 5 finished · LightGBM · CV PR-AUC 0.71</td><td>Sep 2026 file, its own test design</td><td>—</td></tr>
+      <tr><td>Tue</td><td><span class="who-pill you">You</span></td><td>Started a retrain on newest data</td><td>The Inbox asked (retrain policy: Ask me)</td><td>—</td></tr>
+      <tr><td>Tue</td><td><span class="who-pill">Maya Chen</span></td><td>Uploaded <code>customers_2026_09.csv</code></td><td>53,540 rows, 31 columns</td><td>—</td></tr>
+      <tr><td>Mon</td><td><span class="who-pill">A rule</span></td><td>Drift alert on <code>plan_type</code> · week of 28 Sep</td><td>PSI 0.22, alert line 0.20</td><td>—</td></tr>
+      <tr><td>Mon</td><td><span class="who-pill">A rule</span></td><td>Weekly scoring finished · 6,412 of 51,296 flagged</td><td>Churn model v1, approved</td><td>—</td></tr>
+      <tr><td>2 wks ago</td><td><span class="who-pill">Sam (Admin)</span></td><td>Changed the monitoring thresholds: precision floor off → 0.55</td><td>“Retention team capacity” · applies to weeks computed after it</td><td>—</td></tr>
+      <tr><td>2 wks ago</td><td><span class="who-pill">Maya Chen</span></td><td>Linked an outcomes file for August</td><td><code>outcomes_aug.csv</code> · key <code>customer_id</code> · outcome <code>cancelled</code></td><td>—</td></tr>
+      <tr><td>3 wks ago</td><td><span class="who-pill">Sam (Admin)</span></td><td>Set the retrain policy: Off → Ask me</td><td>“Retention team wants a say before compute is spent”</td><td>—</td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Approved Churn model v1 for scoring</td><td>Final test recall 0.81 meets the rule</td><td><a href="model.html">Change it again on Model › Approved for scoring</a></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill">A rule</span></td><td>Run 1 used its final test set once</td><td>The result is on the Model card</td><td>Cannot be repeated</td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill">A rule</span></td><td>Chose the best model of Run 1 on cross-validation</td><td>LightGBM, balanced class weights · PR-AUC 0.70 ± 0.02</td><td>—</td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Confirmed the target and the test design</td><td>Suggested by the rules · Confirmed by you</td><td><button class="btn sm" type="button" data-mock="edit">Correct</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Uploaded <code>customers_2026Q3.csv</code></td><td>48,210 rows, 31 columns</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Correct is offered only for decisions a person recorded; a correction adds a new entry and the old one stays, marked corrected. Nothing is deleted. Suggestions from AI are undone from the Inbox; AI is off in this workspace, so there are none.</p>
+</div>
+
+<div data-tabpanel="hist:lineage">
+  <div class="card">
+    <h3>How the pieces connect <span class="sp">file → test design → runs → model → predictions</span></h3>
+    <svg class="chart" viewBox="0 0 498 190" role="img" aria-label="Diagram: the June 2026 customer file leads to the test design, runs 1 to 4, the churn model version 1 in use and the weekly predictions. A newer September 2026 file has its own test design and Run 5, the retrain, which made model version 5; it waits for your decision."><rect class="node" x="8" y="28" width="92" height="46" rx="10"/><text class="lbl" x="54.0" y="48" text-anchor="middle" font-weight="600">Customer file</text><text class="axis" x="54.0" y="64" text-anchor="middle">Jun 2026</text><rect class="node" x="112" y="28" width="88" height="46" rx="10"/><text class="lbl" x="156.0" y="48" text-anchor="middle" font-weight="600">Test design</text><text class="axis" x="156.0" y="64" text-anchor="middle">time-ordered</text><rect class="node" x="212" y="28" width="70" height="46" rx="10"/><text class="lbl" x="247.0" y="48" text-anchor="middle" font-weight="600">Runs 1–4</text><text class="axis" x="247.0" y="64" text-anchor="middle">same folds</text><rect class="node" x="294" y="28" width="92" height="46" rx="10"/><text class="lbl" x="340.0" y="48" text-anchor="middle" font-weight="600">Churn model</text><text class="axis" x="340.0" y="64" text-anchor="middle">v1 · in use</text><rect class="node" x="398" y="28" width="92" height="46" rx="10"/><text class="lbl" x="444.0" y="48" text-anchor="middle" font-weight="600">Predictions</text><text class="axis" x="444.0" y="64" text-anchor="middle">every Monday</text><rect class="node node-new" x="8" y="128" width="92" height="46" rx="10"/><text class="lbl" x="54.0" y="148" text-anchor="middle" font-weight="600">Customer file</text><text class="axis" x="54.0" y="164" text-anchor="middle">Sep 2026</text><rect class="node node-new" x="112" y="128" width="88" height="46" rx="10"/><text class="lbl" x="156.0" y="148" text-anchor="middle" font-weight="600">Test design</text><text class="axis" x="156.0" y="164" text-anchor="middle">its own</text><rect class="node node-new" x="212" y="128" width="70" height="46" rx="10"/><text class="lbl" x="247.0" y="148" text-anchor="middle" font-weight="600">Run 5</text><text class="axis" x="247.0" y="164" text-anchor="middle">retrain</text><rect class="node node-new" x="294" y="128" width="92" height="46" rx="10"/><text class="lbl" x="340.0" y="148" text-anchor="middle" font-weight="600">Churn model</text><text class="axis" x="340.0" y="164" text-anchor="middle">v5 · waiting</text><line class="arrow" x1="100" y1="51" x2="112" y2="51"/><line class="arrow" x1="200" y1="51" x2="212" y2="51"/><line class="arrow" x1="282" y1="51" x2="294" y2="51"/><line class="arrow" x1="386" y1="51" x2="398" y2="51"/><line class="arrow arrow-dash" x1="100" y1="151" x2="112" y2="151"/><line class="arrow arrow-dash" x1="200" y1="151" x2="212" y2="151"/><line class="arrow arrow-dash" x1="282" y1="151" x2="294" y2="151"/><text class="axis warn-t" x="54" y="100" text-anchor="middle">newer file</text><text class="axis" x="8" y="14">Now in use</text><text class="axis" x="8" y="118">Newer file and the retrained model, waiting for your decision</text></svg>
+    <p class="small muted">The real screen is an interactive diagram with a list view; this is a simple picture of the same links.</p>
+  </div>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v8"></script>
+<script src="guide.js"></script>
+</body>
+</html>

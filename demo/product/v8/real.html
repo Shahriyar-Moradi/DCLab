@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>What’s real today · DCLab demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="real.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>What’s real today</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch" title="Admins only: preview what another role sees. Your rights and every request stay yours."><span>View as</span><select id="role-switch"><option value="admin">Admin (your own view)</option><option value="ds">Data scientist</option><option value="analyst">Analyst (view only)</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant <span class="beta">Beta</span></button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>What’s real today</h1><p class="sub">Every screen of DCLab with its status, written from what the product does today. Nothing is hidden: what is missing is named.</p></div>
+</div>
+
+<div class="banner"><div class="sp"><b>The whole project flow works today: data, goal and test design, experiments with 15 trust checks, improve (one change yourself, or a loop with sealed tries), the model and approving it for scoring, predictions for one file or every week, monitoring with retraining on newest data and editable thresholds, and history, plus the business view, usage and the platform console. The assistant and AI settings are a labelled beta that is not shown yet. Notifications and integrations work on the server but have no screen yet.</b></div></div>
+
+<div class="chips">
+  <span class="chip"><b><span class="pill ok">Working today</span></b><small>You can use it now</small></span>
+  <span class="chip"><b><span class="pill warn">Partly working</span></b><small>Some parts are missing; the table says which</small></span>
+  <span class="chip"><b><span class="pill off">Built, switched off</span></b><small>AI pieces built but not shown until they pass testing</small></span>
+  <span class="chip"><b><span class="pill plan">Planned</span></b><small>Not built yet; the table says what is missing</small></span>
+</div>
+
+<div class="tbl card"><table>
+  <thead><tr><th>Screen</th><th>Status</th><th>What is missing</th></tr></thead>
+  <tbody>
+    <tr><td><a href="index.html">Home</a></td><td><span class="pill ok">Working today</span></td><td>Nothing for the daily job. A running run shows the fold it is on; the things that need you show who raised them and where, not evidence numbers.</td></tr>
+    <tr><td><a href="inbox.html">Inbox</a></td><td><span class="pill ok">Working today</span> <span class="pill off">Items from the assistant: Built, switched off</span></td><td>Suggestions from the assistant appear only after AI is switched on.</td></tr>
+    <tr><td><a href="projects.html">Projects</a></td><td><span class="pill ok">Working today</span></td><td>Nothing. New project is a three-step dialog; the older four-step page is still linked from it.</td></tr>
+    <tr><td><a href="data.html">Data</a></td><td><span class="pill ok">Working today</span></td><td>Nothing. The summary counts training rows only; final-test months stay sealed until the model in use has had its final test.</td></tr>
+    <tr><td><a href="goal.html">Goal &amp; test design</a></td><td><span class="pill ok">Working today</span></td><td>Nothing. The goal and test design are set when a run starts; there is no “Edit goal” button.</td></tr>
+    <tr><td><a href="experiments.html">Experiments</a></td><td><span class="pill ok">Working today</span></td><td>Nothing. There is no feature engineering: columns can be left out, kept, filled or split into date parts.</td></tr>
+    <tr><td><a href="improve.html">Improve</a></td><td><span class="pill ok">Working today</span></td><td>One change yourself and a loop within a budget work; loop tries are sealed and only an accepted try scores the final test set once. The loop and the noise verdict need folds not ordered in time. A loop on a fresh split and AI-suggested tries are not built.</td></tr>
+    <tr><td><a href="model.html">Model</a></td><td><span class="pill ok">Working today</span></td><td>A chosen threshold is not applied to scoring without a new model version.</td></tr>
+    <tr><td><a href="predictions.html">Predictions</a></td><td><span class="pill ok">Working today</span></td><td>Only scorings from this browser tab and the weekly schedule are listed, and at most the first 10,000 rows of a list show on screen.</td></tr>
+    <tr><td><a href="monitoring.html">Monitoring</a></td><td><span class="pill ok">Working today</span></td><td>Retraining needs a person to upload the newer labelled file; DCLab never builds one. Switching is always a person. The assistant does not explain drift.</td></tr>
+    <tr><td><a href="history.html">History</a></td><td><span class="pill ok">Working today</span></td><td>Nothing.</td></tr>
+    <tr><td>Assistant panel</td><td><span class="pill warn">Partly working · panel being built</span> <span class="pill off">Beta, off by default</span></td><td>The answers, suggestion cards and limits are built and checked on 10 recorded conversations. The panel is not built; before any workspace gets the beta, the price is confirmed and the screen gets a security review.</td></tr>
+    <tr><td><a href="settings.html">Settings</a></td><td><span class="pill warn">Partly working · notifications and integrations have no screen yet</span></td><td>People and roles, and usage and cost work. Adding people is not in Studio yet.</td></tr>
+    <tr><td>Notifications (email)</td><td><span class="pill warn">Partly working · no screen yet</span></td><td>Built on the server and switched off until an email service is chosen; no unsubscribe link yet.</td></tr>
+    <tr><td>Integrations (webhooks)</td><td><span class="pill warn">Partly working · no screen yet</span></td><td>Built on the server and switched off by default; no screen to add, test or remove one.</td></tr>
+    <tr><td><a href="ai-settings.html">AI settings</a></td><td><span class="pill off">Built, switched off</span> <span class="pill plan">Screen: Planned</span></td><td>The rules for what AI may do exist on the server; the screen comes with the assistant beta. “Automatic” stays locked until earned.</td></tr>
+    <tr><td><a href="connect.html">Connect (API, SDK, MCP)</a></td><td><span class="pill ok">Working today</span></td><td>Nothing.</td></tr>
+    <tr><td><a href="business.html">Business view</a></td><td><span class="pill ok">Working today</span> <span class="pill plan">Questions from the data team: Planned</span></td><td>Questions from the data team and replies are not built yet.</td></tr>
+    <tr><td><a href="console.html">Platform console</a> (DCLab staff only)</td><td><span class="pill warn">Partly working · some tabs planned</span></td><td>Overview, workspaces and failed jobs work. Backups are not configured until DCLab runs in the cloud; files held for review, AI limits per workspace and benchmarks are planned.</td></tr>
+  </tbody>
+</table></div>
+<p class="small muted">Project screens are reached inside a project. AI pieces stay switched off until they pass testing; every action works without them.</p>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v8"></script>
+<script src="guide.js"></script>
+</body>
+</html>

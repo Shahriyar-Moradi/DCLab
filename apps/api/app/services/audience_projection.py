@@ -11,6 +11,7 @@ from typing import Any
 
 from app.domain.observability import LlmInvocationRead, MlRunEventRead
 from app.domain.reproducibility import ArtifactRead, CodeSnapshotRead
+from app.engine.serving.model_package import PUBLIC_PACKAGE_FAILURES
 
 _BLOCKED_KEY_PARTS = (
     "secret", "password", "credential", "authorization", "access_token",
@@ -45,11 +46,16 @@ _MAX_DEPTH = 6
 _MAX_ITEMS = 200
 _MAX_STRING = 1000
 PUBLIC_FAILURE = "The operation failed. See the request ID for support."
+# Fixed, reviewed sentences that may be shown word for word (no identifiers, paths or data).
+PUBLIC_FAILURE_REASONS = PUBLIC_PACKAGE_FAILURES
 
 
 def public_failure(value: str | None) -> str | None:
-    """Never expose persisted exception text as a customer/API failure reason."""
+    """Never expose persisted exception text as a customer/API failure reason, except the
+    exact allowlisted sentences in ``PUBLIC_FAILURE_REASONS``."""
 
+    if value in PUBLIC_FAILURE_REASONS:
+        return value
     return PUBLIC_FAILURE if value else None
 
 

@@ -1,7 +1,7 @@
 export type TrustLevel = 0 | 1 | 2 | 3;
 
 const LABELS: Record<TrustLevel, string> = {
-  0: "Shadow: the AI's answer is only recorded",
+  0: "Only recorded, never applied",
   1: "Ask first",
   2: "Automatic, you can undo",
   3: "Automatic",

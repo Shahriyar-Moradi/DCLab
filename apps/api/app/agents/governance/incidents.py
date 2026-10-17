@@ -187,7 +187,9 @@ def open_incident_counts(db: Session, workspace_id: UUID | None, key: str) -> di
     if point is not None and point.ai_kind != "none":
         kind, _, name = point.ai_kind.partition(":")
         subjects.append(("purpose" if kind == "jev" else "agent", name))
-        subjects.append(("provider", "typesafe" if kind == "jev" else "openai"))  # provider-wide incidents too
+        # provider-wide incidents too: every role routes to Anthropic since 2026-10-16
+        # (LEGACY: "typesafe" for Jev, "openai" otherwise)
+        subjects.append(("provider", "anthropic"))
     scope = AiIncident.workspace_id.is_(None) if workspace_id is None else AiIncident.workspace_id == workspace_id
     rows = db.execute(
         select(AiIncident.kind, func.count()).where(

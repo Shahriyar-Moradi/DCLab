@@ -68,6 +68,18 @@ OPERATING_POINT_KEYS = ("threshold", "tp", "fp", "fn", "tn", "precision", "recal
                         "what_this_means")
 OPERATING_NOTE = ("Out-of-fold training-fold figures (optimistic when picked from many thresholds); never a "
                   "final-evaluation value. Choosing a point is a person's act in DCLab Studio.")
+SCHEDULE_NOTE = ("Read-only: only a person turns weekly scoring on or off, in DCLab Studio. Each week it scores the "
+                 "newest file a person uploaded for scoring with the model in use approved for scoring; files a "
+                 "connected tool uploaded with a service token (like this one) are never scored, while uploads "
+                 "made with a person's own sign-in or own API token count as that person's. It never retrains "
+                 "and never fetches data.")
+MONITORING_NOTE = ("Read-only and deterministic: drift means the inputs look different from training, not that the "
+                   "model is wrong; outcome metrics are real results of scored rows (never the final test set) and "
+                   "appear only after a person links them in DCLab Studio. Monitoring never retrains or switches a "
+                   "model.")
+IMPROVE_NOTE = ("Each try is a sealed branch on the same folds, judged per fold against noise on cross-validation; "
+                "the final test set is scored once, only after a person accepts a try in DCLab Studio (an agent "
+                "never accepts).")
 AGENT_DECISION_TYPES = ("experiment_accepted", "experiment_rejected")
 REF_MOVE_TYPES = frozenset({"ref_moved", "champion_promoted"})
 
@@ -262,7 +274,27 @@ def _experiment(e: Experiment) -> dict[str, Any]:
         "failure_reason": untrusted(e.failure_reason, 500), "lineage": e.lineage.model_dump(mode="json"),
         "change_set": untrusted(e.change_set, 2000), "metrics": _metrics(e.metrics),
         "diff_vs_parent": bound(cv_only(e.diff_vs_parent), max_items=20),
+        "evidence_mode": e.evidence_mode,  # sealed: an improve try, the final test set not used
     }
+
+
+def _improve_run(r: Any) -> dict[str, Any]:
+    """Codes, ids and CV numbers only (as ``app.agents.tools`` ``improve_run_summary``)."""
+
+    tries = [{"seq": it.seq, "kind": it.kind, "status": it.status, "reason": it.reason, "action": bound(it.action),
+              "experiment_id": _sid(it.experiment_id), "incumbent_experiment_id": _sid(it.incumbent_experiment_id),
+              "planned_candidate_ids": list(it.planned_candidate_ids[:LIST_LIMIT]),
+              "comparison": bound(cv_only(it.comparison)), "training_seconds": it.training_seconds}
+             for it in r.iterations[:LIST_LIMIT]]
+    return {"id": str(r.id), "project_id": str(r.project_id), "split_plan_id": str(r.split_plan_id),
+            "start_experiment_id": str(r.start_experiment_id), "incumbent_experiment_id": str(r.incumbent_experiment_id),
+            "final_experiment_id": _sid(r.final_experiment_id), "status": r.status, "outcome": r.outcome,
+            "stop_reason": r.stop_reason, "stop_detail": r.stop_detail, "goal": bound(r.goal), "budget": bound(r.budget),
+            "planned_comparisons": r.planned_comparisons, "validation_folds": r.validation_folds,
+            "sealed_set_label": r.sealed_set_label, "final_attempts": r.final_attempts,
+            "accepted_iteration_seq": r.accepted_iteration_seq, "started_by": r.started_by, "ai": r.ai,
+            "training_seconds_spent": r.training_seconds_spent, "created_at": _iso(r.created_at),
+            "finished_at": _iso(r.finished_at), "iterations": tries}
 
 
 def _decision(r: DecisionRecord) -> dict[str, Any]:
@@ -290,6 +322,69 @@ def _proposal(p: Any) -> dict[str, Any]:
         "decision_record_id": p.decision_record_id and str(p.decision_record_id),
         "created_at": p.created_at.isoformat(),
     }
+
+
+def _release(r: Any) -> dict[str, Any]:
+    """Same keys and values as the catalog's ``release_summary``: never who approved it, and no
+    rationale that names the final holdout (the API already withholds it from tokens)."""
+
+    rationale = None if r.rationale and _HOLDOUT_KEY.search(r.rationale) else r.rationale
+    return {
+        "id": str(r.id), "model_version_id": str(r.model_version_id), "model_version": r.model_version,
+        "previous_release_id": r.previous_release_id and str(r.previous_release_id),
+        "decision_record_id": str(r.decision_record_id), "approved_at": r.approved_at.isoformat(),
+        "saved_format": r.saved_format, "package_manifest_digest": r.package_manifest_digest,
+        "is_current": r.is_current, "rationale": untrusted(rationale),
+    }
+
+
+def _iso(value: Any) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _sid(value: Any) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _scoring_schedule(state: Any) -> dict[str, Any]:
+    """Same keys and values as the catalog's ``_scoring_schedule_shape``: codes, slots and ids
+    only (no people, no free text)."""
+
+    s = state.schedule
+    schedule = s and {"id": str(s.id), "weekday": s.weekday, "weekday_name": s.weekday_name, "hour_utc": s.hour_utc,
+                      "timezone": s.timezone, "enabled": s.enabled, "next_planned_for": _iso(s.next_planned_for),
+                      "last_planned_for": _iso(s.last_planned_for), "owner_can_score": s.owner_can_score}
+    runs = [{"id": str(r.id), "planned_for": r.planned_for.isoformat(), "outcome": r.outcome,
+             "reason_code": r.reason_code, "batch_prediction_id": _sid(r.batch_prediction_id),
+             "model_version_id": _sid(r.model_version_id), "model_release_id": _sid(r.model_release_id),
+             "input_dataset_id": _sid(r.input_dataset_id)} for r in state.recent_runs[:LIST_LIMIT]]
+    return {"project_id": str(state.project_id), "status": state.status, "schedule": schedule, "recent_runs": runs,
+            "note": SCHEDULE_NOTE}
+
+
+def _monitoring(view: Any) -> dict[str, Any]:
+    """Same keys and values as the catalog's ``_monitoring_shape``: codes, dates, counts and numbers
+    only (no summaries, finding text or feature names: they carry the user's column names)."""
+
+    windows = [{"window_start": w.window_start.isoformat(), "window_end": w.window_end.isoformat(),
+                "revision": w.revision, "model_version_id": str(w.model_version_id),
+                "model_release_id": _sid(w.model_release_id), "status": w.status, "summary_code": w.summary_code,
+                "n_rows": w.n_rows, "n_batch_predictions": w.n_batch_predictions, "max_psi": w.max_psi,
+                "prediction_psi": w.prediction_psi, "outcomes_status": w.outcomes_status or None,
+                "n_labelled": w.n_labelled, "coverage": w.coverage, "outcome_metric": w.outcome_metric,
+                "outcome_metric_value": w.outcome_metric_value} for w in view.windows[:LIST_LIMIT]]
+    t = view.thresholds
+    thresholds = {"psi_watch": t.psi_watch, "psi_alert": t.psi_alert, "significance_level": t.significance_level,
+                  "flagged_share_relative_watch": t.flagged_share_relative_watch,
+                  "flagged_share_absolute_watch": t.flagged_share_absolute_watch, "min_rows": t.min_rows,
+                  "min_labels": t.min_labels, "min_per_class": t.min_per_class,
+                  # D5b: the project's floors (null = off) and the thresholds' version (0 = defaults).
+                  "precision_floor": t.precision_floor, "recall_floor": t.recall_floor, "version": t.version}
+    return {"project_id": str(view.project_id), "enabled": view.enabled, "status": view.status,
+            "model_version_id": _sid(view.model_version_id), "model_version": view.model_version,
+            "model_release_id": _sid(view.model_release_id),
+            "finding": view.finding.code if view.finding is not None else None,
+            "thresholds": thresholds, "windows": windows, "note": MONITORING_NOTE}
 
 
 def _governance(g: Any) -> dict[str, Any]:
@@ -587,6 +682,23 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
             return {"proposals": [_proposal(p) for p in page.items], "next_cursor": page.next_cursor}
         return run(call)
 
+    def list_releases(project_id: Id) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            page = api.releases.list(uuid_arg(project_id, "project_id"))
+            return {"current_release_id": page.current_release_id and str(page.current_release_id),
+                    "releases": [_release(r) for r in page.items[:LIST_LIMIT]]}
+        return run(call)
+
+    def get_scoring_schedule(project_id: Id) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            return _scoring_schedule(api.scoring_schedules.get(uuid_arg(project_id, "project_id")))
+        return run(call)
+
+    def get_monitoring(project_id: Id) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            return _monitoring(api.monitoring.get(uuid_arg(project_id, "project_id")))
+        return run(call)
+
     def inspect_governance() -> CallToolResult:
         def call() -> dict[str, Any]:
             return _governance(api.governance.get())
@@ -634,6 +746,13 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
                                      "note": "Agents never see final-evaluation values; use the CV evidence."},
                 "markdown": untrusted(markdown, 12000),
             }}
+        return run(call)
+
+    def get_improve_run(improve_run_id: Id) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            run_ = api.improve_runs.get(uuid_arg(improve_run_id, "improve_run_id"))
+            api.experiments.get(run_.start_experiment_id)  # as the catalog's fetch (one dataset, authorized)
+            return {"improve_run": _improve_run(run_), "note": IMPROVE_NOTE}
         return run(call)
 
     def get_prediction(prediction_id: Id) -> CallToolResult:
@@ -710,6 +829,23 @@ def build_server(settings: Settings, *, http: httpx.Client | None = None) -> MCP
         tool(get_model_card, read, "One-page model card: primary metric in plain words (cross-validation), dummy-"
              "baseline comparison, top drivers (permutation importance on CV validation folds), known risks from "
              "the trust checks, data and split summary, LLM used yes/no. The final evaluation is always withheld.")
+        tool(list_releases, read, "Approvals of a project's model in use (\"approved for scoring\"), newest first: "
+             "model version, previous approval, when, saved format, package manifest digest, whether it is current, "
+             "and the person's reason as untrusted text (never who). Read-only: only a person puts a model in use, "
+             "in DCLab Studio.")
+        tool(get_scoring_schedule, read, "A project's weekly scoring schedule, read-only: on / off / paused by the "
+             "platform, weekday and hour (UTC), next and last slot, whether the person it acts as can still score, "
+             "and the newest handled weeks (queued with the week's prediction, or why nothing was scored). Only a "
+             "person turns it on or off, in DCLab Studio.")
+        tool(get_monitoring, read, "Monitoring of a project's model in use, read-only and deterministic: the latest "
+             "weekly status (ok / watch / alert / not_enough_data) and the last 12 weeks (Monday 00:00 UTC) with the "
+             "largest input drift (PSI vs the training rows), score drift, rows scored and, once a person linked real "
+             "outcomes, labelled rows, coverage and the primary metric on them; the project's thresholds in force "
+             "(version, precision / recall floors) and the alert finding code. Drift means the inputs look different from training, not that the model is wrong; it "
+             "never retrains or switches a model.")
+        tool(get_improve_run, read, "One improve loop: status, outcome and stop reason, goal and budget, and every "
+             "try (a sealed branch on the same folds) with its per-fold cross-validation verdict. Never a final-test "
+             "value; only a person accepts a try, in DCLab Studio.")
         tool(get_prediction, read, "Batch prediction: status, row counts, feature-contract check (required / "
              "missing / ignored columns), error code; never predicted rows or storage locations.")
         tool(get_impact, read, "Downstream closure of one graph node: which specs, datasets, split plans, recipes, "
@@ -825,6 +961,19 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
             return {"experiment": _experiment(child), "replayed": child.idempotent_replay}
         return run(call)
 
+    def improve(experiment_id: Annotated[str, Field(description="The completed, locked run to improve (its split plan and folds are reused).")],  # noqa: E501
+                goal: Annotated[dict[str, Any], Field(description="{\"plain\": {\"metric\": <the run's primary metric>}} or {\"objective\": {\"maximize\": \"precision\", \"constraints\": [{\"metric\": \"recall\", \"op\": \">=\", \"value\": 0.6}]}}, optionally with a target.")],  # noqa: E501
+                budget: Annotated[dict[str, Any] | None, Field(description="Optional lower limits: max_iterations (<= 6), max_wall_seconds (<= 7200), patience, comparison_bound.")] = None,  # noqa: E501
+                idempotency_key: Salt = None) -> CallToolResult:
+        def call() -> dict[str, Any]:
+            eid = uuid_arg(experiment_id, "experiment_id")
+            key = command_key("improve", {"experiment_id": eid, "goal": goal, "budget": budget}, idempotency_key)
+            started = api.improve_runs.start(from_experiment_id=eid, goal=goal, budget=budget, idempotency_key=key)
+            return {"improve_run": _improve_run(started), "replayed": started.idempotent_replay,
+                    "note": "Queued; poll get_improve_run. Only a person accepts a try (in DCLab Studio); this "
+                            "token can never accept."}
+        return run(call)
+
     def predict(model_version_id: Id,
                 dataset_id: Annotated[str, Field(description="Dataset UUID of the model's project (uploaded with purpose=scoring).")],  # noqa: E501
                 output_format: Annotated[Literal["csv", "parquet"], Field()] = "csv",
@@ -896,6 +1045,9 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
          "proposal a human accepts in DCLab Studio." + _WRITE_NOTE)
     tool(branch_experiment, write, "Branch a completed experiment with typed changes; it reuses the parent's "
          "split plan and holdout." + _WRITE_NOTE)
+    tool(improve, write, "Start an improve loop on a completed run: a goal and a budget; each try is a sealed branch "
+         "on the same folds (the final test set is not used), judged per fold against noise. It never accepts a "
+         "try: only a person does, in DCLab Studio, and only then is the final test set scored once." + _WRITE_NOTE)
     tool(predict, write, "Score a dataset with a model version (the worker scores with the locked pipeline and "
          "threshold). Writes a predictions file only; no refs or decisions change." + _WRITE_NOTE)
     tool(request_agent_review, write, "Queue a specialist review: experiment_critic (a completed experiment) or "
@@ -907,7 +1059,13 @@ def _register_writes(server: MCPServer, api: DCLabClient, run: Callable[..., Cal
 
 
 def main(argv: list[str] | None = None) -> int:
-    del argv
+    args = sys.argv[1:] if argv is None else list(argv)
+    if args[:1] in (["-h"], ["--help"]):  # P8.6-A: answer without reading config or starting
+        print("usage: dclab-mcp [--help | --version]\n\n" + "\n\n".join((__doc__ or "").split("\n\n")[:3]).strip())
+        return 0
+    if args[:1] == ["--version"]:
+        print(f"dclab-mcp {__version__}")
+        return 0
     try:
         server = build_server(settings_from_env(os.environ))
     except ConfigError as exc:

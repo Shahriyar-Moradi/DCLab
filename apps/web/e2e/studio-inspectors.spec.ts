@@ -45,7 +45,7 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
   await page.getByLabel("Data file").setInputFiles({ name: "churn.csv", mimeType: "text/csv", buffer: Buffer.from(churnCsv(300)) });
   await page.getByRole("button", { name: "Upload and continue" }).click();
   await page.getByLabel("Task").selectOption("binary");
-  await page.getByLabel("Target column").selectOption("churn");
+  await page.getByRole("combobox", { name: "Target column" }).selectOption("churn");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Train" }).click();
@@ -90,7 +90,7 @@ test("Inspectors: reason, evidence and code for every node kind, from the drawer
   await expect(page.getByRole("img", { name: /cross-validation folds/ })).toBeVisible();
   await expect(page.getByText("Why this design?")).toBeVisible();
   await expect(page.getByText(/(Time-ordered|Grouped|Random)/).first()).toBeVisible();
-  await expect(page.getByText("Training rows", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^Training rows: [\d,]+$/)).toBeVisible();
   await page.goto(hrefs[1]);
   await expect(page.getByRole("table", { name: "Features of this run" })).toContainText("tenure");
   await page.getByRole("button", { name: /^monthly_spend/ }).click();

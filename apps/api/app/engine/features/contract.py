@@ -59,11 +59,11 @@ decides (``TransformRule.exclusion_only``).
 
 Plan-level rules: agent- and rule-proposed features are tested only as
 BRANCHES on the parent's SplitPlan and never see holdout metrics
-(``agent_holdout_evidence``); each improve-loop iteration may try at most
-``FEATURE_ATTEMPT_BUDGET_PER_LOOP`` feature transforms
-(``check_feature_budget`` is the per-iteration hook the loop, P5.4, calls; it
-does not bound cumulative CV comparisons per SplitPlan — that is a loop stop
-rule).
+(``agent_holdout_evidence``); one improve loop may try at most
+``FEATURE_ATTEMPT_BUDGET_PER_LOOP`` feature transforms in total
+(``check_feature_budget`` is the per-loop hook the loop, P5.4-A2, calls -- with
+``requested = 0`` in v1, which tries no feature transform; it does not bound
+cumulative CV comparisons per SplitPlan — that is a loop stop rule).
 
 What this module proves and what it does not: ``validate_feature_plan`` checks
 DECLARATIONS. For the registered transforms the declaration is the engine's
@@ -137,7 +137,7 @@ EXCLUSION_ONLY_TRANSFORMS: Final[frozenset[str]] = frozenset({"leakage_exclusion
 # Cross-fitting = K disjoint inner folds; leave-one-out (K = n) is not cross-fitting.
 CROSS_FIT_MIN_FOLDS: Final[int] = 2
 CROSS_FIT_MAX_FOLDS: Final[int] = 10
-# Feature transforms one improve-loop iteration may try (P5.4 calls ``check_feature_budget``).
+# Feature transforms one improve loop may try in total (P5.4-A2 calls ``check_feature_budget``).
 FEATURE_ATTEMPT_BUDGET_PER_LOOP: Final[int] = 8
 FEATURE_CONTRACT_VERSION: Final[str] = "dclab.feature_contract.v1"
 
@@ -399,10 +399,10 @@ def spec_for_transform(transform: str, column: str, *, registry: Mapping[str, Tr
 def check_feature_budget(
     attempts_used: int, *, requested: int = 1, budget: int = FEATURE_ATTEMPT_BUDGET_PER_LOOP
 ) -> FeatureViolation | None:
-    """The per-iteration budget hook: None while ``attempts_used + requested`` fits in
-    ``budget``. It bounds one loop iteration's feature attempts only (every feature
-    change counts, removes and keeps included); cumulative CV comparisons per
-    SplitPlan are the loop's (P5.4) stop rules."""
+    """The per-loop budget hook: None while ``attempts_used + requested`` fits in
+    ``budget``. It bounds one improve loop's feature attempts (every feature change
+    counts, removes and keeps included); cumulative CV comparisons per SplitPlan are
+    the loop's (P5.4-A2) stop rules. v1 loops request 0 (no feature actions, ADR 0007 §1)."""
 
     if attempts_used < 0 or requested < 0:
         raise ValueError("attempt counts are non-negative")

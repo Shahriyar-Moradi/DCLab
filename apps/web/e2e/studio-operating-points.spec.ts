@@ -121,6 +121,7 @@ test("Operating points: chart + table, choose a point with a reason, model card 
   // History and Predictions: a viewer reads, but is offered no Answer / Correct button and no upload.
   const noWrite = /Only people who can change this workspace can answer, correct or score files/;
   await viewer.goto(`/projects/${projectId}/predictions`);
+  await viewer.getByRole("tab", { name: "Score a file" }).click();
   await expect(viewer.getByText(noWrite).first()).toBeVisible();
   await expect(viewer.getByLabel("Scoring file")).toHaveCount(0);
   await expect(viewer.getByRole("button", { name: "Score this file" })).toHaveCount(0);

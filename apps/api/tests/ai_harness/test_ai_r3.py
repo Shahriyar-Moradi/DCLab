@@ -62,7 +62,7 @@ def _designate(hk) -> SimpleNamespace:
 def test_r3_runs_offline_through_the_gateway_fake_provider(hk):
     fake = jev({"column.is_identifier": {"*": (0.97, None)}, "column.semantic_role": {"*": ("categorical_code", 0.9)},
                 "feature.leakage_suspect": {"*": (0.95, None)}})  # deliberately wrong everywhere
-    port = JevSemanticPort(hk.service(providers={"openai": hk.fake, "typesafe": fake}), settings=ON)
+    port = JevSemanticPort(hk.service(providers={"anthropic": fake}), settings=ON)
     names = sorted(hk.ids)
     source = hk.db.scalar(select(Dataset.name).where(Dataset.id == hk.dataset_a))
     cases = _cases(source, [n for n in names if n != names[-1]], names[-1])
@@ -85,7 +85,7 @@ def test_r3_runs_offline_through_the_gateway_fake_provider(hk):
     assert answerer.unregistered == 0  # every case found its (dataset, column); none was silently dropped
     assert r3.load_run(hk.db, UUID(report["run_id"]))["digest"] == report["digest"]  # stored as it happened
     # ADR 0008 §8 through the real path: AI switched off, same cases, the port's value used is the rule
-    off_port = JevSemanticPort(hk.service(providers={"openai": hk.fake, "typesafe": fake}, ai_enabled=False),
+    off_port = JevSemanticPort(hk.service(providers={"anthropic": fake}, ai_enabled=False),
                                settings=SimpleNamespace(ai_enabled=False, dclab_env="test"))
     off = r3.port_answerer(hk.db, off_port, hk.ws_a, settings=designated, project_id=hk.project_a)
     calls_before = len(fake.calls)

@@ -24,8 +24,11 @@ import {
   createPrediction, downloadPredictions, readSessionScorings, uploadScoringFile, usePrediction, useScoringScope, writeSessionScorings, type StudioPrediction,
 } from "@/lib/application/studio-scoring-hooks";
 import { useSession } from "@/lib/application/session-provider";
+import { useModelVersionRead } from "@/lib/application/studio-inspect-hooks";
+import { modelLabel as versionLabel, scoredWithText, scoringApproval } from "@/lib/application/studio-releases";
 import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
-import { ActionKeys, singleFlight, type PlainError } from "@/lib/application/studio-wizard";
+import { ActionKeys, WizardInputError, singleFlight, type PlainError } from "@/lib/application/studio-wizard";
+import { readErrorSentence } from "@/lib/application/api-error-text";
 import { workspaceQueryKey } from "@/lib/infrastructure/active-workspace";
 import { newIdempotencyKey } from "@/lib/infrastructure/v1/client";
 
@@ -60,6 +63,8 @@ function ScoringCard({ item, current, modelVersionId, modelLabel }: { item: Sess
   const p = read.data && read.data.model_version_id === modelVersionId ? read.data : undefined;
   const contract = contractView(p?.contract_check);
   const sentences = contract ? contractSentences(contract) : null;
+  const version = useModelVersionRead(p?.model_version_id);
+  const used = p ? scoringApproval(p.status, p.release, formatWhen, version.data ? version.data.is_champion : null) : null;
 
   const download = async () => {
     if (!p || saving) return;
@@ -77,20 +82,23 @@ function ScoringCard({ item, current, modelVersionId, modelLabel }: { item: Sess
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (caught) {
-      setError(caught instanceof Error && !("status" in caught) ? { title: "The download was not opened", detail: caught.message, fixable: false } : mapScoringError(caught));
+      setError(caught instanceof Error && !("status" in caught) ? { title: "The download was not opened", detail: "Try again; if it keeps failing, reload the page.", fixable: false } : mapScoringError(caught));
     } finally {
       setSaving(false);
     }
   };
 
-  const failure = p?.status === "failed" ? failureError(p.error_code, p.error_message) : null;
+  const failure = p?.status === "failed" ? failureError(p.error_code, p.error_message, !!p.scheduled) : null;
   return (
     <Card
       title={`Scoring of ${plainText(item.fileName, 80)}`}
       aside={p ? <Pill tone={STATUS_TONE[p.status]}>{scoringStatusWords(p.status)}</Pill> : <span className="muted">loading</span>}
     >
       {current ? <StepBar label="Scoring progress" steps={stepsFor(p, false)} /> : null}
-      {read.isError ? <Banner tone="crit">Could not read this scoring. {read.error instanceof Error ? read.error.message : ""}</Banner> : null}
+      {used ? (
+        <p className="muted" data-testid="scored-with">{scoredWithText(used, version.data ? versionLabel(version.data.version) : "this model")}.{used.stale ? <> <Pill tone="warn">{used.stale}</Pill></> : null}</p>
+      ) : null}
+      {read.isError ? <Banner tone="crit">{readErrorSentence(read.error, "scoring")}</Banner> : null}
       {p && !isTerminal(p.status) ? <p role="status">{p.status === "queued" ? "Waiting for a worker to pick this up…" : "Scoring the rows…"}</p> : null}
       {sentences ? (
         <section aria-label="Column check">
@@ -154,7 +162,7 @@ export function ScoreNewData({ projectId, modelVersionId, modelLabel = null, bef
         setBusy(true);
         setError(null);
         try {
-          if (!file) throw new Error("Choose a file to score first.");
+          if (!file) throw new WizardInputError("Choose a file to score first.");
           const upload = await uploadScoringFile({ projectId, file, key: keys.keyFor("upload", `${projectId}:${file.name}:${file.size}:${file.lastModified}`) });
           const created = await createPrediction({ modelVersionId, datasetId: upload.id, key: keys.keyFor("score", `${modelVersionId}:${upload.id}`) });
           keys.done("upload");
@@ -167,7 +175,7 @@ export function ScoreNewData({ projectId, modelVersionId, modelLabel = null, bef
           setFile(null);
           if (fileInput.current) fileInput.current.value = "";
         } catch (caught) {
-          setError(caught instanceof Error && !("status" in caught) ? { title: "Check your answers", detail: caught.message, fixable: true } : mapScoringError(caught));
+          setError(caught instanceof WizardInputError ? { title: "Check your answers", detail: caught.message, fixable: true } : mapScoringError(caught));
         } finally {
           busyRef.current = false;
           setBusy(false);

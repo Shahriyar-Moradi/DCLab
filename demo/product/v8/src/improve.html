@@ -1,0 +1,93 @@
+<!-- title: Improve · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Northwind churn › <b>Improve</b> -->
+<!-- status: ok | Working today -->
+<div class="page-head">
+  <div><h1>Improve</h1><p class="sub">Two ways to look for a better model: an improvement loop within a budget, whose tries never look at the final test set, or one change you try yourself. Keeping the current model is a normal result.</p></div>
+</div>
+
+<div class="tabs" data-tabs="imp">
+  <button data-tab="loop" aria-selected="true">Improvement loop</button>
+  <button data-tab="guided">Try one change yourself</button>
+</div>
+
+<div data-tabpanel="imp:loop" class="on">
+  <div class="banner warn"><div class="sp"><b>The loop cannot start on Northwind churn.</b> This test design is ordered by time, and the loop’s comparison rule needs folds that are not ordered in time. Use <b>Try one change yourself</b> here. Below: how a loop works, and a real one on another project in this workspace.</div></div>
+
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>Goal and budget <span class="sp">set when you start a loop</span></h3>
+      <dl class="kv">
+        <dt>Goal</dt><dd>From the current goal: the ranking score, or a rate under a threshold rule (for example best recall while precision ≥ 0.60)</dd>
+        <dt>Most tries</dt><dd>6 (within the server’s limits)</dd>
+        <dt>Most time</dt><dd>2 h</dd>
+        <dt>Patience</dt><dd>Stop after 3 tries in a row that do not beat the noise</dd>
+        <dt>AI cost</dt><dd>AI off — $0</dd>
+        <dt>Test design</dt><dd>The starting run’s own: the same folds and the same final test set. A loop on a fresh split is not available yet.</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h3>What happens</h3>
+      <ol class="small">
+        <li>First a threshold step: can the current model meet the goal at another threshold? Nothing is retrained.</li>
+        <li>Then each try adds one model family the run has not trained yet, chosen by a fixed rule table. Each try is a sealed run on the same folds: judged on cross-validation only, <b>final test not used</b>.</li>
+        <li>Each try gets a verdict from its fold-by-fold differences: <span class="pill ok">beats noise</span> <span class="pill gray">within noise</span> <span class="pill warn">worse</span> or <span class="pill gray">not comparable</span> with the reason.</li>
+        <li>It stops on the budget, the patience, or when nothing is left to try.</li>
+        <li>A person accepts one try that beat the noise: it is re-run once with its choices pinned, and the final test set is scored once. That one number is shown. Or the person keeps the current model, and the final test set is not used.</li>
+      </ol>
+      <p class="small muted">Most tries end within the noise, and most loops end with the current model kept. That is the correct answer, not a failure: five folds can only show large gains. Suggestions from the assistant are not built; the rule table always proposes.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Late payment risk · loop started Thu by Maya Chen <span class="pill warn">Waiting for you</span> <span class="sp">5 shuffled folds, so the loop can run</span></h3>
+    <p class="small"><b>Goal:</b> best recall while precision ≥ 0.60, on cross-validation. <b>Spend:</b> 2 of 6 tries · 48 min of 2 h · AI off — $0. <b>Stopped:</b> there is nothing left to try.</p>
+    {{chart:improve_tries}}
+    <div class="tbl"><table>
+      <thead><tr><th>Try</th><th>Change</th><th>Verdict</th><th>On the same folds</th><th>Final test</th></tr></thead>
+      <tbody>
+        <tr><td><b>Threshold step</b></td><td>Set the threshold for the goal (no retraining)</td><td><span class="pill det">Threshold, no retraining</span></td><td>The goal can be met by the current model at the threshold 0.42, measured on cross-validation. Nothing was retrained.</td><td><span class="pill gray">not used</span></td></tr>
+        <tr><td><b>Try 1</b></td><td>Add the extra trees model family</td><td><span class="pill gray">Within noise</span></td><td>The difference was +0.004, inside the noise margin (0.018), so it could be luck. The current model stays.</td><td><span class="pill gray">not used</span></td></tr>
+        <tr class="win"><td><b>Try 2</b> <br><span class="pill det">the best try so far</span></td><td>Add the gradient boosting model family</td><td><span class="pill ok">Beats noise</span></td><td>The difference was +0.031, more than the noise margin (0.018), so it is unlikely to be luck. It is evidence, not proof, and it is decided on cross-validation only.</td><td><span class="pill gray">not used</span></td></tr>
+      </tbody>
+    </table></div>
+    <p class="small muted">The final test set of this test design was looked at once before (the starting run’s own number).</p>
+    <h4>Accept a try or keep the current model</h4>
+    <div class="fields">
+      <label class="field">Try to accept<select aria-label="Try to accept"><option selected>Try 2 · gradient boosting (the best try so far)</option></select></label>
+      <label class="field">Why you accept it (saved with the decision)<input type="text" value="Beat the noise; collections team agreed" aria-label="Reason"></label>
+    </div>
+    <div class="toolbar" data-loop-buttons><button class="btn primary" type="button" data-loop-accept>Accept Try 2</button><button class="btn" type="button" data-loop-keep>Keep the current model</button></div>
+    <div class="banner" data-loop-result hidden></div>
+    <p class="small muted">Only a signed-in person can accept; an access token or a connected tool cannot. Only a try a person accepts is re-run (retried at most twice if a re-run stops before the final test); the final test set is scored once. Nobody deciding within 14 days keeps the current model.</p>
+  </div>
+</div>
+
+<div data-tabpanel="imp:guided">
+  <div class="banner warn"><div class="sp"><b>Every try started here is scored on the final test set once.</b> Do not pick a model by its final-test number. This page never starts a try by itself.</div></div>
+  <div class="card">
+    <h3>Your goal and the model in use</h3>
+    <dl class="kv"><dt>What we predict</dt><dd><code>churned_next_30d</code> · a yes/no answer</dd><dt>Ranking metric</dt><dd>PR-AUC</dd><dt>Business rule</dt><dd>Recall ≥ 0.80 · the model in use met it on cross-validation</dd><dt>Model in use</dt><dd>Churn model v1 · from Run 1</dd></dl>
+  </div>
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>Step 1 · the threshold</h3>
+      <p>At threshold 0.31 the model in use keeps recall at 0.81 on cross-validation. A different threshold for the same rule is a recorded choice only; scoring keeps the locked threshold, and applying a new one needs a new model version.</p>
+      <div class="toolbar"><a class="btn" href="model.html">Open the threshold chooser</a></div>
+    </div>
+    <div class="card">
+      <h3>Step 2 · try another model family</h3>
+      <div class="fields">
+        <label class="field">Model family<select aria-label="Model family"><option>Gradient boosting</option></select></label>
+        <label class="field">Why you are trying it (saved with the run)<input type="text" value="Try the gradient boosting model family" aria-label="Why"></label>
+      </div>
+      <div class="toolbar"><button class="btn primary" type="button" data-mock="edit">Start the try</button></div>
+      <p class="small muted">Only families Run 1 has not trained are offered; extra trees was tried in Run 4. Each try here spends one look at the final test set of this test design.</p>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Step 3 · what the try found <span class="sp">Run 4 · added extra trees</span></h3>
+    <p><span class="pill gray">Can’t compare</span> This test design is ordered by time, so the comparison rule does not apply.</p>
+    <dl class="kv"><dt>Score</dt><dd>PR-AUC 0.70 ± 0.02 (same chosen model as Run 1)</dd><dt>Models added</dt><dd>This try added 1 new model</dd><dt>Final test</dt><dd>Look 4 of this test design</dd></dl>
+    <p class="small muted">A look is one run on this test design that chose its best model and so scored the final test set. The more looks, the less a final-test number is a fresh estimate. Keeping the current model is a normal result: nothing is recorded when you keep it. Loop tries are never listed here; they are sealed and live on the Improvement loop tab.</p>
+  </div>
+</div>

@@ -301,6 +301,7 @@
           "411",
           "413",
           "422",
+          "429",
           "500"
         ],
         "successSchema": "DatasetUploadRead"
@@ -350,6 +351,29 @@
           "500"
         ],
         "successSchema": "DatasetProfileRead"
+      }
+    },
+    "/v1/datasets/{dataset_id}/target-by-period": {
+      "GET": {
+        "operationId": "read_target_by_period_v1_datasets__dataset_id__target_by_period_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "TargetByPeriodRead"
       }
     },
     "/v1/decisions/{decision_id}": {
@@ -876,6 +900,34 @@
         "successSchema": "OperatingPointsRead"
       }
     },
+    "/v1/experiments/{experiment_id}/verdict": {
+      "GET": {
+        "operationId": "read_experiment_verdict_v1_experiments__experiment_id__verdict_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "experiment_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "against",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ExperimentVerdictRead"
+      }
+    },
     "/v1/governance": {
       "GET": {
         "operationId": "read_governance_v1_governance_get",
@@ -891,6 +943,36 @@
           "500"
         ],
         "successSchema": "GovernanceRead"
+      }
+    },
+    "/v1/governance/incidents/{incident_id}/resolve": {
+      "POST": {
+        "operationId": "resolve_governance_incident_v1_governance_incidents__incident_id__resolve_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "IncidentResolveRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "IncidentRead"
       }
     },
     "/v1/governance/policy": {
@@ -973,6 +1055,129 @@
         "successSchema": "SwitchRead"
       }
     },
+    "/v1/improve-runs": {
+      "POST": {
+        "operationId": "start_improve_run_v1_v1_improve_runs_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "ImproveStartRequest",
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "ImproveRunRead"
+      }
+    },
+    "/v1/improve-runs/{improve_run_id}": {
+      "GET": {
+        "operationId": "read_improve_run_v1_improve_runs__improve_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "improve_run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ImproveRunRead"
+      }
+    },
+    "/v1/improve-runs/{improve_run_id}/accept": {
+      "POST": {
+        "operationId": "accept_improve_run_v1_v1_improve_runs__improve_run_id__accept_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "improve_run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ImproveAcceptRequest",
+        "statusCodes": [
+          "200",
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "429",
+          "500"
+        ],
+        "successSchema": "ImproveRunRead"
+      }
+    },
+    "/v1/improve-runs/{improve_run_id}/cancel": {
+      "POST": {
+        "operationId": "cancel_improve_run_v1_v1_improve_runs__improve_run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "improve_run_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "ImproveRunRead"
+      }
+    },
     "/v1/inbox": {
       "GET": {
         "operationId": "read_inbox_v1_inbox_get",
@@ -1049,6 +1254,45 @@
           "500"
         ],
         "successSchema": "PrincipalRead"
+      }
+    },
+    "/v1/me/notification-preferences": {
+      "GET": {
+        "operationId": "read_notification_preferences_v1_me_notification_preferences_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "NotificationPreferencesRead"
+      },
+      "PUT": {
+        "operationId": "save_notification_preferences_v1_me_notification_preferences_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "NotificationPreferencesWrite",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "NotificationPreferencesRead"
       }
     },
     "/v1/model-builds/{pipeline_run_id}": {
@@ -1200,6 +1444,30 @@
         "successSchema": "ModelCardRead"
       }
     },
+    "/v1/model-versions/{model_version_id}/feature-contract": {
+      "GET": {
+        "operationId": "read_feature_contract_v1_model_versions__model_version_id__feature_contract_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_version_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "FeatureContractRead"
+      }
+    },
     "/v1/model-versions/{model_version_id}/predictions": {
       "POST": {
         "operationId": "create_prediction_v1_v1_model_versions__model_version_id__predictions_post",
@@ -1258,6 +1526,120 @@
         "successSchema": "NodeImpactRead"
       }
     },
+    "/v1/notifications/unsubscribe": {
+      "POST": {
+        "operationId": "unsubscribe_v1_v1_notifications_unsubscribe_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          }
+        ],
+        "requestSchema": "UnsubscribeRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "UnsubscribeRead"
+      }
+    },
+    "/v1/operator/failed-jobs": {
+      "GET": {
+        "operationId": "read_failed_jobs_v1_operator_failed_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OperatorFailedJobPage"
+      }
+    },
+    "/v1/operator/overview": {
+      "GET": {
+        "operationId": "read_overview_v1_operator_overview_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OperatorOverviewRead"
+      }
+    },
+    "/v1/operator/workspaces": {
+      "GET": {
+        "operationId": "read_workspaces_v1_operator_workspaces_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OperatorWorkspacePage"
+      }
+    },
+    "/v1/outcomes/projects": {
+      "GET": {
+        "operationId": "read_outcome_projects_v1_outcomes_projects_get",
+        "parameters": [],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OutcomesProjectList"
+      }
+    },
     "/v1/predictions/{prediction_id}": {
       "GET": {
         "operationId": "read_prediction_v1_predictions__prediction_id__get",
@@ -1303,6 +1685,46 @@
           "500"
         ],
         "successSchema": null
+      }
+    },
+    "/v1/predictions/{prediction_id}/rows": {
+      "GET": {
+        "operationId": "read_prediction_rows_v1_predictions__prediction_id__rows_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "prediction_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "BatchPredictionRowsPage"
       }
     },
     "/v1/projects": {
@@ -1467,6 +1889,52 @@
         "successSchema": "DecisionRecordRead"
       }
     },
+    "/v1/projects/{project_id}/flow": {
+      "GET": {
+        "operationId": "read_project_flow_v1_projects__project_id__flow_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProjectFlowRead"
+      }
+    },
+    "/v1/projects/{project_id}/goal/decisions": {
+      "GET": {
+        "operationId": "read_goal_decisions_v1_projects__project_id__goal_decisions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "GoalDecisionsRead"
+      }
+    },
     "/v1/projects/{project_id}/graph": {
       "GET": {
         "operationId": "read_project_graph_v1_projects__project_id__graph_get",
@@ -1500,7 +1968,286 @@
         "successSchema": "ProjectGraphRead"
       }
     },
+    "/v1/projects/{project_id}/improve-runs": {
+      "GET": {
+        "operationId": "list_project_improve_runs_v1_projects__project_id__improve_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ImproveRunPage"
+      }
+    },
+    "/v1/projects/{project_id}/model-versions": {
+      "GET": {
+        "operationId": "read_project_model_versions_v1_projects__project_id__model_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProjectModelVersionPage"
+      }
+    },
+    "/v1/projects/{project_id}/monitoring": {
+      "GET": {
+        "operationId": "read_monitoring_v1_projects__project_id__monitoring_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "model_version_id",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "MonitoringOverviewRead"
+      }
+    },
+    "/v1/projects/{project_id}/monitoring-thresholds": {
+      "GET": {
+        "operationId": "read_monitoring_thresholds_v1_projects__project_id__monitoring_thresholds_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "MonitoringThresholdsRead"
+      },
+      "PUT": {
+        "operationId": "set_monitoring_thresholds_v1_projects__project_id__monitoring_thresholds_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "MonitoringThresholdsWrite",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "MonitoringThresholdsRead"
+      }
+    },
+    "/v1/projects/{project_id}/monitoring/outcomes": {
+      "GET": {
+        "operationId": "read_monitoring_outcomes_v1_projects__project_id__monitoring_outcomes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OutcomeSetList"
+      },
+      "POST": {
+        "operationId": "link_monitoring_outcomes_v1_projects__project_id__monitoring_outcomes_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "OutcomeSetCreateRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "OutcomeSetRead"
+      }
+    },
+    "/v1/projects/{project_id}/monitoring/windows/{window_start}": {
+      "GET": {
+        "operationId": "read_monitoring_window_v1_projects__project_id__monitoring_windows__window_start__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "window_start",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "model_version_id",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "MonitoringWindowRead"
+      }
+    },
+    "/v1/projects/{project_id}/outcomes": {
+      "GET": {
+        "operationId": "read_project_outcomes_v1_projects__project_id__outcomes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "OutcomesRead"
+      }
+    },
     "/v1/projects/{project_id}/problem-specs": {
+      "GET": {
+        "operationId": "read_problem_specs_v1_projects__project_id__problem_specs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": null
+      },
       "POST": {
         "operationId": "create_problem_spec_v1_v1_projects__project_id__problem_specs_post",
         "parameters": [
@@ -1527,6 +2274,101 @@
           "500"
         ],
         "successSchema": "ProblemSpecRead"
+      }
+    },
+    "/v1/projects/{project_id}/problem-specs/{spec_id}": {
+      "GET": {
+        "operationId": "read_problem_spec_v1_projects__project_id__problem_specs__spec_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "spec_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ProblemSpecDetailRead"
+      }
+    },
+    "/v1/projects/{project_id}/questions": {
+      "GET": {
+        "operationId": "read_project_questions_v1_projects__project_id__questions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "mine",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "QuestionList"
+      },
+      "POST": {
+        "operationId": "ask_question_v1_projects__project_id__questions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "QuestionAskRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "QuestionDetailRead"
       }
     },
     "/v1/projects/{project_id}/refs": {
@@ -1622,6 +2464,255 @@
           "500"
         ],
         "successSchema": "RefMoveRead"
+      }
+    },
+    "/v1/projects/{project_id}/releases": {
+      "GET": {
+        "operationId": "read_project_releases_v1_projects__project_id__releases_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ModelReleaseList"
+      }
+    },
+    "/v1/projects/{project_id}/retrain": {
+      "POST": {
+        "operationId": "start_retrain_v1_v1_projects__project_id__retrain_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "RetrainStartRequest",
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "429",
+          "500"
+        ],
+        "successSchema": "RetrainStatusRead"
+      }
+    },
+    "/v1/projects/{project_id}/retrain-policy": {
+      "GET": {
+        "operationId": "read_retrain_policy_v1_projects__project_id__retrain_policy_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "RetrainPolicyRead"
+      },
+      "PUT": {
+        "operationId": "set_retrain_policy_v1_projects__project_id__retrain_policy_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "RetrainPolicyWrite",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "RetrainPolicyRead"
+      }
+    },
+    "/v1/projects/{project_id}/retrain-status": {
+      "GET": {
+        "operationId": "read_retrain_status_v1_projects__project_id__retrain_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "RetrainStatusRead"
+      }
+    },
+    "/v1/projects/{project_id}/scoring-schedule": {
+      "GET": {
+        "operationId": "read_scoring_schedule_v1_projects__project_id__scoring_schedule_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ScoringScheduleState"
+      },
+      "PUT": {
+        "operationId": "save_scoring_schedule_v1_projects__project_id__scoring_schedule_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "ScoringScheduleWrite",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "ScoringScheduleState"
+      }
+    },
+    "/v1/projects/{project_id}/scoring-schedule/runs": {
+      "GET": {
+        "operationId": "read_scoring_schedule_runs_v1_projects__project_id__scoring_schedule_runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "ScoringScheduleRunPage"
+      }
+    },
+    "/v1/projects/{project_id}/upload-attempts": {
+      "GET": {
+        "operationId": "read_upload_attempts_v1_projects__project_id__upload_attempts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "UploadAttemptPage"
       }
     },
     "/v1/proposals": {
@@ -1795,6 +2886,129 @@
         "successSchema": "ProposalRead"
       }
     },
+    "/v1/questions": {
+      "GET": {
+        "operationId": "read_workspace_questions_v1_questions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "mine",
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "QuestionList"
+      }
+    },
+    "/v1/questions/{question_id}": {
+      "GET": {
+        "operationId": "read_question_v1_questions__question_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "QuestionDetailRead"
+      }
+    },
+    "/v1/questions/{question_id}/close": {
+      "POST": {
+        "operationId": "close_question_v1_questions__question_id__close_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "QuestionDetailRead"
+      }
+    },
+    "/v1/questions/{question_id}/replies": {
+      "POST": {
+        "operationId": "reply_to_question_v1_questions__question_id__replies_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "QuestionReplyRequest",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "412",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "QuestionDetailRead"
+      }
+    },
     "/v1/service-tokens": {
       "GET": {
         "operationId": "read_service_tokens_v1_service_tokens_get",
@@ -1864,6 +3078,29 @@
         "successSchema": "ServiceTokenRead"
       }
     },
+    "/v1/split-plans/{split_plan_id}": {
+      "GET": {
+        "operationId": "read_split_plan_v1_split_plans__split_plan_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "split_plan_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "SplitPlanRead"
+      }
+    },
     "/v1/workspaces": {
       "GET": {
         "operationId": "read_workspaces_v1_workspaces_get",
@@ -1879,6 +3116,232 @@
           "500"
         ],
         "successSchema": null
+      }
+    },
+    "/v1/workspaces/{workspace_id}/members": {
+      "GET": {
+        "operationId": "read_workspace_members_v1_workspaces__workspace_id__members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "WorkspaceMembersRead"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/usage": {
+      "GET": {
+        "operationId": "read_workspace_usage_v1_workspaces__workspace_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": "UsageRead"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks": {
+      "GET": {
+        "operationId": "read_webhooks_v1_workspaces__workspace_id__webhooks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": null
+      },
+      "POST": {
+        "operationId": "create_webhook_v1_v1_workspaces__workspace_id__webhooks_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "WebhookCreate",
+        "statusCodes": [
+          "201",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "WebhookSecretRead"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}": {
+      "PATCH": {
+        "operationId": "update_webhook_v1_v1_workspaces__workspace_id__webhooks__webhook_id__patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "WebhookUpdate",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "WebhookRead"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries": {
+      "GET": {
+        "operationId": "read_webhook_deliveries_v1_workspaces__workspace_id__webhooks__webhook_id__deliveries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "422",
+          "500"
+        ],
+        "successSchema": null
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret": {
+      "POST": {
+        "operationId": "rotate_webhook_secret_v1_v1_workspaces__workspace_id__webhooks__webhook_id__rotate_secret_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "WebhookSecretRead"
+      }
+    },
+    "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test": {
+      "POST": {
+        "operationId": "test_webhook_v1_v1_workspaces__workspace_id__webhooks__webhook_id__test_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "webhook_id",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true
+          }
+        ],
+        "requestSchema": null,
+        "statusCodes": [
+          "202",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "500"
+        ],
+        "successSchema": "WebhookTestRead"
       }
     }
   },
@@ -1933,6 +3396,7 @@
         "error_code",
         "error_message",
         "execution_request_id",
+        "flagged",
         "id",
         "input_dataset_id",
         "model_release_id",
@@ -1940,8 +3404,12 @@
         "output",
         "output_format",
         "project_id",
+        "reasons",
+        "release",
         "rows_in",
         "rows_out",
+        "scheduled",
+        "scheduled_for",
         "started_at",
         "status",
         "workspace_id"
@@ -1996,6 +3464,8 @@
         "project_id",
         "purpose",
         "row_count",
+        "uploaded_by",
+        "uploader",
         "version",
         "workspace_id"
       ],
@@ -2008,6 +3478,8 @@
         "name",
         "project_id",
         "row_count",
+        "uploaded_by",
+        "uploader",
         "version",
         "workspace_id"
       ]
@@ -2080,12 +3552,17 @@
       "properties": [
         "columns",
         "dataset_id",
+        "entity_column",
+        "entity_count",
         "experiment",
         "importance_method",
         "project_id",
         "scope",
         "split_plan",
-        "statistics_status"
+        "statistics_status",
+        "target_rate",
+        "time_range",
+        "upload_checks"
       ],
       "required": [
         "columns",
@@ -2114,6 +3591,7 @@
         "schema_digest",
         "size_bytes",
         "source_type",
+        "uploaded_by",
         "version",
         "workspace_id"
       ],
@@ -2130,6 +3608,7 @@
         "schema_digest",
         "size_bytes",
         "source_type",
+        "uploaded_by",
         "version",
         "workspace_id"
       ]
@@ -2146,6 +3625,8 @@
         "project_id",
         "purpose",
         "row_count",
+        "uploaded_by",
+        "uploader",
         "version",
         "workspace_id"
       ],
@@ -2159,6 +3640,8 @@
         "policy",
         "project_id",
         "row_count",
+        "uploaded_by",
+        "uploader",
         "version",
         "workspace_id"
       ]
@@ -2289,6 +3772,7 @@
         "constraint_status",
         "cv",
         "decision_threshold",
+        "evidence_mode",
         "experiment_id",
         "family",
         "holdout",
@@ -2320,11 +3804,14 @@
     },
     "ExperimentDetailRead": {
       "properties": [
+        "attempts",
         "cancel_requested_at",
         "change_set",
         "created_at",
         "diff_vs_parent",
         "ended_at",
+        "evidence_mode",
+        "evidence_note",
         "failure_reason",
         "id",
         "intent",
@@ -2332,6 +3819,7 @@
         "metrics",
         "project_id",
         "started_at",
+        "started_by",
         "status",
         "target_column",
         "task_type",
@@ -2400,6 +3888,7 @@
       "properties": [
         "created_at",
         "ended_at",
+        "evidence_mode",
         "has_change_set",
         "id",
         "intent",
@@ -2408,6 +3897,7 @@
         "source_dataset_id",
         "split_plan_id",
         "started_at",
+        "started_by",
         "status",
         "untrusted_fields"
       ],
@@ -2537,6 +4027,7 @@
     },
     "ModelCardFinalEvaluation": {
       "properties": [
+        "confusion",
         "decision_threshold",
         "label",
         "metric",
@@ -2686,8 +4177,11 @@
         "is_champion",
         "lineage",
         "metrics",
+        "package_verification",
         "project_id",
         "ref_kinds",
+        "release",
+        "saved_format",
         "version",
         "workspace_id"
       ],
@@ -2699,6 +4193,181 @@
         "lineage",
         "version",
         "workspace_id"
+      ]
+    },
+    "MonitoringFinding": {
+      "properties": [
+        "body",
+        "code",
+        "severity",
+        "title"
+      ],
+      "required": [
+        "body",
+        "code",
+        "title"
+      ]
+    },
+    "MonitoringOverviewRead": {
+      "properties": [
+        "enabled",
+        "feature_psi_series",
+        "finding",
+        "latest",
+        "model_release_id",
+        "model_version",
+        "model_version_id",
+        "notes",
+        "project_id",
+        "status",
+        "thresholds",
+        "windows"
+      ],
+      "required": [
+        "enabled",
+        "finding",
+        "latest",
+        "model_release_id",
+        "model_version_id",
+        "notes",
+        "project_id",
+        "status",
+        "thresholds",
+        "windows"
+      ]
+    },
+    "MonitoringThresholds": {
+      "properties": [
+        "changed_at",
+        "changed_by_user_id",
+        "flagged_share_absolute_watch",
+        "flagged_share_relative_watch",
+        "min_labels",
+        "min_per_class",
+        "min_rows",
+        "precision_floor",
+        "psi_alert",
+        "psi_watch",
+        "recall_floor",
+        "significance_level",
+        "version"
+      ],
+      "required": [
+        "flagged_share_absolute_watch",
+        "flagged_share_relative_watch",
+        "min_labels",
+        "min_per_class",
+        "min_rows",
+        "psi_alert",
+        "psi_watch",
+        "significance_level"
+      ]
+    },
+    "MonitoringWindowRead": {
+      "properties": [
+        "computed_at",
+        "coverage",
+        "feature_sentences",
+        "finding",
+        "floor_status",
+        "input_drift",
+        "max_psi",
+        "model_release_id",
+        "model_version_id",
+        "n_batch_predictions",
+        "n_labelled",
+        "n_rows",
+        "notes",
+        "outcome_metric",
+        "outcome_metric_value",
+        "outcome_precision",
+        "outcome_recall",
+        "outcome_sentences",
+        "outcomes",
+        "outcomes_status",
+        "prediction_drift",
+        "prediction_psi",
+        "revision",
+        "status",
+        "summary",
+        "summary_code",
+        "thresholds",
+        "thresholds_used",
+        "window_end",
+        "window_start"
+      ],
+      "required": [
+        "computed_at",
+        "coverage",
+        "feature_sentences",
+        "finding",
+        "input_drift",
+        "max_psi",
+        "model_release_id",
+        "model_version_id",
+        "n_batch_predictions",
+        "n_labelled",
+        "n_rows",
+        "notes",
+        "outcome_metric",
+        "outcome_metric_value",
+        "outcomes",
+        "outcomes_status",
+        "prediction_drift",
+        "prediction_psi",
+        "revision",
+        "status",
+        "summary",
+        "summary_code",
+        "thresholds",
+        "window_end",
+        "window_start"
+      ]
+    },
+    "MonitoringWindowSummary": {
+      "properties": [
+        "computed_at",
+        "coverage",
+        "floor_status",
+        "max_psi",
+        "model_release_id",
+        "model_version_id",
+        "n_batch_predictions",
+        "n_labelled",
+        "n_rows",
+        "outcome_metric",
+        "outcome_metric_value",
+        "outcome_precision",
+        "outcome_recall",
+        "outcomes_status",
+        "prediction_psi",
+        "revision",
+        "status",
+        "summary",
+        "summary_code",
+        "thresholds_used",
+        "window_end",
+        "window_start"
+      ],
+      "required": [
+        "computed_at",
+        "coverage",
+        "max_psi",
+        "model_release_id",
+        "model_version_id",
+        "n_batch_predictions",
+        "n_labelled",
+        "n_rows",
+        "outcome_metric",
+        "outcome_metric_value",
+        "outcomes_status",
+        "prediction_psi",
+        "revision",
+        "status",
+        "summary",
+        "summary_code",
+        "window_end",
+        "window_start"
       ]
     },
     "NodeImpactRead": {
@@ -2719,6 +4388,38 @@
         "project_id",
         "total",
         "truncated"
+      ]
+    },
+    "OutcomeSetList": {
+      "properties": [
+        "items",
+        "notes",
+        "project_id"
+      ],
+      "required": [
+        "items",
+        "notes",
+        "project_id"
+      ]
+    },
+    "OutcomeSetRead": {
+      "properties": [
+        "dataset_id",
+        "dataset_name",
+        "id",
+        "key_column",
+        "linked_at",
+        "linked_by_user_id",
+        "outcome_column",
+        "project_id"
+      ],
+      "required": [
+        "dataset_id",
+        "id",
+        "key_column",
+        "linked_at",
+        "outcome_column",
+        "project_id"
       ]
     },
     "PipelineModelBuildRead": {
@@ -2810,6 +4511,7 @@
         "counts_by_kind",
         "edges",
         "experiment_limit",
+        "newer_dataset",
         "next_cursor",
         "nodes",
         "project",
@@ -2898,6 +4600,80 @@
       "required": [
         "decision",
         "refs"
+      ]
+    },
+    "ScoringScheduleRead": {
+      "properties": [
+        "created_at",
+        "created_by_user_id",
+        "enabled",
+        "hour_utc",
+        "id",
+        "ignored_token_uploads",
+        "last_planned_for",
+        "next_planned_for",
+        "owner_can_score",
+        "timezone",
+        "updated_at",
+        "updated_by_user_id",
+        "warning",
+        "weekday",
+        "weekday_name"
+      ],
+      "required": [
+        "created_at",
+        "enabled",
+        "hour_utc",
+        "id",
+        "owner_can_score",
+        "updated_at",
+        "weekday",
+        "weekday_name"
+      ]
+    },
+    "ScoringScheduleRunPage": {
+      "properties": [
+        "items",
+        "next_cursor",
+        "project_id"
+      ],
+      "required": [
+        "project_id"
+      ]
+    },
+    "ScoringScheduleRunRead": {
+      "properties": [
+        "batch_prediction_id",
+        "created_at",
+        "id",
+        "input_dataset_id",
+        "message",
+        "model_release_id",
+        "model_version_id",
+        "outcome",
+        "planned_for",
+        "reason_code"
+      ],
+      "required": [
+        "created_at",
+        "id",
+        "message",
+        "outcome",
+        "planned_for"
+      ]
+    },
+    "ScoringScheduleState": {
+      "properties": [
+        "about",
+        "project_id",
+        "recent_runs",
+        "schedule",
+        "status",
+        "status_message"
+      ],
+      "required": [
+        "project_id",
+        "status"
       ]
     },
     "V1Error": {

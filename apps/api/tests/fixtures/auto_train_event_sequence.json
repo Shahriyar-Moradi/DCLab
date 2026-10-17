@@ -1935,6 +1935,15 @@
     ]
    ],
    [
+    "model_packaging",
+    "model_package_saved",
+    "completed",
+    [
+     "candidate_id",
+     "size_bytes"
+    ]
+   ],
+   [
     "training",
     "operation_completed",
     "completed",
@@ -3792,6 +3801,15 @@
     [
      "candidate_id",
      "fit_row_count"
+    ]
+   ],
+   [
+    "model_packaging",
+    "model_package_saved",
+    "completed",
+    [
+     "candidate_id",
+     "size_bytes"
     ]
    ],
    [

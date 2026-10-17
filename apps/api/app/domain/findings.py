@@ -102,6 +102,8 @@ HOLDOUT_COMPARISON = "holdout_comparison"  # per-column rows / lists that depend
 _WHERE = "{metric} {train_score} on the rows it trained on"
 MESSAGE_TEMPLATES: dict[str, str] = {
     "check_error": "Not evaluated: this check could not run ({error_type}); the other checks are unaffected.",
+    "holdout_sealed": "Not evaluated: this improve try keeps the final test set sealed, and this check "
+    "reads its rows.",
     "target_leakage.pass": "No column looks like it gives away the answer: the leakage audit excluded "
     "nothing and flagged none of the {modeled_feature_count} columns the model uses.",
     "target_leakage.excluded": "{excluded_count} column(s) looked like they give away the answer and were "

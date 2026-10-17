@@ -133,6 +133,10 @@ from app.domain.privacy_audit import (
     CK_DATASET_COLUMNS_SENSITIVITY,
 )
 from app.domain.ml_jobs import (
+    CK_ML_JOB_ATTEMPTS_FAILURE_CLASS,
+    CK_ML_JOB_ATTEMPTS_NUMBER,
+    CK_ML_JOB_ATTEMPTS_OUTCOME,
+    CK_ML_JOB_ATTEMPTS_SHAPE,
     CK_ML_JOB_AUTO_TRAIN_UPLOAD,
     CK_ML_JOB_HANDLER_KEY,
     CK_ML_JOB_HANDLER_VERSION,
@@ -143,11 +147,27 @@ from app.domain.ml_jobs import (
     CK_ML_JOB_STATUS,
     CK_ML_JOB_TYPE,
 )
+from app.domain.improve import (
+    CK_IMPROVE_ITERATIONS_AGENT,
+    CK_IMPROVE_ITERATIONS_KIND,
+    CK_IMPROVE_ITERATIONS_SHAPE,
+    CK_IMPROVE_ITERATIONS_STATUS,
+    CK_IMPROVE_RUNS_ACCEPTANCE,
+    CK_IMPROVE_RUNS_COUNTS,
+    CK_IMPROVE_RUNS_GOAL,
+    CK_IMPROVE_RUNS_LABEL,
+    CK_IMPROVE_RUNS_OUTCOME,
+    CK_IMPROVE_RUNS_SHAPE,
+    CK_IMPROVE_RUNS_STATUS,
+    CK_IMPROVE_RUNS_STOP_REASON,
+)
 from app.domain.pipeline_run_branch import (
     CK_EXPERIMENTS_BRANCH_KEY,
     CK_EXPERIMENTS_BRANCH_REASON,
     CK_EXPERIMENTS_BRANCH_REQUIRES_PARENT,
+    CK_EXPERIMENTS_EVIDENCE_MODE,
     CK_EXPERIMENTS_PARENT_NOT_SELF,
+    EVIDENCE_MODE_SCORED,
 )
 from app.domain.ai_governance import (
     CK_AI_POLICIES_ACTOR,
@@ -309,6 +329,93 @@ from app.domain.decision_records import (
     CK_PDR_SUBJECT_KIND,
     CK_PDR_SUBJECT_MATCHES_KIND,
     CK_PDR_SUPERSEDES_NOT_SELF,
+)
+from app.domain.model_releases import (
+    CK_MODEL_RELEASES_DIGEST,
+    CK_MODEL_RELEASES_PREVIOUS_NOT_SELF,
+    CK_MODEL_RELEASES_RATIONALE,
+    CK_MODEL_RELEASES_SAVED_FORMAT,
+)
+from app.domain.scoring_schedules import (
+    CK_SCORING_SCHEDULE_RUNS_OUTCOME,
+    CK_SCORING_SCHEDULE_RUNS_QUEUED,
+    CK_SCORING_SCHEDULE_RUNS_REASON,
+    CK_SCORING_SCHEDULE_RUNS_RELEASE_VERSION,
+    CK_SCORING_SCHEDULES_HOUR,
+    CK_SCORING_SCHEDULES_WEEKDAY,
+)
+from app.domain.retrain import (
+    CK_COMPARISON_REASON,
+    CK_COMPARISON_REASON_CODE,
+    CK_COMPARISON_RESULT,
+    CK_COMPARISON_STATUS,
+    CK_RETRAIN_ORIGIN,
+    CK_RETRAIN_POLICY,
+    CK_RETRAIN_POLICY_VERSION,
+    CK_RETRAIN_RUN,
+    CK_RETRAIN_WINDOW,
+)
+from app.domain.monitoring import (
+    CK_MONITORING_OUTCOME_SETS_COLUMNS,
+    CK_MONITORING_THRESHOLDS_BOUNDS,
+    CK_MONITORING_THRESHOLDS_VERSION,
+    CK_MONITORING_WINDOWS_COUNTS,
+    CK_MONITORING_WINDOWS_JSON,
+    CK_MONITORING_WINDOWS_STATUS,
+    CK_MONITORING_WINDOWS_SUMMARY,
+    CK_MONITORING_WINDOWS_SUMMARY_CODE,
+    CK_MONITORING_WINDOWS_THRESHOLDS_USED,
+    CK_MONITORING_WINDOWS_WEEK,
+)
+from app.domain.usage import (
+    CK_USAGE_RECORDS_KIND,
+    CK_USAGE_RECORDS_QUANTITY,
+    CK_USAGE_RECORDS_PERIOD_DAY,
+    CK_USAGE_RECORDS_SOURCE_REF,
+)
+from app.domain.data_goal import (
+    CK_UPLOAD_ATTEMPTS_ACTOR,
+    CK_UPLOAD_ATTEMPTS_FILE_NAME,
+    CK_UPLOAD_ATTEMPTS_OUTCOME,
+    CK_UPLOAD_ATTEMPTS_REASON,
+    CK_UPLOAD_ATTEMPTS_SIZE,
+    CK_UPLOAD_ATTEMPTS_SOURCE,
+)
+from app.domain.business_questions import (
+    CK_BUSINESS_QUESTION_REPLIES_SIDE,
+    CK_BUSINESS_QUESTION_REPLIES_TEXT,
+    CK_BUSINESS_QUESTIONS_CLOSED,
+    CK_BUSINESS_QUESTIONS_STATUS,
+    CK_BUSINESS_QUESTIONS_SUBJECT,
+    CK_BUSINESS_QUESTIONS_TEXT,
+    CK_BUSINESS_QUESTIONS_VERSION,
+    STATUS_OPEN as BQ_STATUS_OPEN,
+)
+from app.domain.notifications import (
+    CK_NOTIFICATION_OUTBOX_ATTEMPTS,
+    CK_NOTIFICATION_OUTBOX_CHANNEL,
+    CK_NOTIFICATION_OUTBOX_DEDUPE,
+    CK_NOTIFICATION_OUTBOX_ERROR,
+    CK_NOTIFICATION_OUTBOX_KIND,
+    CK_NOTIFICATION_OUTBOX_PAYLOAD,
+    CK_NOTIFICATION_OUTBOX_PING,
+    CK_NOTIFICATION_OUTBOX_RECIPIENT,
+    CK_NOTIFICATION_OUTBOX_SENT,
+    CK_NOTIFICATION_OUTBOX_STATUS,
+    CK_NOTIFICATION_PREFERENCES_KIND,
+    CK_WEBHOOK_CHANGES_ACTION,
+    CK_WEBHOOK_CHANGES_URL_HOST,
+    CK_WEBHOOK_DELIVERIES_ERROR,
+    CK_WEBHOOK_DELIVERIES_EVENT,
+    CK_WEBHOOK_DELIVERIES_NUMBERS,
+    CK_WEBHOOK_DELIVERIES_OUTCOME,
+    CK_WEBHOOK_DELIVERIES_STATUS_CODE,
+    CK_WEBHOOK_ENDPOINTS_EVENTS,
+    CK_WEBHOOK_ENDPOINTS_FAILURES,
+    CK_WEBHOOK_ENDPOINTS_NAME,
+    CK_WEBHOOK_ENDPOINTS_SECRET_KEY_ID,
+    CK_WEBHOOK_ENDPOINTS_SECRET_VERSION,
+    CK_WEBHOOK_ENDPOINTS_URL,
 )
 from app.domain.experiment_changes import (
     CK_EXPERIMENTS_CHANGE_SET_BOUNDED,
@@ -1662,6 +1769,13 @@ class MlJob(Base):
         CheckConstraint("max_attempts >= 1", name="ck_ml_jobs_max_attempts_positive"),
         Index("ix_ml_jobs_status_queued_at", "status", "queued_at"),
         Index("ix_ml_jobs_workspace_created_at", "workspace_id", "created_at"),
+        # P8.4-A (0081): the admission check sums a workspace's compute time of the month.
+        Index(
+            "ix_ml_jobs_workspace_completed_at",
+            "workspace_id",
+            "completed_at",
+            postgresql_where=text("completed_at IS NOT NULL"),
+        ),
         Index(
             "ix_ml_jobs_queued_claim",
             "priority",
@@ -1754,6 +1868,178 @@ class MlJob(Base):
     )
 
     upload: Mapped["ClientLabUpload | None"] = relationship(foreign_keys="MlJob.upload_id")
+
+
+class MlJobAttempt(Base):
+    """D2a (0084): one claim of an ``ml_jobs`` row by a worker and how it ended. Closed codes
+    only (outcome, failure class), never a message. Written by ``ml_job_service`` at the claim
+    (``running``) and once at the attempt's end; a finished attempt is final (DB trigger)."""
+
+    __tablename__ = "ml_job_attempts"
+    __table_args__ = (
+        UniqueConstraint("ml_job_id", "attempt", name="uq_ml_job_attempts_job_attempt"),
+        ForeignKeyConstraint(
+            ["workspace_id", "ml_job_id"],
+            ["ml_jobs.workspace_id", "ml_jobs.id"],
+            name="fk_ml_job_attempts_workspace_job",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(CK_ML_JOB_ATTEMPTS_NUMBER, name="ck_ml_job_attempts_number"),
+        CheckConstraint(CK_ML_JOB_ATTEMPTS_OUTCOME, name="ck_ml_job_attempts_outcome"),
+        CheckConstraint(CK_ML_JOB_ATTEMPTS_FAILURE_CLASS, name="ck_ml_job_attempts_failure_class"),
+        CheckConstraint(CK_ML_JOB_ATTEMPTS_SHAPE, name="ck_ml_job_attempts_shape"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    ml_job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    failure_class: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class ImproveRun(Base):
+    """P5.4-A2 (0087, ADR 0007 option A): one improve loop on one split plan. A re-enqueued state
+    machine on ``ml_jobs`` (``labs.improve``): ``continuation_job_id`` is the only job allowed to step
+    it. Every try is a sealed branch (``improve_iterations``); the final test set is scored once, by
+    the final run a person accepts. Goal, budget, plan and T are frozen at INSERT (DB trigger)."""
+
+    __tablename__ = "improve_runs"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "project_id", "id", name="uq_improve_runs_workspace_project_id"),
+        ForeignKeyConstraint(["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+                             name="fk_improve_runs_workspace_project", ondelete="CASCADE"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "split_plan_id"],
+                             ["split_plans.workspace_id", "split_plans.project_id", "split_plans.id"],
+                             name="fk_improve_runs_split_plan"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "start_experiment_id"],
+                             ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+                             name="fk_improve_runs_start_experiment"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "incumbent_experiment_id"],
+                             ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+                             name="fk_improve_runs_incumbent_experiment"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "final_experiment_id"],
+                             ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+                             name="fk_improve_runs_final_experiment"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "acceptance_record_id"],
+                             ["project_decision_records.workspace_id", "project_decision_records.project_id",
+                              "project_decision_records.id"], name="fk_improve_runs_acceptance_record"),
+        ForeignKeyConstraint(["workspace_id", "continuation_job_id"], ["ml_jobs.workspace_id", "ml_jobs.id"],
+                             name="fk_improve_runs_continuation_job"),
+        ForeignKeyConstraint(["workspace_id", "created_by_service_token_id"],
+                             ["service_tokens.workspace_id", "service_tokens.id"],
+                             name="fk_improve_runs_service_token"),
+        CheckConstraint(CK_IMPROVE_RUNS_STATUS, name="ck_improve_runs_status"),
+        CheckConstraint(CK_IMPROVE_RUNS_OUTCOME, name="ck_improve_runs_outcome"),
+        CheckConstraint(CK_IMPROVE_RUNS_STOP_REASON, name="ck_improve_runs_stop_reason"),
+        CheckConstraint(CK_IMPROVE_RUNS_LABEL, name="ck_improve_runs_sealed_set_label"),
+        CheckConstraint(CK_IMPROVE_RUNS_GOAL, name="ck_improve_runs_goal"),
+        CheckConstraint(CK_IMPROVE_RUNS_COUNTS, name="ck_improve_runs_counts"),
+        CheckConstraint(CK_IMPROVE_RUNS_SHAPE, name="ck_improve_runs_shape"),
+        CheckConstraint(CK_IMPROVE_RUNS_ACCEPTANCE, name="ck_improve_runs_acceptance"),
+        Index("uq_improve_runs_live_split_plan", "split_plan_id", unique=True,
+              postgresql_where=text("status IN ('queued', 'running', 'waiting_user', 'finalizing')")),
+        Index("ix_improve_runs_workspace_status", "workspace_id", "status"),
+        Index("ix_improve_runs_service_token", "workspace_id", "created_by_service_token_id", "created_at",
+              postgresql_where=text("created_by_service_token_id IS NOT NULL")),
+        Index("ix_improve_runs_final_experiment", "workspace_id", "final_experiment_id",
+              postgresql_where=text("final_experiment_id IS NOT NULL")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    split_plan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    start_experiment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    incumbent_experiment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    final_experiment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    outcome: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    stop_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    stop_detail: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    goal: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    budget: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    plan: Mapped[list] = mapped_column(JSONB, nullable=False)
+    planned_comparisons: Mapped[int] = mapped_column(Integer, nullable=False)
+    validation_folds: Mapped[int] = mapped_column(Integer, nullable=False)
+    looks_before: Mapped[int] = mapped_column(Integer, nullable=False)
+    sealed_set_label: Mapped[str] = mapped_column(String(16), nullable=False)
+    sealed_set_consulted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    continuation_job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    accepted_iteration_seq: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    accepted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    acceptance_record_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    final_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    step_errors: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    training_seconds_spent: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    llm_micros_spent: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    waiting_user_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ImproveIteration(Base):
+    """P5.4-A2 (0087): one try of an improve loop -- iteration 0 the operating point (recorded, no
+    retrain), then one sealed ``family_include`` branch per try. ``experiment_id`` and the frozen
+    ``comparison`` are set once; a terminal status is final (DB trigger); one live try per loop."""
+
+    __tablename__ = "improve_iterations"
+    __table_args__ = (
+        UniqueConstraint("improve_run_id", "seq", name="uq_improve_iterations_run_seq"),
+        UniqueConstraint("workspace_id", "idempotency_key", name="uq_improve_iterations_workspace_key"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "improve_run_id"],
+                             ["improve_runs.workspace_id", "improve_runs.project_id", "improve_runs.id"],
+                             name="fk_improve_iterations_run", ondelete="CASCADE"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "experiment_id"],
+                             ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+                             name="fk_improve_iterations_experiment"),
+        ForeignKeyConstraint(["workspace_id", "project_id", "incumbent_experiment_id"],
+                             ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+                             name="fk_improve_iterations_incumbent"),
+        CheckConstraint(CK_IMPROVE_ITERATIONS_KIND, name="ck_improve_iterations_kind"),
+        CheckConstraint(CK_IMPROVE_ITERATIONS_STATUS, name="ck_improve_iterations_status"),
+        CheckConstraint(CK_IMPROVE_ITERATIONS_AGENT, name="ck_improve_iterations_agent"),
+        CheckConstraint(CK_IMPROVE_ITERATIONS_SHAPE, name="ck_improve_iterations_shape"),
+        Index("uq_improve_iterations_live", "improve_run_id", unique=True,
+              postgresql_where=text("status IN ('planned', 'running')")),
+        Index("ix_improve_iterations_experiment", "workspace_id", "experiment_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    improve_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    plan_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    action: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    incumbent_experiment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    planned_new_candidates: Mapped[int] = mapped_column(Integer, nullable=False)
+    planned_candidate_ids: Mapped[list] = mapped_column(JSONB, nullable=False)
+    comparisons_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    comparison: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    agent: Mapped[str] = mapped_column(String(16), nullable=False, server_default="off")
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    training_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ExecutionRequest(Base):
@@ -2810,6 +3096,18 @@ class Dataset(Base):
             ["ingestion_runs.workspace_id", "ingestion_runs.id"],
             name="fk_datasets_workspace_ingestion_run",
         ),
+        # 0082: the service token (connected tool) that uploaded it; NO ACTION, provenance is kept.
+        ForeignKeyConstraint(
+            ["workspace_id", "uploaded_by_service_token_id"],
+            ["service_tokens.workspace_id", "service_tokens.id"],
+            name="fk_datasets_service_token",
+        ),
+        Index(
+            "ix_datasets_service_token",
+            "workspace_id",
+            "uploaded_by_service_token_id",
+            postgresql_where=text("uploaded_by_service_token_id IS NOT NULL"),
+        ),
         CheckConstraint(CK_DATASETS_PURPOSE, name="ck_datasets_purpose"),
         Index("ix_datasets_workspace_created_at", "workspace_id", desc("created_at")),
         Index("ix_datasets_project_created_at", "project_id", desc("created_at")),
@@ -2857,6 +3155,11 @@ class Dataset(Base):
     # P4.9-A: ``scoring`` uploads (no target) are refused as training sources.
     purpose: Mapped[str] = mapped_column(
         String(16), nullable=False, default="training", server_default="training"
+    )
+    # 0082: set at INSERT (rows are immutable) when a service token uploaded the file through
+    # ``POST /v1/datasets``; NULL = a signed-in person (or before 0082). Weekly scoring skips non-NULL.
+    uploaded_by_service_token_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -3730,6 +4033,7 @@ class Experiment(Base):
             CK_EXPERIMENTS_CHANGE_SET_REQUIRES_PARENT,
             name="ck_experiments_change_set_requires_parent",
         ),
+        CheckConstraint(CK_EXPERIMENTS_EVIDENCE_MODE, name="ck_experiments_evidence_mode"),
         Index(
             "ix_experiments_workspace_created_at",
             "workspace_id",
@@ -3824,6 +4128,11 @@ class Experiment(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # ADR 0007 §6.1: ``sealed`` = a CV-only improve try (no final test, no ModelVersion). Set at
+    # INSERT (``create_pipeline_run(evidence_mode=...)``); experiments_lineage_guard refuses a change.
+    evidence_mode: Mapped[str] = mapped_column(
+        String(8), nullable=False, default=EVIDENCE_MODE_SCORED, server_default=EVIDENCE_MODE_SCORED
     )
 
     dataset: Mapped[Dataset] = relationship(
@@ -6327,6 +6636,323 @@ class ProjectRef(Base):
     )
 
 
+class ModelRelease(Base):
+    """The immutable approval behind "model in use" (P7.2-A; ``app.domain.model_releases``).
+
+    Inserted only by ``project_ref_service.move_ref`` in the transaction that writes the
+    accepted ``champion_promoted`` record and moves ``champion_model``. Append-only (DB
+    trigger). ``previous_release_id`` chains the project's approvals; the two unique
+    indexes keep that chain linear (one first release, one successor per release).
+    The DB only proves ``decision_record_id`` is a record of the same tenant and project
+    (and used once): that it is an ACCEPTED ``champion_promoted`` record moving this version
+    is guaranteed by that single writer. A future second writer must keep that invariant.
+    ``created_at`` is ``clock_timestamp()`` (not the transaction start), so newest-first
+    order follows the approval chain.
+    """
+
+    __tablename__ = "model_releases"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_model_releases_workspace_id"),
+        UniqueConstraint("workspace_id", "project_id", "id", name="uq_model_releases_workspace_project_id"),
+        # Target of batch_predictions' FK: a scoring row's release must approve the version it scores.
+        UniqueConstraint("workspace_id", "model_version_id", "id", name="uq_model_releases_workspace_model_version_id"),
+        UniqueConstraint("decision_record_id", name="uq_model_releases_decision_record_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_model_releases_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "model_version_id"],
+            ["model_versions.workspace_id", "model_versions.project_id", "model_versions.id"],
+            name="fk_model_releases_workspace_project_model_version",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "previous_release_id"],
+            ["model_releases.workspace_id", "model_releases.project_id", "model_releases.id"],
+            name="fk_model_releases_workspace_project_previous_release",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "decision_record_id"],
+            [
+                "project_decision_records.workspace_id",
+                "project_decision_records.project_id",
+                "project_decision_records.id",
+            ],
+            name="fk_model_releases_workspace_project_decision_record",
+        ),
+        CheckConstraint(CK_MODEL_RELEASES_RATIONALE, name="ck_model_releases_rationale"),
+        CheckConstraint(CK_MODEL_RELEASES_DIGEST, name="ck_model_releases_digest"),
+        CheckConstraint(CK_MODEL_RELEASES_SAVED_FORMAT, name="ck_model_releases_saved_format"),
+        CheckConstraint(CK_MODEL_RELEASES_PREVIOUS_NOT_SELF, name="ck_model_releases_previous_not_self"),
+        Index("ix_model_releases_project_created_at", "workspace_id", "project_id", desc("created_at")),
+        Index("ix_model_releases_workspace_model_version", "workspace_id", "model_version_id"),
+        Index("ix_model_releases_approved_by_user_id", "approved_by_user_id"),
+        Index(
+            "uq_model_releases_previous_release_id",
+            "previous_release_id",
+            unique=True,
+            postgresql_where=text("previous_release_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_model_releases_project_first",
+            "project_id",
+            unique=True,
+            postgresql_where=text("previous_release_id IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    model_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    previous_release_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    decision_record_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    approved_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    rationale: Mapped[str] = mapped_column(String(4000), nullable=False)
+    package_manifest_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    saved_format: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class MonitoringWindow(Base):
+    """One computed revision of a weekly monitoring window (P7.4-A; ``app.domain.monitoring``).
+
+    Written only by the ``monitoring.compute_window`` worker job. Append-only (DB trigger): a
+    recompute (more scorings, outcomes linked) inserts the next ``revision``; reads use the
+    highest. The jsonb columns hold bounded aggregates of the workspace's own data (PSI, shares,
+    category labels <= 60 chars, top 10, column names), never rows and never holdout figures.
+    """
+
+    __tablename__ = "monitoring_windows"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_monitoring_windows_workspace_id"),
+        UniqueConstraint(
+            "project_id", "model_version_id", "window_start", "revision", name="uq_monitoring_windows_revision"
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_monitoring_windows_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "model_version_id"],
+            ["model_versions.workspace_id", "model_versions.project_id", "model_versions.id"],
+            name="fk_monitoring_windows_workspace_project_model_version",
+        ),
+        # The release must be of this tenant AND approve this very version (MATCH SIMPLE: checked when set).
+        ForeignKeyConstraint(
+            ["workspace_id", "model_version_id", "model_release_id"],
+            ["model_releases.workspace_id", "model_releases.model_version_id", "model_releases.id"],
+            name="fk_monitoring_windows_workspace_model_release",
+        ),
+        CheckConstraint(CK_MONITORING_WINDOWS_STATUS, name="ck_monitoring_windows_status"),
+        CheckConstraint(CK_MONITORING_WINDOWS_SUMMARY_CODE, name="ck_monitoring_windows_summary_code"),
+        CheckConstraint(CK_MONITORING_WINDOWS_SUMMARY, name="ck_monitoring_windows_summary"),
+        CheckConstraint(CK_MONITORING_WINDOWS_COUNTS, name="ck_monitoring_windows_counts"),
+        CheckConstraint(CK_MONITORING_WINDOWS_WEEK, name="ck_monitoring_windows_week"),
+        CheckConstraint(CK_MONITORING_WINDOWS_JSON, name="ck_monitoring_windows_json"),
+        CheckConstraint(CK_MONITORING_WINDOWS_THRESHOLDS_USED, name="ck_monitoring_windows_thresholds_used"),
+        Index(
+            "ix_monitoring_windows_latest",
+            "workspace_id", "project_id", "model_version_id", desc("window_start"), desc("revision"),
+        ),
+        Index(
+            "ix_monitoring_windows_workspace_model_release",
+            "workspace_id",
+            "model_release_id",
+            postgresql_where=text("model_release_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    model_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    model_release_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_rows: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_batch_predictions: Mapped[int] = mapped_column(Integer, nullable=False)
+    input_drift: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    prediction_drift: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    outcomes: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    summary_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary: Mapped[str] = mapped_column(String(1000), nullable=False)
+    # D5b: the thresholds this revision was computed with (version, PSI lines, floors); null before 0089.
+    thresholds_used: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class MonitoringOutcomeSet(Base):
+    """A person's link of a file of real outcomes to a project (P7.4-A). Append-only (DB
+    trigger); key/outcome column names were checked against the dataset's columns. Linking
+    stores no rows: the worker joins the file with scored rows when a window is computed."""
+
+    __tablename__ = "monitoring_outcome_sets"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_monitoring_outcome_sets_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"],
+            ["projects.workspace_id", "projects.id"],
+            name="fk_monitoring_outcome_sets_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "dataset_id"],
+            ["datasets.workspace_id", "datasets.project_id", "datasets.id"],
+            name="fk_monitoring_outcome_sets_workspace_project_dataset",
+        ),
+        CheckConstraint(CK_MONITORING_OUTCOME_SETS_COLUMNS, name="ck_monitoring_outcome_sets_columns"),
+        Index("ix_monitoring_outcome_sets_project_created_at", "workspace_id", "project_id", desc("created_at")),
+        Index("ix_monitoring_outcome_sets_dataset", "workspace_id", "dataset_id"),
+        Index("ix_monitoring_outcome_sets_linked_by_user_id", "linked_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    key_column: Mapped[str] = mapped_column(String(256), nullable=False)
+    outcome_column: Mapped[str] = mapped_column(String(256), nullable=False)
+    linked_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class MonitoringThresholdSet(Base):
+    """D5b (ADR 0012 D4): one version of a project's monitoring thresholds (PSI watch / alert,
+    precision / recall floors; null floor = off). Append-only (DB trigger): a change inserts the next
+    ``version`` with its ``monitoring_thresholds_changed`` History entry; the newest is in force and no
+    row means the defaults. Written only by ``monitoring_service.set_thresholds``."""
+
+    __tablename__ = "monitoring_thresholds"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_monitoring_thresholds_workspace_id"),
+        UniqueConstraint("workspace_id", "project_id", "version", name="uq_monitoring_thresholds_version"),
+        ForeignKeyConstraint(["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+                             name="fk_monitoring_thresholds_workspace_project"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "decision_record_id"],
+            ["project_decision_records.workspace_id", "project_decision_records.project_id",
+             "project_decision_records.id"],
+            name="fk_monitoring_thresholds_workspace_project_record"),
+        CheckConstraint(CK_MONITORING_THRESHOLDS_BOUNDS, name="ck_monitoring_thresholds_bounds"),
+        CheckConstraint(CK_MONITORING_THRESHOLDS_VERSION, name="ck_monitoring_thresholds_version"),
+        Index("ix_monitoring_thresholds_created_by_user_id", "created_by_user_id"),
+        Index("ix_monitoring_thresholds_workspace_record", "workspace_id", "decision_record_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    psi_watch: Mapped[float] = mapped_column(Float, nullable=False)
+    psi_alert: Mapped[float] = mapped_column(Float, nullable=False)
+    precision_floor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    recall_floor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    decision_record_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+def _business_question_tenant_fk(column: str, table: str) -> ForeignKeyConstraint:
+    return ForeignKeyConstraint(["workspace_id", column], [f"{table}.workspace_id", f"{table}.id"],
+                                name=f"fk_business_questions_{column}")
+
+
+class BusinessQuestion(Base):
+    """D7a: a data-team question to the workspace's business users about a project (optionally one of
+    its model versions, prediction lists or monitoring weeks). Text, asker, project, link and
+    ``created_at`` are frozen and ``closed`` is final (``guard_business_question_update``); only
+    ``business_question_service`` writes it."""
+
+    __tablename__ = "business_questions"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_business_questions_workspace_id"),
+        ForeignKeyConstraint(["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+                             name="fk_business_questions_workspace_project"),
+        _business_question_tenant_fk("model_version_id", "model_versions"),
+        _business_question_tenant_fk("batch_prediction_id", "batch_predictions"),
+        _business_question_tenant_fk("monitoring_window_id", "monitoring_windows"),
+        CheckConstraint(CK_BUSINESS_QUESTIONS_TEXT, name="ck_business_questions_text"),
+        CheckConstraint(CK_BUSINESS_QUESTIONS_STATUS, name="ck_business_questions_status"),
+        CheckConstraint(CK_BUSINESS_QUESTIONS_CLOSED, name="ck_business_questions_closed"),
+        CheckConstraint(CK_BUSINESS_QUESTIONS_SUBJECT, name="ck_business_questions_subject"),
+        CheckConstraint(CK_BUSINESS_QUESTIONS_VERSION, name="ck_business_questions_version"),
+        Index("ix_business_questions_project_created_at", "workspace_id", "project_id", desc("created_at")),
+        Index("ix_business_questions_status_updated_at", "workspace_id", "status", desc("updated_at")),
+        Index("ix_business_questions_asked_by_user_id", "asked_by_user_id"),
+        _partial_index("ix_business_questions_closed_by_user_id", "closed_by_user_id"),
+        _partial_index("ix_business_questions_model_version_id", "workspace_id", "model_version_id"),
+        _partial_index("ix_business_questions_batch_prediction_id", "workspace_id", "batch_prediction_id"),
+        _partial_index("ix_business_questions_monitoring_window_id", "workspace_id", "monitoring_window_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    asked_by_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    model_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    batch_prediction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    monitoring_window_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    text: Mapped[str] = mapped_column(String(2000), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default=BQ_STATUS_OPEN)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class BusinessQuestionReply(Base):
+    """D7a: one reply to a business question. Append-only: UPDATE is refused and DELETE only under the
+    retention / workspace-deletion guard (the 0071 functions); ``created_at`` is forced on insert."""
+
+    __tablename__ = "business_question_replies"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_business_question_replies_workspace_id"),
+        ForeignKeyConstraint(["workspace_id", "question_id"],
+                             ["business_questions.workspace_id", "business_questions.id"],
+                             name="fk_business_question_replies_workspace_question"),
+        CheckConstraint(CK_BUSINESS_QUESTION_REPLIES_TEXT, name="ck_business_question_replies_text"),
+        CheckConstraint(CK_BUSINESS_QUESTION_REPLIES_SIDE, name="ck_business_question_replies_side"),
+        Index("ix_business_question_replies_question_created_at", "workspace_id", "question_id", "created_at"),
+        Index("ix_business_question_replies_author_user_id", "author_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    question_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    author_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    author_side: Mapped[str] = mapped_column(String(16), nullable=False)
+    text: Mapped[str] = mapped_column(String(2000), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class IdempotencyKey(Base):
     """Generic /v1 Idempotency-Key binding (P3.1-B1) for resources without a key column.
 
@@ -6439,7 +7065,7 @@ class BatchPrediction(Base):
     ``completed`` (output artifact, ``rows_out = rows_in``) or ``failed``
     (``error_code``). Terminal rows are frozen by a DB trigger (only
     ``requested_by_user_id`` may still become NULL, by its FK). ``model_release_id``
-    has no FK until Phase 7 adds releases.
+    is the approval of the model in use when it was queued (P7.2-A); NULL otherwise.
     """
 
     __tablename__ = "batch_predictions"
@@ -6480,6 +7106,13 @@ class BatchPrediction(Base):
             ["service_tokens.workspace_id", "service_tokens.id"],
             name="fk_batch_predictions_service_token",
         ),
+        # P7.2-A: the release must be of this tenant AND approve this very version (MATCH SIMPLE:
+        # checked only when model_release_id is set).
+        ForeignKeyConstraint(
+            ["workspace_id", "model_version_id", "model_release_id"],
+            ["model_releases.workspace_id", "model_releases.model_version_id", "model_releases.id"],
+            name="fk_batch_predictions_workspace_model_release",
+        ),
         CheckConstraint(CK_BATCH_PREDICTIONS_STATUS, name="ck_batch_predictions_status"),
         CheckConstraint(CK_BATCH_PREDICTIONS_OUTPUT_FORMAT, name="ck_batch_predictions_output_format"),
         CheckConstraint(CK_BATCH_PREDICTIONS_ROWS, name="ck_batch_predictions_rows"),
@@ -6498,6 +7131,12 @@ class BatchPrediction(Base):
         Index("ix_batch_predictions_workspace_input_dataset", "workspace_id", "input_dataset_id"),
         Index("ix_batch_predictions_workspace_output_artifact", "workspace_id", "output_artifact_id"),
         Index("ix_batch_predictions_workspace_ml_job", "workspace_id", "ml_job_id"),
+        Index(
+            "ix_batch_predictions_workspace_model_release",
+            "workspace_id",
+            "model_release_id",
+            postgresql_where=text("model_release_id IS NOT NULL"),
+        ),
         Index(
             "uq_batch_predictions_workspace_execution_request",
             "workspace_id",
@@ -6537,6 +7176,556 @@ class BatchPrediction(Base):
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ScoringSchedule(Base):
+    """A project's weekly scheduled scoring (``app.domain.scoring_schedules``). Mutable config:
+    one row per project, saved by a person with ML-write (``scoring_schedule_service``); the
+    worker tick only advances ``last_planned_for`` / ``next_planned_for``. Runs act as
+    ``updated_by_user_id`` (who last saved it; an accepted deviation from "the creator"),
+    re-checked when queued and again when the job runs. Only files a person uploaded are scored:
+    datasets with ``uploaded_by_service_token_id`` (a connected tool's upload, 0082) are ignored."""
+
+    __tablename__ = "scoring_schedules"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_scoring_schedules_workspace_id"),
+        UniqueConstraint("workspace_id", "project_id", "id", name="uq_scoring_schedules_workspace_project_id"),
+        UniqueConstraint("workspace_id", "project_id", name="uq_scoring_schedules_project"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+            name="fk_scoring_schedules_workspace_project",
+        ),
+        CheckConstraint(CK_SCORING_SCHEDULES_WEEKDAY, name="ck_scoring_schedules_weekday"),
+        CheckConstraint(CK_SCORING_SCHEDULES_HOUR, name="ck_scoring_schedules_hour_utc"),
+        # The worker's due scan: enabled AND next_planned_for <= now.
+        Index("ix_scoring_schedules_due", "next_planned_for", postgresql_where=text("enabled")),
+        Index("ix_scoring_schedules_created_by_user_id", "created_by_user_id"),
+        Index("ix_scoring_schedules_updated_by_user_id", "updated_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    hour_utc: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    last_planned_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_planned_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class ScoringScheduleRun(Base):
+    """One handled weekly slot of a schedule. Append-only (DB trigger); ``UNIQUE (schedule_id,
+    planned_for)`` handles a slot once across workers and restarts. ``queued`` iff it carries its
+    batch prediction (with the release and file it scored); otherwise ``outcome`` says why
+    nothing was scored. ``created_at`` is ``clock_timestamp()``."""
+
+    __tablename__ = "scoring_schedule_runs"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_scoring_schedule_runs_workspace_id"),
+        UniqueConstraint("schedule_id", "planned_for", name="uq_scoring_schedule_runs_slot"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "schedule_id"],
+            ["scoring_schedules.workspace_id", "scoring_schedules.project_id", "scoring_schedules.id"],
+            name="fk_scoring_schedule_runs_workspace_project_schedule",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "batch_prediction_id"], ["batch_predictions.workspace_id", "batch_predictions.id"],
+            name="fk_scoring_schedule_runs_workspace_batch_prediction",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "model_version_id"],
+            ["model_versions.workspace_id", "model_versions.project_id", "model_versions.id"],
+            name="fk_scoring_schedule_runs_workspace_project_model_version",
+        ),
+        # MATCH SIMPLE: checked when a release is set; it must approve this very version.
+        ForeignKeyConstraint(
+            ["workspace_id", "model_version_id", "model_release_id"],
+            ["model_releases.workspace_id", "model_releases.model_version_id", "model_releases.id"],
+            name="fk_scoring_schedule_runs_workspace_model_release",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "input_dataset_id"],
+            ["datasets.workspace_id", "datasets.project_id", "datasets.id"],
+            name="fk_scoring_schedule_runs_workspace_project_input_dataset",
+        ),
+        CheckConstraint(CK_SCORING_SCHEDULE_RUNS_OUTCOME, name="ck_scoring_schedule_runs_outcome"),
+        CheckConstraint(CK_SCORING_SCHEDULE_RUNS_REASON, name="ck_scoring_schedule_runs_reason_code"),
+        CheckConstraint(CK_SCORING_SCHEDULE_RUNS_QUEUED, name="ck_scoring_schedule_runs_queued"),
+        CheckConstraint(CK_SCORING_SCHEDULE_RUNS_RELEASE_VERSION, name="ck_scoring_schedule_runs_release_version"),
+        Index(
+            "uq_scoring_schedule_runs_batch_prediction", "batch_prediction_id", unique=True,
+            postgresql_where=text("batch_prediction_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_scoring_schedule_runs_workspace_input_dataset", "workspace_id", "input_dataset_id",
+            postgresql_where=text("input_dataset_id IS NOT NULL"),
+        ),
+        Index(
+            "ix_scoring_schedule_runs_workspace_model_version", "workspace_id", "model_version_id",
+            postgresql_where=text("model_version_id IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    schedule_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    planned_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    batch_prediction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    model_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    model_release_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    input_dataset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class RetrainPolicy(Base):
+    """D5a: a project's retrain policy (off | ask | auto; no row = off). Mutable config with an
+    optimistic ``version`` (the PUT's If-Match); automatic starts act as ``updated_by_user_id``."""
+
+    __tablename__ = "retrain_policies"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_retrain_policies_workspace_id"),
+        UniqueConstraint("workspace_id", "project_id", name="uq_retrain_policies_project"),
+        ForeignKeyConstraint(["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+                             name="fk_retrain_policies_workspace_project"),
+        CheckConstraint(CK_RETRAIN_POLICY, name="ck_retrain_policies_policy"),
+        CheckConstraint(CK_RETRAIN_POLICY_VERSION, name="ck_retrain_policies_version"),
+        Index("ix_retrain_policies_updated_by_user_id", "updated_by_user_id"),
+        Index("ix_retrain_policies_active", "policy", postgresql_where=text("policy <> 'off'")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    policy: Mapped[str] = mapped_column(String(8), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # An automatic start refused by a plan limit pauses the rule here until then (a save clears it).
+    auto_paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class RetrainRequest(Base):
+    """D5a: one retrain of a project, append-only (DB trigger): a person's start, the rule's question
+    (``ask``, no run) or its automatic start, with the model in use and the newer labelled file.
+    Rule rows name the alert week (one per week and model: ``uq_retrain_requests_rule_window``)."""
+
+    __tablename__ = "retrain_requests"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_retrain_requests_workspace_id"),
+        UniqueConstraint("workspace_id", "project_id", "id", name="uq_retrain_requests_workspace_project_id"),
+        UniqueConstraint("experiment_id", name="uq_retrain_requests_experiment"),
+        UniqueConstraint("workspace_id", "project_id", "id", "experiment_id",
+                         name="uq_retrain_requests_workspace_project_id_experiment"),
+        ForeignKeyConstraint(["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+                             name="fk_retrain_requests_workspace_project"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "incumbent_model_version_id"],
+            ["model_versions.workspace_id", "model_versions.project_id", "model_versions.id"],
+            name="fk_retrain_requests_workspace_project_incumbent"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "dataset_id"], ["datasets.workspace_id", "datasets.project_id", "datasets.id"],
+            name="fk_retrain_requests_workspace_project_dataset"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "experiment_id"],
+            ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+            name="fk_retrain_requests_workspace_project_experiment"),
+        ForeignKeyConstraint(
+            ["workspace_id", "monitoring_window_id"], ["monitoring_windows.workspace_id", "monitoring_windows.id"],
+            name="fk_retrain_requests_workspace_window"),
+        CheckConstraint(CK_RETRAIN_ORIGIN, name="ck_retrain_requests_origin"),
+        CheckConstraint(CK_RETRAIN_RUN, name="ck_retrain_requests_run"),
+        CheckConstraint(CK_RETRAIN_WINDOW, name="ck_retrain_requests_window"),
+        Index("ix_retrain_requests_project_created", "project_id", "created_at"),
+        Index("uq_retrain_requests_rule_window", "project_id", "incumbent_model_version_id", "window_start",
+              unique=True, postgresql_where=text("origin <> 'person'")),
+        Index("ix_retrain_requests_requested_by_user_id", "requested_by_user_id"),
+        Index("ix_retrain_requests_workspace_dataset", "workspace_id", "dataset_id"),
+        Index("ix_retrain_requests_workspace_incumbent", "workspace_id", "incumbent_model_version_id"),
+        Index("ix_retrain_requests_workspace_window", "workspace_id", "monitoring_window_id",
+              postgresql_where=text("monitoring_window_id IS NOT NULL")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    origin: Mapped[str] = mapped_column(String(8), nullable=False)
+    incumbent_model_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    monitoring_window_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class RetrainComparison(Base):
+    """D5a: the stored comparison of one started retrain (append-only, one per request) and the
+    challenger proposal it opened. ``result`` holds aggregate metrics only, never rows."""
+
+    __tablename__ = "retrain_comparisons"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_retrain_comparisons_workspace_id"),
+        UniqueConstraint("retrain_request_id", name="uq_retrain_comparisons_request"),
+        ForeignKeyConstraint(  # the comparison's run is the request's run
+            ["workspace_id", "project_id", "retrain_request_id", "experiment_id"],
+            ["retrain_requests.workspace_id", "retrain_requests.project_id", "retrain_requests.id",
+             "retrain_requests.experiment_id"],
+            name="fk_retrain_comparisons_workspace_project_request"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "experiment_id"],
+            ["experiments.workspace_id", "experiments.project_id", "experiments.id"],
+            name="fk_retrain_comparisons_workspace_project_experiment"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id", "proposal_record_id"],
+            ["project_decision_records.workspace_id", "project_decision_records.project_id",
+             "project_decision_records.id"],
+            name="fk_retrain_comparisons_workspace_project_proposal"),
+        CheckConstraint(CK_COMPARISON_STATUS, name="ck_retrain_comparisons_status"),
+        CheckConstraint(CK_COMPARISON_REASON, name="ck_retrain_comparisons_reason"),
+        CheckConstraint(CK_COMPARISON_REASON_CODE, name="ck_retrain_comparisons_reason_code"),
+        CheckConstraint(CK_COMPARISON_RESULT, name="ck_retrain_comparisons_result"),
+        Index("ix_retrain_comparisons_project_created", "project_id", "created_at"),
+        Index("ix_retrain_comparisons_workspace_experiment", "workspace_id", "experiment_id"),
+        Index("ix_retrain_comparisons_workspace_proposal", "workspace_id", "proposal_record_id",
+              postgresql_where=text("proposal_record_id IS NOT NULL")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    retrain_request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    proposal_record_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class UsageRecord(Base):
+    """P8.4-A: one measured quantity of a workspace for one UTC day, derived from existing ledgers.
+    Append-only (DB trigger). A recompute that changes the number adds a row with a new
+    ``source_ref``; reads take the newest row per (kind, day) by ``created_at``. ``UNIQUE ... NULLS NOT DISTINCT``
+    makes a repeated recompute a no-op. ``project_id`` NULL: a workspace-level record."""
+
+    __tablename__ = "usage_records"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_usage_records_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "kind", "period_day", "project_id", "source_ref",
+            name="uq_usage_records_source", postgresql_nulls_not_distinct=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+            name="fk_usage_records_workspace_project",
+        ),
+        CheckConstraint(CK_USAGE_RECORDS_KIND, name="ck_usage_records_kind"),
+        CheckConstraint(CK_USAGE_RECORDS_QUANTITY, name="ck_usage_records_quantity"),
+        CheckConstraint(CK_USAGE_RECORDS_SOURCE_REF, name="ck_usage_records_source_ref"),
+        CheckConstraint(CK_USAGE_RECORDS_PERIOD_DAY, name="ck_usage_records_period_day"),
+        Index("ix_usage_records_workspace_kind_day", "workspace_id", "kind", "period_day", desc("created_at")),
+        _partial_index("ix_usage_records_project_id", "workspace_id", "project_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    period_day: Mapped[date] = mapped_column(Date, nullable=False)
+    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class UploadAttempt(Base):
+    """D3a (0085, ADR 0005 amendment): metadata of one upload attempt, accepted or rejected. Never
+    file content or row values. Append-only: UPDATE is refused and DELETE only inside a transaction
+    ``retention_guard.allow_retention`` stamped (rows older than 90 days) or a workspace deletion;
+    ``created_at`` is forced to ``now()`` on insert so a row can never be backdated."""
+
+    __tablename__ = "upload_attempts"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_upload_attempts_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+            name="fk_upload_attempts_workspace_project",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "service_token_id"], ["service_tokens.workspace_id", "service_tokens.id"],
+            name="fk_upload_attempts_service_token",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "dataset_id"], ["datasets.workspace_id", "datasets.id"],
+            name="fk_upload_attempts_workspace_dataset",
+        ),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_OUTCOME, name="ck_upload_attempts_outcome"),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_REASON, name="ck_upload_attempts_reason"),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_ACTOR, name="ck_upload_attempts_actor"),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_SOURCE, name="ck_upload_attempts_source"),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_FILE_NAME, name="ck_upload_attempts_file_name"),
+        CheckConstraint(CK_UPLOAD_ATTEMPTS_SIZE, name="ck_upload_attempts_size"),
+        Index("ix_upload_attempts_project_created_at", "workspace_id", "project_id", desc("created_at"), desc("id")),
+        Index("ix_upload_attempts_created_at", "created_at"),
+        _partial_index("ix_upload_attempts_service_token_id", "workspace_id", "service_token_id"),
+        _partial_index("ix_upload_attempts_dataset_id", "workspace_id", "dataset_id"),
+        Index("ix_upload_attempts_actor_user_id", "actor_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    # NULL only for a legacy Labs rejection before the workspace has a Labs project.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    actor_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    service_token_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    file_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    dataset_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class NotificationPreference(Base):
+    """P8.8-A: a person's email choice for one notification kind in one workspace. Rows exist only
+    for overrides of ``app.domain.notifications.DEFAULT_EMAIL`` (mutable config, the person's own)."""
+
+    __tablename__ = "notification_preferences"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", "kind", name="uq_notification_preferences_user_kind"),
+        CheckConstraint(CK_NOTIFICATION_PREFERENCES_KIND, name="ck_notification_preferences_kind"),
+        Index("ix_notification_preferences_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    email_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class WebhookEndpoint(Base):
+    """P8.8-A: a customer system that receives signed event webhooks (owner/admin config). No secret
+    is stored: the signing secret is derived from the server key named ``secret_key_id``, the ids and
+    ``secret_version`` (rotation increments it). ``consecutive_failures`` / ``paused_until`` are the
+    delivery circuit breaker. Disabled, never deleted (deliveries and changes reference it)."""
+
+    __tablename__ = "webhook_endpoints"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_webhook_endpoints_workspace_id"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_NAME, name="ck_webhook_endpoints_name"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_URL, name="ck_webhook_endpoints_url"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_EVENTS, name="ck_webhook_endpoints_events"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_SECRET_VERSION, name="ck_webhook_endpoints_secret_version"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_SECRET_KEY_ID, name="ck_webhook_endpoints_secret_key_id"),
+        CheckConstraint(CK_WEBHOOK_ENDPOINTS_FAILURES, name="ck_webhook_endpoints_consecutive_failures"),
+        Index("ix_webhook_endpoints_created_by_user_id", "created_by_user_id"),
+        Index("ix_webhook_endpoints_updated_by_user_id", "updated_by_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    events: Mapped[list] = mapped_column(JSONB, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    secret_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    secret_key_id: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'k1'"))
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    secret_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NotificationOutbox(Base):
+    """P8.8-A: one notification to send (a person's email or an endpoint's webhook). Producers
+    insert in the event's transaction (``enqueue_notification``); ``UNIQUE ... NULLS NOT DISTINCT``
+    on the dedupe key makes a re-run or recompute a no-op. The worker tick sends due rows
+    (``FOR UPDATE SKIP LOCKED``) with backoff; ``last_error_code`` is a closed code."""
+
+    __tablename__ = "notification_outbox"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_notification_outbox_workspace_id"),
+        UniqueConstraint(
+            "workspace_id", "channel", "recipient_user_id", "webhook_endpoint_id", "dedupe_key",
+            name="uq_notification_outbox_dedupe", postgresql_nulls_not_distinct=True,
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "webhook_endpoint_id"], ["webhook_endpoints.workspace_id", "webhook_endpoints.id"],
+            name="fk_notification_outbox_workspace_webhook_endpoint", ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "project_id"], ["projects.workspace_id", "projects.id"],
+            name="fk_notification_outbox_workspace_project",
+        ),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_CHANNEL, name="ck_notification_outbox_channel"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_KIND, name="ck_notification_outbox_kind"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_STATUS, name="ck_notification_outbox_status"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_ERROR, name="ck_notification_outbox_error_code"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_RECIPIENT, name="ck_notification_outbox_recipient"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_PING, name="ck_notification_outbox_ping"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_DEDUPE, name="ck_notification_outbox_dedupe_key"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_PAYLOAD, name="ck_notification_outbox_payload"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_ATTEMPTS, name="ck_notification_outbox_attempts"),
+        CheckConstraint(CK_NOTIFICATION_OUTBOX_SENT, name="ck_notification_outbox_sent_at"),
+        # The worker's due scan.
+        Index("ix_notification_outbox_due", "next_attempt_at",
+              postgresql_where=text("status IN ('pending', 'sending', 'failed')")),
+        _partial_index("ix_notification_outbox_recipient_user_id", "recipient_user_id"),
+        _partial_index("ix_notification_outbox_webhook_endpoint_id", "workspace_id", "webhook_endpoint_id"),
+        _partial_index("ix_notification_outbox_project_id", "workspace_id", "project_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(String(16), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    recipient_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+    )
+    webhook_endpoint_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    dedupe_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    attempts: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default=text("0"))
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
+                                                      server_default=func.now())
+    last_error_code: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    # Set when a worker claims the row; the result is written only by the holder of this token.
+    claim_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WebhookDelivery(Base):
+    """P8.8-A: one webhook delivery attempt. Append-only (DB trigger): the status code, duration
+    and a closed error code; the response body is never read past 4 KiB and never stored."""
+
+    __tablename__ = "webhook_deliveries"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_webhook_deliveries_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "webhook_endpoint_id"], ["webhook_endpoints.workspace_id", "webhook_endpoints.id"],
+            name="fk_webhook_deliveries_workspace_webhook_endpoint",
+        ),
+        ForeignKeyConstraint(
+            ["workspace_id", "outbox_id"], ["notification_outbox.workspace_id", "notification_outbox.id"],
+            name="fk_webhook_deliveries_workspace_outbox",
+        ),
+        CheckConstraint(CK_WEBHOOK_DELIVERIES_OUTCOME, name="ck_webhook_deliveries_outcome"),
+        CheckConstraint(CK_WEBHOOK_DELIVERIES_ERROR, name="ck_webhook_deliveries_error_code"),
+        CheckConstraint(CK_WEBHOOK_DELIVERIES_STATUS_CODE, name="ck_webhook_deliveries_status_code"),
+        CheckConstraint(CK_WEBHOOK_DELIVERIES_NUMBERS, name="ck_webhook_deliveries_numbers"),
+        CheckConstraint(CK_WEBHOOK_DELIVERIES_EVENT, name="ck_webhook_deliveries_event"),
+        Index("ix_webhook_deliveries_endpoint_created", "workspace_id", "webhook_endpoint_id", desc("created_at")),
+        Index("ix_webhook_deliveries_outbox", "workspace_id", "outbox_id"),
+        # The per-workspace deliveries-per-minute count.
+        Index("ix_webhook_deliveries_workspace_created", "workspace_id", desc("created_at")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    webhook_endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    outbox_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    event: Mapped[str] = mapped_column(String(32), nullable=False)
+    attempt: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    status_code: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
+
+
+class WebhookChange(Base):
+    """P8.8-A: who changed a webhook endpoint and how (append-only, DB trigger), written in the same
+    transaction as the change. ``url_host`` only (never the path, query or credentials)."""
+
+    __tablename__ = "webhook_changes"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "id", name="uq_webhook_changes_workspace_id"),
+        ForeignKeyConstraint(
+            ["workspace_id", "webhook_endpoint_id"], ["webhook_endpoints.workspace_id", "webhook_endpoints.id"],
+            name="fk_webhook_changes_workspace_webhook_endpoint",
+        ),
+        CheckConstraint(CK_WEBHOOK_CHANGES_ACTION, name="ck_webhook_changes_action"),
+        CheckConstraint(CK_WEBHOOK_CHANGES_URL_HOST, name="ck_webhook_changes_url_host"),
+        Index("ix_webhook_changes_endpoint_created", "workspace_id", "webhook_endpoint_id", desc("created_at")),
+        Index("ix_webhook_changes_actor_user_id", "actor_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    webhook_endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    actor_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    url_host: Mapped[str | None] = mapped_column(String(253), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("clock_timestamp()")
+    )
 
 
 def _agent_fk(prefix: str, column: str, table: str, *, project: bool = False) -> ForeignKeyConstraint:
@@ -7487,6 +8676,11 @@ def _protect_append_only_agent_event(_mapper, _connection, _target: AgentEvent) 
     raise ValueError("AgentEvent rows are append-only")
 
 
+@event.listens_for(UploadAttempt, "before_update")
+def _protect_append_only_upload_attempt(_mapper, _connection, _target: UploadAttempt) -> None:
+    raise ValueError("UploadAttempt rows are append-only (deleted only by the 90-day retention purge)")
+
+
 @event.listens_for(SemanticDecisionAnswer, "before_update")
 def _protect_append_only_semantic_answer(
     _mapper, _connection, _target: SemanticDecisionAnswer
@@ -7497,3 +8691,9 @@ def _protect_append_only_semantic_answer(
 @event.listens_for(IdempotencyKey, "before_update")
 def _protect_immutable_idempotency_key(_mapper, _connection, _target: IdempotencyKey) -> None:
     raise ValueError("IdempotencyKey rows are immutable")
+
+
+@event.listens_for(RetrainRequest, "before_update")
+@event.listens_for(RetrainComparison, "before_update")
+def _protect_append_only_retrain_rows(_mapper, _connection, _target: object) -> None:
+    raise ValueError("retrain requests and comparisons are append-only")

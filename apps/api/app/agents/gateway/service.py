@@ -69,6 +69,7 @@ from app.agents.prompt_releases import (
 )
 from app.agents.semantic import releases
 from app.agents.semantic.releases import SUBJECT_KEY, release_for
+from app import observability
 from app.config import get_settings
 from app.db.models import DatasetColumn, LlmInvocation, PromptRelease, SemanticDecisionAnswer
 
@@ -180,6 +181,7 @@ class _CompletionSteps:
         self.attempts = ledger.MAX_ATTEMPTS if request.agent_role == "specialist" else 1
         self.use_cache = request.cache
         self.max_output_tokens = request.max_output_tokens
+        self.output_schema = request.output_schema
 
     def load_release(self, db: Session, call: _Call) -> str:
         release = db.get(PromptRelease, self.request.prompt_release_id)
@@ -239,7 +241,8 @@ class _SemanticSteps:
     requested_model = None
     attempts = 1  # no retry for Jev
     use_cache = True
-    max_output_tokens = 4096
+    max_output_tokens = releases.JEV_MAX_OUTPUT_TOKENS
+    output_schema = SemanticAnswers
 
     def __init__(self, service: "GatewayService", request: SemanticDecisionRequest) -> None:
         self.service, self.request = service, request
@@ -443,6 +446,18 @@ class GatewayService:
             self._providers = default_providers()
         return self._providers.get(name)
 
+    def input_overhead_tokens(self, name: str, output_schema: type[BaseModel]) -> int:
+        """Input tokens the adapter adds to the measured instructions + payload (its frame, a
+        prompted schema, the provider's structured-output prompt): part of every worst case.
+        0 for an adapter that declares none; never raises."""
+
+        try:
+            measure = getattr(self._provider(name), "input_overhead_tokens", None)
+            return max(0, int(measure(output_schema))) if callable(measure) else 0
+        except Exception:
+            logger.exception("input overhead estimate failed", extra={"provider": name})
+            return 0
+
     def provider_ready(self, name: str) -> bool:
         """An adapter is configured and, if it says so, usable (SDK installed, key set);
         the semantic port stays deterministic otherwise. Never raises."""
@@ -510,6 +525,14 @@ class GatewayService:
                  annotate: Annotate | None = None) -> CompletionResponse:
         """``annotate`` (legacy writers only): see ``contract.LedgerNote``."""
 
+        with observability.llm_call("completion") as observed:  # P8.5-A: outcome codes only
+            response = self._complete(db, request, annotate=annotate)
+            observed.status = "ok" if response.ok else (response.refusal.code if response.refusal else "error")
+            observed.labels = {"provider": response.provider, "model": response.model}
+        return response
+
+    def _complete(self, db: Session, request: CompletionRequest, *,
+                  annotate: Annotate | None = None) -> CompletionResponse:
         try:
             call = _Call(kind="completion", request=request, role=request.agent_role,
                          agent_key=request.agent_key, agent_role=request.agent_role,
@@ -521,6 +544,12 @@ class GatewayService:
             return CompletionResponse(ok=False, refusal=Refusal(code="provider_error", message="gateway failure"))
 
     def decide(self, db: Session, request: SemanticDecisionRequest) -> SemanticDecisionResponse:
+        with observability.llm_call("semantic") as observed:
+            response = self._decide(db, request)
+            observed.status = "ok" if response.ok else (response.refusal.code if response.refusal else "error")
+        return response
+
+    def _decide(self, db: Session, request: SemanticDecisionRequest) -> SemanticDecisionResponse:
         try:
             call = _Call(kind="semantic", request=request, role="jev", agent_key=None, agent_role=None,
                          provider_kind="semantic_decision", mode="semantic_decision")
@@ -584,7 +613,8 @@ class GatewayService:
         if blocking:
             raise GatewayRefusal("kill_switch", "AI is switched off", scope=blocking)
         # 3. router, provider adapter, prompt release
-        call.route = route(policy, role=call.role, agent_key=call.agent_key, requested=steps.requested_model)
+        call.route = route(policy, role=call.role, agent_key=call.agent_key, requested=steps.requested_model,
+                           legacy=getattr(self._settings(), "ai_legacy_providers_enabled", False) is True)
         blocking = next((b for p in purposes if (b := switches.blocking(
             ai_enabled=ai_enabled, agent_key=call.agent_key, provider=call.route.provider, purpose=p))), None)
         if blocking:
@@ -610,7 +640,9 @@ class GatewayService:
         self._limits.admit(provider=call.route.provider, workspace_id=r.workspace_id, purpose=r.purpose)
         # 6. budget: the worst case must fit what the hold still has, counting in-flight
         # calls; the advisory lock lasts until the pending row below is committed.
-        worst = budget.worst_case_micros(call.route.model, input_tokens=budget.estimate_tokens(instructions + input_json),
+        measured = budget.estimate_tokens(instructions + input_json)
+        overhead = self.input_overhead_tokens(call.route.provider, steps.output_schema)
+        worst = budget.worst_case_micros(call.route.model, input_tokens=measured + overhead,
                                          max_output_tokens=steps.max_output_tokens)
         budget.lock_hold(db, reservation)
         remaining = budget.available_hold(db, reservation)
@@ -673,7 +705,16 @@ class GatewayService:
 
         r, outcome = call.request, _Outcome()
         limits = {"provider": call.route.provider, "workspace_id": r.workspace_id, "purpose": r.purpose}
-        tokens_in = tokens_out = 0
+        tokens_in = tokens_out = unknown_micros = 0
+
+        def charge(input_tokens: int, output_tokens: int, worst_case: bool = False) -> None:
+            """Every attempt is paid for: reported usage, or the worst case when the request left
+            the process and no usage came back (ADR 0009 §4 step 11 settles it)."""
+            nonlocal tokens_in, tokens_out, unknown_micros
+            tokens_in, tokens_out = tokens_in + input_tokens, tokens_out + output_tokens
+            unknown_micros += prepared.worst_micros if worst_case else 0
+            outcome.usage = Usage(input_tokens=tokens_in, output_tokens=tokens_out)
+            outcome.cost_micros = budget.cost_micros(call.route.model, tokens_in, tokens_out) + unknown_micros
         for attempt in range(steps.attempts):
             last = attempt + 1 == steps.attempts
             if attempt and not self._claim_retry(db, call, prepared, outcome.cost_micros):
@@ -688,6 +729,7 @@ class GatewayService:
                 result = call.adapter.complete(prepared.provider_call)
             except ProviderError as exc:
                 self._limits.record(**limits, outcome="failure" if exc.kind in _BREAKER_FAILURES else "neutral")
+                charge(exc.input_tokens, exc.output_tokens, exc.billed_unknown)
                 if exc.kind == "invalid_output" and not last:
                     continue
                 outcome.refusal = Refusal(code=_PROVIDER_REFUSALS.get(exc.kind, "provider_error"),
@@ -699,9 +741,7 @@ class GatewayService:
                 outcome.refusal = Refusal(code="provider_error", message="provider adapter failed")
                 return outcome
             self._limits.record(**limits, outcome="success")
-            tokens_in, tokens_out = tokens_in + result.input_tokens, tokens_out + result.output_tokens
-            outcome.usage = Usage(input_tokens=tokens_in, output_tokens=tokens_out)
-            outcome.cost_micros = budget.cost_micros(call.route.model, tokens_in, tokens_out)
+            charge(result.input_tokens, result.output_tokens)
             outcome.request_id = result.request_id or outcome.request_id
             outcome.resolved_model = result.resolved_model or outcome.resolved_model
             try:

@@ -6,6 +6,7 @@ import { safeWorkspaceSwitchDestination } from "@/lib/infrastructure/capabilitie
 import { workspaceSelectorPresentation } from "@/lib/infrastructure/active-workspace";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { actionErrorSentence } from "@/lib/application/api-error-text";
 
 export function WorkspaceSelector({
   collapsed = false,
@@ -35,7 +36,7 @@ export function WorkspaceSelector({
       router.replace(safeWorkspaceSwitchDestination(nextUser, pathname));
       router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not switch workspace.");
+      setError(`Could not switch workspace. ${actionErrorSentence(caught, "switching workspace")}`);
       setAnnouncement("Workspace change failed.");
     } finally {
       setPending(false);

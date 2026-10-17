@@ -51,7 +51,7 @@ test("Score new data: upload, column check, progress, download, missing column, 
   await page.getByLabel("Data file").setInputFiles({ name: "churn.csv", mimeType: "text/csv", buffer: Buffer.from(churnCsv(300)) });
   await page.getByRole("button", { name: "Upload and continue" }).click();
   await page.getByLabel("Task").selectOption("binary");
-  await page.getByLabel("Target column").selectOption("churn");
+  await page.getByRole("combobox", { name: "Target column" }).selectOption("churn");
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "Train" }).click();
@@ -115,22 +115,27 @@ test("Score new data: upload, column check, progress, download, missing column, 
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/predictions$`));
   await expect(page.getByRole("heading", { name: "Predictions", level: 1 })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Project steps" }).getByRole("link", { name: "Predictions" })).toHaveAttribute("aria-current", "step");
+  // UI-D: the page opens on "This week's list"; scoring a file is its own tab.
+  await page.getByRole("tab", { name: "Score a file" }).click();
   const picker = page.getByRole("combobox", { name: "Model" });
   await expect(picker.locator("option:checked")).toContainText(/^Model v\d+ · Run \d+ \(in use\)$/);
   const history = page.getByRole("table", { name: "Predictions run in this browser tab" });
+  await page.getByRole("tab", { name: "This week's list" }).click();
   await expect(history).toContainText("next-month.csv");
   await expect(history).toContainText("You, in this browser tab");
   await expect(history).toContainText("40 of 40");
   // The list is kept per workspace and per person: the storage key carries both ids.
   expect(await page.evaluate(() => Object.keys(window.sessionStorage).filter((k) => /^dclab\.scorings\.[0-9a-f-]{36}\.[0-9a-f-]{36}\.[0-9a-f-]{36}$/.test(k)).length)).toBeGreaterThan(0);
   expect(await page.evaluate(() => Object.keys(window.sessionStorage).filter((k) => /^dclab\.scorings\.[0-9a-f-]{36}$/.test(k)).length)).toBe(0);
+  await page.getByRole("tab", { name: "Score a file" }).click();
   await page.getByLabel("Scoring file").setInputFiles({ name: "page-run.csv", mimeType: "text/csv", buffer: Buffer.from(churnCsv(25, { target: false, offset: 9000 })) });
   await page.getByRole("button", { name: "Score this file" }).click();
   await expect(page.getByRole("heading", { name: /Scoring of page-run.csv done/ })).toBeVisible({ timeout: 120_000 });
-  await expect(page.getByRole("heading", { name: /Scoring of page-run.csv done/ }).locator("xpath=ancestor::section[1]").getByText("Model v")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Scoring of page-run.csv done/ }).locator("xpath=ancestor::section[1]").getByTestId("scored-with")).toContainText("Model v");
+  await page.getByRole("tab", { name: "This week's list" }).click();
   await expect(history).toContainText("page-run.csv");
-  // Only what is built: no schedule, no per-row reasons, no raw terms.
-  await expect(page.locator("main")).not.toContainText(/weekly|every Monday|reasons for each|feature contract|holdout|artifact/i);
+  // No raw terms. Per-row reasons are built now (UI-D): they appear on the "This week's list" tab, worded as what the model used.
+  await expect(page.locator("main")).not.toContainText(/feature contract|holdout|artifact/i);
   expect(await axeViolations(page)).toEqual([]);
   await shot(page, "4b-predictions");
   // The model page's score tab is the same step of the flow bar.

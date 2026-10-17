@@ -467,18 +467,18 @@ def test_compatibility_fields_cannot_silently_disagree():
 
 
 def test_labs_upload_conflict_returns_typed_409(
-    auth_client, db_session, client_user, monkeypatch
+    engineer_client, db_session, engineer_user, monkeypatch
 ):
     monkeypatch.setattr(
         "app.services.client_lab_upload_service.enqueue_auto_train", lambda _id: None
     )
     seed_business_domains(db_session)
     project = get_or_create_labs_project(
-        db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=client_user
+        db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=engineer_user
     )
     spec = create_problem_spec(
         db_session,
-        actor=client_user,
+        actor=engineer_user,
         workspace_id=DEFAULT_WORKSPACE_ID,
         project_id=project.id,
         task_type="binary",
@@ -488,7 +488,7 @@ def test_labs_upload_conflict_returns_typed_409(
     )
     db_session.commit()
     frame = _ambiguous_binary_tie_frame(n=40)
-    response = auth_client.post(
+    response = engineer_client.post(
         "/app/labs/uploads",
         data={
             "category": "Revenue",
@@ -525,15 +525,15 @@ def test_labs_upload_missing_target_column_returns_422(
 
 
 def test_v1_execution_request_conflict_returns_409(
-    auth_client, db_session, client_user
+    engineer_client, db_session, engineer_user
 ):
     seed_business_domains(db_session)
     project = get_or_create_labs_project(
-        db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=client_user
+        db_session, workspace_id=DEFAULT_WORKSPACE_ID, actor=engineer_user
     )
     spec = create_problem_spec(
         db_session,
-        actor=client_user,
+        actor=engineer_user,
         workspace_id=DEFAULT_WORKSPACE_ID,
         project_id=project.id,
         task_type="binary",
@@ -542,7 +542,7 @@ def test_v1_execution_request_conflict_returns_409(
         status="locked",
     )
     db_session.commit()
-    response = auth_client.post(
+    response = engineer_client.post(
         "/v1/execution-requests",
         json={
             "operation": "model_build",

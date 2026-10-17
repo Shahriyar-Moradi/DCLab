@@ -188,8 +188,9 @@ export function bestRunIds(rows: Scored[]): { ids: Set<string>; withinSpread: bo
 
 // --- the steps of a run ------------------------------------------------------------------
 
-type StageTimes = { key: string; status: string; duration_ms?: number | null };
-// Order matters: the final test set is set aside BEFORE anything is profiled, so profiling only looked at training rows.
+type StageTimes = { key: string; status: string; duration_ms?: number | null; sequence?: number; title?: string };
+// Order matters (the engine's real stage order): a first look at the whole file (profiling_eda) comes before the final test
+// set is set aside; the profile that drives decisions (problem_profile) is built after it, from the training rows only.
 const STEP_GROUPS: Array<{ id: string; label: string; keys: string[] }> = [
   { id: "read", label: "Read the file and set the goal", keys: ["ingestion", "profiling_eda", "target_task", "structural_cleaning"] },
   { id: "split", label: "Set the final test set aside", keys: ["final_holdout_plan", "holdout_lock"] },
@@ -198,12 +199,14 @@ const STEP_GROUPS: Array<{ id: string; label: string; keys: string[] }> = [
   { id: "train", label: "Train the models, fold by fold", keys: ["candidate_generation", "cv_training"] },
   { id: "choose", label: "Choose the best on cross-validation", keys: ["candidate_comparison", "winner_lock"] },
   { id: "final", label: "Final test, once in this run", keys: ["final_refit", "final_holdout"] },
-  { id: "report", label: "Save the model and run the trust checks", keys: ["artifact_reproducibility_persistence", "deterministic_verification"] },
+  { id: "report", label: "Save the model, run the trust checks and re-check the run", keys: ["artifact_reproducibility_persistence", "deterministic_verification"] },
 ];
 const GROUP_OF = new Map(STEP_GROUPS.flatMap((g) => g.keys.map((k) => [k, g.id] as const)));
 
 export type StepState = "done" | "partly" | "running" | "failed" | "skipped" | "stopped" | "waiting";
-export type RunStep = { id: string; label: string; state: StepState; ms: number | null; time: string };
+/** One recorded engine stage inside a step, in run order (the read's `sequence`), with its own time. */
+export type RunStepPart = { key: string; label: string; state: string; time: string };
+export type RunStep = { id: string; label: string; state: StepState; ms: number | null; time: string; parts: RunStepPart[] };
 
 const SKIPPED = new Set(["skipped", "not_applicable"]);
 const STOPPED = new Set(["cancelled", "canceled", "cancelling"]);
@@ -222,12 +225,17 @@ function stepState(statuses: string[]): StepState {
 /** The run's recorded stages grouped into plain steps, in run order, with the time each recorded. A step with no recorded stage is left out. */
 export function runSteps(stages: StageTimes[]): RunStep[] {
   const out: RunStep[] = [];
+  const ordered = stages.map((s, i) => ({ s, i })).sort((a, b) => (a.s.sequence ?? a.i) - (b.s.sequence ?? b.i) || a.i - b.i).map((x) => x.s);
   for (const group of [...STEP_GROUPS, { id: "other", label: "Other steps", keys: [] as string[] }]) {
-    const own = stages.filter((s) => (GROUP_OF.get(s.key) ?? "other") === group.id);
+    const own = ordered.filter((s) => (GROUP_OF.get(s.key) ?? "other") === group.id);
     if (!own.length) continue;
     const timed = own.map((s) => s.duration_ms).filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0);
     const ms = timed.length ? timed.reduce((a, b) => a + b, 0) : null;
-    out.push({ id: group.id, label: group.label, state: stepState(own.map((s) => s.status)), ms, time: durationLabel(ms) });
+    const parts = own.map((s) => ({
+      key: s.key, label: stageWords(s.key, s.title ?? s.key.replaceAll("_", " ")), state: stageStateWords(s.status),
+      time: durationLabel(typeof s.duration_ms === "number" ? s.duration_ms : null),
+    }));
+    out.push({ id: group.id, label: group.label, state: stepState(own.map((s) => s.status)), ms, time: durationLabel(ms), parts });
   }
   return out;
 }
@@ -253,10 +261,34 @@ export const anyAiAnswer = (rows: PointRow[]): boolean => rows.some((r) => !r.ai
 const STATUS_WORDS: Record<string, string> = {
   completed: "Finished", running: "Running", queued: "Waiting to start", failed: "Failed", cancelled: "Stopped", canceled: "Stopped",
   cancelling: "Stopping", needs_input: "Waiting for your input", skipped: "Skipped",
+  // D8a: a finished run whose results (evidence lock, model version) are still being saved; it is not finished yet.
+  reporting: "Saving results…",
 };
-/** A run status in words; an unknown status is shown as given (cleaned). */
+/** A run status in words (case-insensitive: some reads send the engine's upper-case status); an unknown status is shown as given (cleaned). */
 export function statusWords(status: string): string {
-  return own(STATUS_WORDS, status) ?? plainText(status.replaceAll("_", " "), 30);
+  return own(STATUS_WORDS, status) ?? own(STATUS_WORDS, status.toLowerCase()) ?? plainText(status.replaceAll("_", " "), 30);
+}
+
+/** A graph node's status in lower-case words; a run still saving its results (`REPORTING`) reads "saving results…", never finished. */
+export function nodeStatusText(status: string): string {
+  const key = status.toLowerCase();
+  return key === "reporting" ? "saving results…" : plainText(key.replaceAll("_", " "), 30);
+}
+
+/** D8a `started_by` in words. Access-token tools are never "the assistant"; null or an unknown value is "Not recorded". */
+export const STARTED_BY_LABEL: Record<string, string> = {
+  you: "You", person: "A person", connected_tool: "A connected tool", assistant: "The assistant (Beta)", rules: "The rules",
+};
+export function startedByText(value: string | null | undefined): string {
+  return (value ? own(STARTED_BY_LABEL, value) : undefined) ?? "Not recorded";
+}
+const STARTED_BY_PHRASE: Record<string, string> = {
+  you: "by you", person: "by a person", connected_tool: "by a connected tool", assistant: "by the assistant (Beta)", rules: "by the rules",
+};
+/** " by you" for a sentence ("Started … by you."), or "" when no record says who started it. */
+export function startedByPhrase(value: string | null | undefined): string {
+  const phrase = value ? own(STARTED_BY_PHRASE, value) : undefined;
+  return phrase ? ` ${phrase}` : "";
 }
 export const STATUS_FILTERS = [
   { id: "all", label: "All runs" }, { id: "completed", label: "Finished" }, { id: "live", label: "In progress" }, { id: "failed", label: "Failed or stopped" },
@@ -277,7 +309,7 @@ const STAGE_WORDS: Record<string, string> = {
   leakage_audit: "Look for columns that give away the answer", missing_value_decisions: "Decide how to fill missing values", feature_engineering: "Build features",
   preprocessing: "Prepare the columns", candidate_generation: "List the models to try", cv_training: "Train the models, fold by fold",
   candidate_comparison: "Compare the models on cross-validation", winner_lock: "Choose the best model", final_refit: "Refit the chosen model",
-  final_holdout: "Final test set (used once)", artifact_reproducibility_persistence: "Save the model and how to reproduce it", deterministic_verification: "Run the trust checks",
+  final_holdout: "Final test set (used once)", artifact_reproducibility_persistence: "Save the model and how to reproduce it", deterministic_verification: "Re-check the saved run's evidence",
 };
 /** A step of the engine in words; a step this app does not know keeps its recorded title (cleaned). */
 export function stageWords(key: string, title: string): string {
@@ -289,4 +321,47 @@ export function stageStateWords(status: string): string {
   if (SKIPPED.has(status.toLowerCase())) return "skipped";
   if (STOPPED.has(status.toLowerCase())) return "stopped";
   return tone === "ok" ? "done" : tone === "crit" ? "failed" : tone === "ai" ? "running" : plainText(status.replaceAll("_", " "), 24);
+}
+
+// --- attempts (D2a read) -----------------------------------------------------------------
+
+export type AttemptLike = { attempt: number; outcome: string; failure_class?: string | null; started_at: string; ended_at?: string | null; duration_seconds?: number | null };
+export type AttemptRow = { key: string; label: string; sentence: string; tone: "ok" | "warn" | "crit" | "gray" | "ai"; time: string };
+
+/** The closed failure classes of the attempts read in words. An unknown class is "reason not recorded", never guessed. */
+export const FAILURE_CLASS_WORDS: Record<string, string> = {
+  out_of_memory: "out of memory", timeout: "timed out", worker_lost: "the worker stopped",
+  data_error: "a problem in the data", internal_error: "an internal error", cancelled: "stopped (cancelled)",
+};
+const failureWords = (value: string | null | undefined): string => own(FAILURE_CLASS_WORDS, value ?? "") ?? "reason not recorded";
+
+/**
+ * One row per worker attempt, oldest first, from `attempts` on the run read. "retried automatically" is said only for an
+ * attempt whose outcome is `retried` (the queue claimed the job again on its own); nothing else is claimed.
+ */
+export function attemptRows(attempts: AttemptLike[] | null | undefined): AttemptRow[] {
+  return [...(attempts ?? [])].sort((a, b) => a.attempt - b.attempt).map((a, index) => {
+    const n = Number.isInteger(a.attempt) && a.attempt > 0 ? a.attempt : index + 1;
+    const seconds = num(a.duration_seconds);
+    const time = seconds !== null && seconds >= 0 ? durationLabel(seconds * 1000) : a.outcome === "running" ? "still running" : "—";
+    const row = (sentence: string, tone: AttemptRow["tone"]): AttemptRow => ({ key: `${n}:${index}`, label: `Try ${n}`, sentence, tone, time });
+    switch (a.outcome) {
+      case "completed": return row("finished", "ok");
+      case "running": return row("running now", "ai");
+      case "retried": return row(`failed: ${failureWords(a.failure_class)}, retried automatically`, "warn");
+      case "failed": return row(`failed: ${failureWords(a.failure_class)}`, "crit");
+      case "cancelled": return row("stopped (cancelled)", "gray");
+      default: return row(plainText(String(a.outcome).replaceAll("_", " "), 30) || "state not recorded", "gray");
+    }
+  });
+}
+
+/** One line above the list: "Running (try 2)." / "Ran once." / "Ran 2 times; the queue started it again on its own after a failed try." */
+export function attemptsSummary(rows: AttemptRow[], attempts: AttemptLike[] | null | undefined): string | null {
+  if (!rows.length) return null;
+  const running = [...(attempts ?? [])].filter((a) => a.outcome === "running").sort((a, b) => b.attempt - a.attempt)[0];
+  if (running) return `Running (try ${Number.isInteger(running.attempt) && running.attempt > 0 ? running.attempt : rows.length}).`;
+  if (rows.length === 1) return "Ran once.";
+  const retried = (attempts ?? []).some((a) => a.outcome === "retried");
+  return `Ran ${rows.length} times${retried ? "; the queue started it again on its own after a failed try" : ""}.`;
 }

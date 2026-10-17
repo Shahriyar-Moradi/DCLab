@@ -60,6 +60,22 @@ IMPORTANT_DELETE_ACTIONS = {
     "fk_ml_jobs_workspace_execution_request": "n",
     "fk_ml_jobs_workspace_workflow_run": "n",
     "fk_ml_jobs_workspace_pipeline_run": "n",
+    "fk_ml_job_attempts_workspace_job": "c",  # D2a (0084)
+    "fk_upload_attempts_workspace_project": "a",  # D3a (0085): NO ACTION, the upload log keeps its parents
+    "fk_upload_attempts_service_token": "a",
+    "fk_upload_attempts_workspace_dataset": "a",
+    # P5.4-A2 (0087): loops go with their project; graph pointers never cascade.
+    "fk_improve_runs_workspace_project": "c",
+    "fk_improve_runs_split_plan": "a",
+    "fk_improve_runs_start_experiment": "a",
+    "fk_improve_runs_incumbent_experiment": "a",
+    "fk_improve_runs_final_experiment": "a",
+    "fk_improve_runs_acceptance_record": "a",
+    "fk_improve_runs_continuation_job": "a",
+    "fk_improve_runs_service_token": "a",
+    "fk_improve_iterations_run": "c",
+    "fk_improve_iterations_experiment": "a",
+    "fk_improve_iterations_incumbent": "a",
     "fk_execution_requests_workspace_project": "n",
     "fk_execution_requests_workspace_parent": "n",
     "fk_execution_requests_workspace_workflow_run": "n",
@@ -109,6 +125,8 @@ IMPORTANT_DELETE_ACTIONS = {
     "fk_batch_predictions_workspace_input_dataset": "a",
     "fk_batch_predictions_workspace_output_artifact": "a",
     "fk_batch_predictions_service_token": "a",
+    # 0082: upload attribution is kept, never erased by a token delete (datasets are immutable).
+    "fk_datasets_service_token": "a",
     # P6.2-A1 (0071): agent evidence is never erased by a parent delete; an
     # invocation keeps its workspace when its agent run goes (column-list SET NULL).
     "fk_llm_invocations_workspace_agent_run": "n",

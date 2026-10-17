@@ -122,7 +122,7 @@ def test_model_build_is_ordered_safe_canonical_and_workspace_readable(
     client,
     db_session,
     monkeypatch,
-    client_user,
+    admin_user,
     _rule_engine_only,
 ):
     frame = ordinary_binary()
@@ -151,7 +151,7 @@ def test_model_build_is_ordered_safe_canonical_and_workspace_readable(
 
     viewer_membership = add_workspace_member(
         db_session,
-        actor=client_user,
+        actor=admin_user,
         workspace_id=workspace_id,
         email=f"build-viewer-{uuid4().hex}@test.invalid",
         password="test-password",
@@ -160,7 +160,7 @@ def test_model_build_is_ordered_safe_canonical_and_workspace_readable(
     )
     engineer_membership = add_workspace_member(
         db_session,
-        actor=client_user,
+        actor=admin_user,
         workspace_id=workspace_id,
         email=f"build-engineer-{uuid4().hex}@test.invalid",
         password="test-password",

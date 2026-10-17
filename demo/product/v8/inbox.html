@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Inbox · DCLab demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="inbox.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › <b>Inbox</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch" title="Admins only: preview what another role sees. Your rights and every request stay yours."><span>View as</span><select id="role-switch"><option value="admin">Admin (your own view)</option><option value="ds">Data scientist</option><option value="analyst">Analyst (view only)</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant <span class="beta">Beta</span></button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Inbox</h1><p class="sub">What waits for a person, what was applied automatically (you can undo it), and what is finished. Each card says exactly what Approve does.</p></div>
+</div>
+<div class="statusrow"><a class="stag ok" href="real.html" title="See what is real today">Working today</a><a class="stag off" href="real.html" title="See what is real today">Items from the assistant: Built, switched off</a></div>
+
+<div class="tabs" data-tabs="inbox">
+  <button data-tab="need" aria-selected="true">Needs your decision (3)</button>
+  <button data-tab="auto">Applied automatically (0)</button>
+  <button data-tab="done">Done (3)</button>
+</div>
+
+<div data-tabpanel="inbox:need" class="on">
+  <div class="card">
+    <div class="item">
+      <h3>Switch to the retrained model?</h3>
+      <div class="who"><span class="who-pill">Raised by the retrain rule</span><span>Northwind churn · Monitoring · Wed</span></div>
+      <p class="small">A retrained model finished. Monitoring shows it beside the model in use (same kind of test, latest months) or why they could not be compared. Switch to it or keep the model in use. <a href="monitoring.html">See the side-by-side</a></p>
+      <p class="small muted"><b>Switch</b> makes the retrained model (v5) the model in use, with its data, test design and features. It is recorded in History. <b>Keep</b> records that you said no: the model in use stays, and nothing is deleted.</p>
+      <div class="toolbar" data-inbox-buttons><button class="btn primary" type="button" data-inbox="approve">Switch</button><button class="btn" type="button" data-inbox="reject">Keep</button></div>
+      <div class="banner" data-inbox-result hidden></div>
+    </div>
+    <div class="item">
+      <h3>Alert on the model in use</h3>
+      <div class="who"><span class="who-pill">Raised by monitoring</span><span>Northwind churn · Monitoring · week of 28 Sep</span></div>
+      <p class="small">The newest week (28 Sep) of the model in use is an alert: drift on <code>plan_type</code>. Monitoring says which columns moved. It does not mean the model is wrong, and nothing switched the model in use. Open Monitoring to see which columns moved, then decide what to do; going back to an earlier model is your choice.</p>
+      <div class="toolbar"><a class="btn primary" href="monitoring.html">Open Monitoring</a></div>
+    </div>
+    <div class="item">
+      <h3>Improvement loop waiting for you</h3>
+      <div class="who"><span class="who-pill">Raised by the loop</span><span>Late payment risk · Improve · Thu</span></div>
+      <p class="small">A try beat the noise on cross-validation. Open the loop to accept it (one final run, one final-test number) or keep the current model. Only a signed-in person can accept.</p>
+      <div class="toolbar"><a class="btn primary" href="improve.html">Open the loop</a></div>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="inbox:auto">
+  <div class="card">
+    <div class="empty">Nothing was applied automatically. Items appear here only when AI is on and a kind of decision allows acting on its own. AI is off in this workspace.</div>
+    <p class="small muted">A retrain that a project’s policy starts on its own (Automatic) is shown on Monitoring and in History. It never switches the model in use.</p>
+  </div>
+</div>
+
+<div data-tabpanel="inbox:done">
+  <div class="card">
+    <div class="item done-item"><h3>Retrain on newest data? (answered or no longer current)</h3><div class="who"><span class="who-pill you">You</span><span>Tue · you started the retrain on Monitoring; it ran as Run 5 on <code>customers_2026_09.csv</code></span></div></div>
+    <div class="item done-item"><h3>Run 1 finished</h3><div class="who"><span class="who-pill">A rule</span><span>Northwind churn · 12 weeks ago · LightGBM, CV PR-AUC 0.70</span></div></div>
+    <div class="item done-item"><h3>Approve Churn model v1 for scoring</h3><div class="who"><span class="who-pill you">You</span><span>Approved 12 weeks ago, with your reason</span></div></div>
+  </div>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v8"></script>
+<script src="guide.js"></script>
+</body>
+</html>

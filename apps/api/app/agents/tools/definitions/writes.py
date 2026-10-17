@@ -72,6 +72,12 @@ class BranchExperimentInput(BaseModel):
     intent: str = Field(min_length=1, max_length=500)
 
 
+class ImproveInput(BaseModel):
+    experiment_id: UUID = Field(description="The completed, locked run to improve (its split plan and folds are reused).")
+    goal: dict[str, Any] = Field(description="{\"plain\": {\"metric\": <the run's primary metric>}} or {\"objective\": {\"maximize\": \"precision\", \"constraints\": [{\"metric\": \"recall\", \"op\": \">=\", \"value\": 0.6}]}}, optionally with a target.")  # noqa: E501
+    budget: dict[str, Any] | None = Field(default=None, description="Optional lower limits: max_iterations (<= 6), max_wall_seconds (<= 7200), patience, comparison_bound.")  # noqa: E501
+
+
 class PredictInput(BaseModel):
     model_version_id: Id
     dataset_id: UUID = Field(description="Dataset UUID of the model's project (uploaded with purpose=scoring).")
@@ -189,3 +195,48 @@ def _spec_holdout_validator(args: BaseModel) -> BaseModel:
     _no_holdout(getattr(args, "constraints", None), "constraints")
     _no_holdout(getattr(args, "success_criteria", None), "success_criteria")
     return args
+
+
+def improve_budget_ceiling(budget: dict[str, Any] | None) -> dict[str, Any]:
+    """The full budget an agent-proposed loop may spend (ADR 0007 §10: an agent, like a token, only
+    lowers the defaults), shown on the confirm card: tries, wall time, comparison bound, patience, AI
+    micros and the training-seconds ceiling (the start computes the real total, never above it)."""
+
+    from app.domain.improve import HARD_MAX_TRAINING_SECONDS_TOTAL, ImproveBudget, clamp_budget_for_agent
+    from app.engine.evaluation.comparability import PROBE_BUDGET_MAX_SECONDS
+
+    limits = clamp_budget_for_agent(ImproveBudget.model_validate(budget or {}))
+    ceiling = min(HARD_MAX_TRAINING_SECONDS_TOTAL, limits.max_iterations * PROBE_BUDGET_MAX_SECONDS)
+    asked = limits.max_training_seconds_total
+    return {**limits.model_dump(mode="json"),
+            "max_training_seconds_total": float(ceiling if asked is None else min(asked, ceiling))}
+
+
+def _improve_validator(args: ImproveInput) -> ImproveInput:
+    """The goal and budget shapes of ``POST /v1/improve-runs`` (§1b, §3); never the holdout. The budget
+    is clamped to the defaults and stored in full (the card shows exactly what a person accepts)."""
+
+    from app.domain.improve import ImproveGoal, goal_size_ok
+
+    _no_holdout(args.goal, "goal")
+    _no_holdout(args.budget, "budget")
+    try:
+        goal = ImproveGoal.model_validate(args.goal)
+        budget = improve_budget_ceiling(args.budget)
+    except ValidationError as exc:
+        raise ToolError("invalid_arguments", exc.errors(include_url=False)[0]["msg"][:300]) from None
+    if not goal_size_ok(goal):
+        raise ToolError("invalid_arguments", "a goal is at most 4 KB")
+    return args.model_copy(update={"budget": budget})
+
+
+def improve_estimate(arguments: dict[str, Any]) -> tuple[int, int]:
+    """The card's cost and duration (ADR 0007 §10): the loop's rule proposer uses no AI (0 micros) and
+    runs at most its (clamped) wall budget in seconds; the final re-run comes after a person accepts a
+    try, on its own card. The full budget is in the card's ``tool_arguments.budget``."""
+
+    try:
+        budget = improve_budget_ceiling(arguments.get("budget"))
+    except ValidationError:
+        budget = improve_budget_ceiling(None)
+    return 0, int(budget["max_wall_seconds"])

@@ -5,6 +5,7 @@ import {
   canAccessProductRoute,
   hasCapability,
   isLegacyMarketingPath,
+  isOperatorPath,
   isStudioPath,
   studioRoute,
 } from "@/lib/infrastructure/capabilities";
@@ -103,7 +104,9 @@ export async function middleware(request: NextRequest) {
   if (!canAccessProductRoute(principal, pathname)) {
     const area = pathname.startsWith("/admin")
       ? "the admin area"
-      : pathname.startsWith("/business")
+      : isOperatorPath(pathname)
+        ? "the operator console"
+        : pathname.startsWith("/business")
         ? "the business administration area"
         : pathname.startsWith("/development") || pathname === "/dev" || pathname.startsWith("/dev/") || isStudioPath(pathname)
           ? "the Development workspace"
@@ -134,6 +137,16 @@ export const config = {
     "/inbox/:path*",
     "/agents/:path*",
     "/projects/:path*",
+    // Studio Settings (P4.14): developer role only, like the other Studio routes (P7.6-A found it unmatched).
+    "/settings/:path*",
+    // AI settings (D6b, Beta): a Studio page, same role as the other Studio routes.
+    "/governance/:path*",
+    // What's real today (V7 UI-A): a Studio page, same role as the other Studio routes.
+    "/real/:path*",
+    // Business view (P7.6-A).
+    "/outcomes/:path*",
+    // Operator console (P8.5-UI): platform administrators only.
+    "/operator/:path*",
     // Frozen Decision.ai marketing pages (P4.12-A): redirected to `/` unless the flag is on.
     "/industries/:path*",
     "/solutions/:path*",

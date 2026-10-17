@@ -38,9 +38,18 @@ TEST_URL += ("&" if "?" in TEST_URL else "?") + "options=-c%20synchronous_commit
 # default; tests must not.
 _TEST_OBJECT_STORE_ROOT = Path(tempfile.mkdtemp(prefix="dclab-test-object-store-"))
 os.environ["OBJECT_STORAGE_ROOT"] = str(_TEST_OBJECT_STORE_ROOT)
+# The engine's per-run working files go to a throwaway root too; the system-temp default
+# (<tmp>/dclab-runs) is never cleaned and filled the disk after a few full runs.
+_TEST_RUN_SCRATCH_ROOT = Path(tempfile.mkdtemp(prefix="dclab-test-run-scratch-"))
+os.environ["RUN_SCRATCH_ROOT"] = str(_TEST_RUN_SCRATCH_ROOT)
 # AI development permissions (fake provider / runtime, the global_ai seed) need an
 # explicit development DCLAB_ENV; an unset variable does not count (P6.7-A).
 os.environ["DCLAB_ENV"] = "test"
+# No real provider call from a test: the production Anthropic adapter (2026-10-16) also reads
+# the plain vendor name a developer shell may export. Tests that need a key set a fake one.
+for _provider_key in ("DCLAB_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "DCLAB_OPENAI_API_KEY",
+                      "DCLAB_TYPESAFE_API_KEY"):
+    os.environ.pop(_provider_key, None)
 
 
 def _clear_test_object_store() -> None:
@@ -55,6 +64,7 @@ def _clear_test_object_store() -> None:
 
 def pytest_configure(config: pytest.Config) -> None:
     os.environ["OBJECT_STORAGE_ROOT"] = str(_TEST_OBJECT_STORE_ROOT)
+    os.environ["RUN_SCRATCH_ROOT"] = str(_TEST_RUN_SCRATCH_ROOT)
     from app.config import get_settings
 
     get_settings.cache_clear()
@@ -62,6 +72,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     shutil.rmtree(_TEST_OBJECT_STORE_ROOT, ignore_errors=True)
+    shutil.rmtree(_TEST_RUN_SCRATCH_ROOT, ignore_errors=True)
 
 
 def _ensure_database() -> None:
@@ -305,6 +316,27 @@ def client_user(db_session: Session):
     return user
 
 
+ENGINEER_PASSWORD = "engineer-pass-123"
+
+
+@pytest.fixture()
+def engineer_user(db_session: Session):
+    """A workspace ML engineer: the actor for shared-ML-core work (a client_user is an external reader)."""
+    from app.db.models import DEFAULT_WORKSPACE_ID, UserRole
+    from app.services.auth_service import create_user
+
+    user = create_user(
+        db_session,
+        email="engineer@client.test",
+        password=ENGINEER_PASSWORD,
+        role=UserRole.ML_ENGINEER,
+        full_name="ML Engineer",
+        workspace_id=DEFAULT_WORKSPACE_ID,
+    )
+    db_session.commit()
+    return user
+
+
 @pytest.fixture()
 def admin_token(admin_user) -> str:
     from app.services.auth_service import create_access_token
@@ -345,6 +377,14 @@ def _authed_client(db_session: Session, token: str) -> Generator[TestClient, Non
 def auth_client(db_session, client_token) -> Generator[TestClient, None, None]:
     """TestClient authenticated as a client_user, for the /app tree."""
     yield from _authed_client(db_session, client_token)
+
+
+@pytest.fixture()
+def engineer_client(db_session, engineer_user) -> Generator[TestClient, None, None]:
+    """TestClient authenticated as a workspace ML engineer, for /app and /v1 shared-ML-core flows."""
+    from app.services.auth_service import create_access_token
+
+    yield from _authed_client(db_session, create_access_token(engineer_user))
 
 
 @pytest.fixture()

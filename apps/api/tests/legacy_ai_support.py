@@ -40,7 +40,7 @@ def enable_legacy_ai(monkeypatch, db, *, handler=None, responses=(), ai_enabled:
     db.commit()
     fake = FakeProvider(responses, handler=handler, environment="test")
     service = GatewayService(
-        providers={"openai": fake}, limits=GatewayLimits(),
+        providers={"anthropic": fake}, limits=GatewayLimits(),
         settings=lambda: SimpleNamespace(ai_enabled=ai_enabled, dclab_env="test"),
     )
     settings = SimpleNamespace(ai_enabled=ai_enabled, dclab_env="test", pipeline_llm_timeout_seconds=1.0)

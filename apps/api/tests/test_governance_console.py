@@ -168,7 +168,41 @@ def test_policy_applies_only_on_acceptance_by_another_approver(gc):
     assert [c["state"] for c in after["policy_changes"]][:1] == ["accepted"]
 
 
+def test_d6b_policy_head_and_sole_approver_are_for_approvers_only(gc):
+    owner = gc.get(gc.owner).json()
+    assert owner["policy_head"] is None and owner["sole_approver"] is False  # no head yet; owner and admin approve
+    assert all(lv["effective_level"] <= 1 for lv in owner["levels"])  # the beta: nothing is automatic today
+    assert gc.get(gc.solo, ws=gc.solo_ws).json()["sole_approver"] is True
+    done = gc.accept(gc.propose(gc.eng).json(), gc.owner)
+    assert done.status_code == 200, done.text
+    head = gc.get(gc.owner).json()["policy_head"]
+    assert head is not None and head["budgets"]["workspace_month_micros"] == 5_000_000
+    for who in (gc.eng, gc.staff):  # proposers and platform staff never get the head document or the flag
+        body = gc.get(who).json()
+        assert body["policy_head"] is None and body["sole_approver"] is False
+
+
 def test_a_sole_approver_may_accept_their_own_proposal_flagged(gc):
+    proposed = gc.propose(gc.solo, ws=gc.solo_ws).json()
+    done = gc.accept(proposed, gc.solo, gc.solo_ws)
+    assert done.status_code == 200 and done.json()["self_approved"] is True
+
+
+def test_a_client_user_is_neither_a_governance_actor_nor_an_approver(gc):
+    def make_client(ws):
+        person = create_user(gc.db, email=f"client-{uuid4().hex[:6]}@gov.test", password=PASSWORD,
+                             role=UserRole.CLIENT_USER, workspace_id=ws)
+        gc.db.commit()
+        return person
+
+    client_user = make_client(gc.ws)
+    proposal = gc.propose(gc.eng).json()
+    _assert_envelope(gc.get(client_user), 403)  # no console: neither ML-write nor an approver
+    _assert_envelope(gc.propose(client_user), 403)
+    _assert_envelope(gc.accept(proposal, client_user), 403)
+    _assert_envelope(gc.switch(client_user, "off"), 403)
+    # nor does it count as an approver: a workspace's one real owner still self-approves (flagged)
+    make_client(gc.solo_ws)
     proposed = gc.propose(gc.solo, ws=gc.solo_ws).json()
     done = gc.accept(proposed, gc.solo, gc.solo_ws)
     assert done.status_code == 200 and done.json()["self_approved"] is True
@@ -535,7 +569,7 @@ def test_a_level_for_an_old_model_counts_as_l0_and_shows_no_verdict(gc):
 IDENT = "column.is_identifier"
 
 
-def _heads(gc, key, platform_level, workspace_level, *, workspace_model="jev-1.13.0"):
+def _heads(gc, key, platform_level, workspace_level, *, workspace_model="claude-sonnet-5-5"):  # the current pair
     """Platform L0 roots citing a live current run, then platform / workspace heads on the current pair."""
 
     run = _live_run(gc)

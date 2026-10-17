@@ -26,13 +26,18 @@ python -m dclab_mcp                    # same
 Read (default on): `inspect_project`, `inspect_dataset`, `get_experiment`,
 `compare_experiments`, `get_experiment_code`, `get_evidence`, `get_findings`,
 `list_decisions`, `list_proposals`, `inspect_governance` (read-only governance of the workspace: no free text), `get_model`, `get_model_card`, `get_prediction`,
+`list_releases` (approvals of the model in use; read-only, never who approved),
+`get_scoring_schedule` (the project's weekly scoring schedule and its recent weeks; read-only, no people),
+`get_monitoring` (weekly drift and, once a person linked real outcomes, performance of the model in use; read-only, codes and numbers only),
+`get_improve_run` (one improve loop: status, tries and their cross-validation verdicts; never a final-test value),
 `get_impact`, `accept_proposal`. `get_model_card` never carries the final evaluation (withheld for
 agents). The tool names, read/write flags and input schemas equal the shared catalog
 export `contracts/agent_tools.json` (contract-tested), which the in-app assistant uses too.
 
 Write (`DCLAB_MCP_WRITE_ENABLED`): `create_problem_spec`, `propose_problem_spec`,
 `run_experiment`, `branch_experiment`, `predict`, `record_decision`, `request_agent_review`
-(queues a Critic / Investigator / Planner run; it only proposes, a person decides in Studio).
+(queues a Critic / Investigator / Planner run; it only proposes, a person decides in Studio),
+`improve` (starts an improve loop with a clamped budget; only a person accepts a try).
 
 URL binding: a token read from the config file is only sent to the URL stored
 with it (no stored URL, or a different `DCLAB_API_URL`, is refused; set

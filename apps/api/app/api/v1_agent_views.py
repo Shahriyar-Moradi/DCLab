@@ -5,7 +5,7 @@ propose, so every /v1 response to a service-token principal omits final-holdout
 values: experiment metric summaries and branch diffs, comparisons, model versions
 (``holdout_report_only`` stays null: there is no champion exception), model-build
 stages and events, model cards (final evaluation withheld), decision records (facts,
-details and evidence refs without holdout keys or scopes) and the
+details and evidence refs without holdout keys or scopes; ``actor.user_id`` null) and the
 ``HOLDOUT_METRICS`` literal of exported code. Session humans get every response
 unchanged. Schemas stay valid: holdout fields become empty, never removed. The
 request-free helpers live in ``app/agents/tools/shaping.py`` (shared with the
@@ -44,6 +44,14 @@ def findings_view(request: Request, body: Any) -> Any:
 
 def comparison_view(request: Request, body: Any) -> Any:
     return _for_agents(request, body, shaping.withhold_comparison)
+
+
+def verdict_view(request: Request, body: Any) -> Any:
+    """P5.5-B-read: the verdict is CV-only and the test-set look count is metadata (named
+    ``test_set_looks`` so this guard keeps it): tokens get the same body; any key naming the
+    holdout would still be dropped."""
+
+    return _for_agents(request, body, lambda b: type(b).model_validate(shaping.strip_holdout(b)))
 
 
 def model_version_view(request: Request, body: Any) -> Any:

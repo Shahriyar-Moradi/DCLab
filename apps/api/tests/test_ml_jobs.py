@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings
-from app.db.models import ClientLabUpload, DEFAULT_WORKSPACE_ID, MlJob
+from app.db.models import ClientLabUpload, DEFAULT_WORKSPACE_ID, MlJob, MlJobAttempt
 from app.domain.ml_jobs import (
     HANDLER_LABS_AUTO_TRAIN,
     HANDLER_VERSION_LABS_AUTO_TRAIN,
@@ -207,6 +207,13 @@ def test_retry_after_failure_then_exhausts_max_attempts(db_session):
 
     third = process_next_job(db_session, runner=boom)
     assert third is None
+    # D2a: one attempt row per claim, closed codes only (the message stays on the job row).
+    rows = db_session.scalars(
+        select(MlJobAttempt).where(MlJobAttempt.ml_job_id == job.id).order_by(MlJobAttempt.attempt)
+    ).all()
+    assert [(row.attempt, row.outcome, row.failure_class) for row in rows] == [
+        (1, "retried", "internal_error"), (2, "failed", "internal_error")]
+    assert all(row.ended_at is not None and row.ended_at >= row.started_at for row in rows)
 
 
 def test_abandoned_running_job_is_requeued_then_failed_at_max_attempts(db_session):

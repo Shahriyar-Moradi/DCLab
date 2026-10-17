@@ -1,9 +1,10 @@
 """Reproduce a persisted DCLab experiment's own predictions on an arbitrary
-frame (namely: the shared test split), using its fitted, persisted member
-models and its own fusion/weights decision. No retraining, no change to
-which members ``run_experiment`` selected or how it weighted them — this is
-strictly "ask the experiment that already ran what it would say," reused
-from ``app.engine.ensemble.blend_probabilities`` for the blend math.
+frame (namely: the shared test split), using its saved winner. No retraining —
+strictly "ask the experiment that already ran what it would say".
+
+P7.1-A: runs save the winner as a model package (``model_package.zip``: skops +
+native booster formats, no pickle), loaded with the package loader. Runs saved
+before that (pickled members, weighted blends) are no longer read here.
 """
 
 from __future__ import annotations
@@ -11,15 +12,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import joblib
 import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 
 from app.db.models import Experiment, PredictionTask
-from app.engine.ensemble import blend_probabilities
-
-from benchmarks.case_studies.features import to_matrix
+from app.engine.serving.model_package import PACKAGE_FILENAME, read_package, sha256_hex
 
 
 def latest_experiment_for(db: Session, case_study_id: str) -> Experiment:
@@ -44,30 +42,19 @@ def _candidate_features(result: dict[str, Any], candidate_id: str) -> list[str]:
 
 def score_frame(experiment: Experiment, frame: pd.DataFrame, *, task_type: str) -> np.ndarray:
     result = experiment.result or {}
-    fusion = result.get("fusion")
     if not experiment.artifact_dir:
         raise ValueError(f"experiment {experiment.id} has no artifact_dir")
-    members_dir = Path(experiment.artifact_dir) / "members"
-    classifier = task_type == "binary"
-
-    def _predict_one(candidate_id: str) -> np.ndarray:
-        model = joblib.load(members_dir / f"{candidate_id}.joblib")
-        features = _candidate_features(result, candidate_id)
-        X = to_matrix(frame, features)
-        if classifier:
-            proba = model.predict_proba(X)
-            return np.asarray(proba[:, 1] if proba.shape[1] > 1 else proba[:, 0], dtype=float)
-        return np.asarray(model.predict(X), dtype=float)
-
-    if fusion == "weighted_blend":
-        weights = result.get("weights") or {}
-        if not weights:
-            raise ValueError(f"experiment {experiment.id} fusion=weighted_blend but has no weights")
-        member_preds = {member_id: _predict_one(member_id) for member_id in weights}
-        return blend_probabilities(member_preds, weights)
-
-    best_single = result.get("best_single") or {}
-    candidate_id = best_single.get("candidate_id")
+    if result.get("fusion") == "weighted_blend":
+        raise ValueError(f"experiment {experiment.id} is a pickled weighted blend; retrain it to get a model package")
+    candidate_id = (result.get("best_single") or {}).get("candidate_id")
     if candidate_id is None:
-        raise ValueError(f"experiment {experiment.id} has no usable fusion ({fusion!r}) or best_single")
-    return _predict_one(candidate_id)
+        raise ValueError(f"experiment {experiment.id} has no best_single")
+    from app.engine.serving.package_loader import load_model_package
+
+    payload = (Path(experiment.artifact_dir) / PACKAGE_FILENAME).read_bytes()
+    model = load_model_package(payload, manifest_digest=sha256_hex(read_package(payload).manifest_bytes)).pipeline
+    X = frame.loc[:, _candidate_features(result, candidate_id)]
+    if task_type == "binary":
+        proba = model.predict_proba(X)
+        return np.asarray(proba[:, 1] if proba.shape[1] > 1 else proba[:, 0], dtype=float)
+    return np.asarray(model.predict(X), dtype=float)

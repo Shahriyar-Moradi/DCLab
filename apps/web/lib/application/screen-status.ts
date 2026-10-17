@@ -1,0 +1,234 @@
+/**
+ * What's real today (V7 UI-A): ONE typed registry of every screen and how much of it works, written from the real product
+ * (not from the v7 demo, whose tags are older than the product). It drives the status tag under each page title and the
+ * `/real` page. Pure data + lookups, no React, so it runs under `npm run test:components`.
+ *
+ * Rules: a screen whose sidebar feature flag is off cannot claim to work, and one whose flag is on cannot claim to be
+ * planned (screen-status.test.ts checks both against STUDIO_BACKEND_FEATURES / OPERATOR_FEATURES). Every sentence is plain
+ * words and is rendered as text.
+ */
+import type { StudioFeature } from "../../components/studio/sidebar-config.ts";
+import { OPERATOR_FEATURES, STUDIO_BACKEND_FEATURES } from "./studio-navigation.ts";
+
+export type StatusKind = "working" | "partly" | "off" | "planned";
+export type StatusTone = "ok" | "warn" | "ai" | "gray";
+
+export type ScreenId =
+  | "home" | "inbox" | "projects"
+  | "data" | "goal" | "experiments" | "improve" | "model" | "predictions" | "monitoring" | "history"
+  | "settings" | "usage" | "notifications" | "webhooks" | "connect" | "aiSettings" | "assistant"
+  | "questions" | "business" | "console";
+
+export type ScreenGroup = "Workspace" | "Project" | "Admin" | "Other views";
+
+export type StatusTag = {
+  kind: StatusKind;
+  /** Partly working: what is missing, in a few words (shown in the pill). */
+  short?: string;
+  /** Planned: the roadmap phase that builds it. */
+  phase?: number;
+  /** A tag about one part of the screen, e.g. "Items from the assistant". */
+  part?: string;
+};
+
+export type ScreenStatus = {
+  id: ScreenId;
+  name: string;
+  group: ScreenGroup;
+  /** Workspace-level link for the `/real` table; project screens are reached inside a project (null). */
+  href: string | null;
+  /** The sidebar feature flag this status must agree with (null: no sidebar item of its own). */
+  feature: StudioFeature | null;
+  /** Main tag first, then tags about parts of the screen. */
+  tags: [StatusTag, ...StatusTag[]];
+  /** One line: what is missing today ("Nothing" when the screen does its whole job). */
+  missing: string;
+};
+
+export const STATUS_WORDS: Record<StatusKind, { label: string; tone: StatusTone; meaning: string }> = {
+  working: { label: "Working today", tone: "ok", meaning: "You can use it now." },
+  partly: { label: "Partly working", tone: "warn", meaning: "Some parts are missing; the table says which." },
+  off: { label: "Built, switched off", tone: "ai", meaning: "AI pieces that are built but not shown to people until they pass testing." },
+  planned: { label: "Planned", tone: "gray", meaning: "Not built yet; the table says what is missing." },
+};
+
+export const SCREEN_STATUS: readonly ScreenStatus[] = [
+  {
+    id: "home", name: "Home", group: "Workspace", href: "/home", feature: "home",
+    tags: [{ kind: "working" }],
+    missing: "Nothing for the daily job. A running run shows the fold it is on; the things that need you have no evidence numbers yet, only who raised them, where and, for an alert, whether it is drift or real outcomes below a floor.",
+  },
+  {
+    id: "inbox", name: "Inbox", group: "Workspace", href: "/inbox", feature: "inbox",
+    tags: [{ kind: "working" }, { kind: "partly", short: "Beta: items from the assistant" }],
+    missing: "Suggestions from the assistant appear here only where the assistant beta and AI are switched on.",
+  },
+  {
+    id: "projects", name: "Projects", group: "Workspace", href: "/projects", feature: "projects",
+    tags: [{ kind: "working" }],
+    missing: "Nothing for the daily job. The score column is the cross-validation score of the model in use, not the best run's. New project is a three-step dialog; the older four-step page is still linked from it.",
+  },
+  {
+    id: "data", name: "Data", group: "Project", href: null, feature: "data",
+    tags: [{ kind: "working" }],
+    missing: "Nothing. Each file shows its checks on upload, and the upload log lists accepted and refused files (names and reasons only).",
+  },
+  {
+    id: "goal", name: "Goal & test design", group: "Project", href: null, feature: "goal",
+    tags: [{ kind: "working" }],
+    missing: "Nothing. The goal and test design are set when you start a run; this screen shows them and who decided each part.",
+  },
+  {
+    id: "experiments", name: "Experiments", group: "Project", href: null, feature: "experiments",
+    tags: [{ kind: "working" }],
+    missing: "Nothing for the daily job. Only the project's latest run shows the fold it is on; other running runs show their status only. Who started a run is shown when a record says.",
+  },
+  {
+    id: "improve", name: "Improve", group: "Project", href: null, feature: "improve",
+    tags: [{ kind: "working" }],
+    missing: "Guided tries, changes suggested by the rules from the trust checks, putting a try's model in use, and an improvement loop within a budget work today; each loop try is sealed and only an accepted try scores the final test set once. A loop on a fresh split is not built, and tries suggested by AI appear only where the assistant beta is on.",
+  },
+  {
+    id: "model", name: "Model", group: "Project", href: null, feature: "models",
+    tags: [{ kind: "working" }],
+    missing: "Versions, the final test with its table of right and wrong answers, the saved file and its checks, and the columns new data must have are shown; approving and going back work. A chosen threshold is not applied to scoring without a new model version.",
+  },
+  {
+    id: "predictions", name: "Predictions", group: "Project", href: null, feature: "predictions",
+    tags: [{ kind: "working" }],
+    missing: "Scoring a file, weekly scoring and the list with the top reasons for each row work. Only scorings from this browser tab and the weekly schedule are listed, and at most the first 10,000 rows of a list show on screen.",
+  },
+  {
+    id: "monitoring", name: "Monitoring", group: "Project", href: null, feature: "monitoring",
+    tags: [{ kind: "working" }],
+    missing: "Nothing for the daily job. Retrain on newest data works, started by a person or by the project's Ask me or Automatic rule, and owners and administrators can change the alert lines and floors. Nothing ever switches the model in use on its own: a person decides.",
+  },
+  {
+    id: "history", name: "History", group: "Project", href: null, feature: "decisions",
+    tags: [{ kind: "working" }],
+    missing: "Nothing.",
+  },
+  {
+    id: "questions", name: "Ask the business", group: "Project", href: null, feature: "questions",
+    tags: [{ kind: "working" }],
+    missing: "A question links to the model in use or the latest prediction list; a monitoring week cannot be linked from this screen yet. People are shown as you, a business user or a person on the data team.",
+  },
+  {
+    id: "settings", name: "Settings", group: "Admin", href: "/settings", feature: "settings",
+    tags: [{ kind: "partly", short: "adding people not in Studio" }],
+    missing: "People and roles, usage and cost, your email choices (Notifications) and webhooks (Integrations) work. Adding or removing people is not in Studio yet; contact DCLab.",
+  },
+  {
+    id: "usage", name: "Usage & cost (in Settings)", group: "Admin", href: "/settings?tab=usage", feature: null,
+    tags: [{ kind: "working" }],
+    missing: "Nothing. The numbers are an estimate from DCLab's own records, not an invoice.",
+  },
+  {
+    id: "notifications", name: "Notifications (email, in Settings)", group: "Admin", href: "/settings?tab=notifications", feature: null,
+    tags: [{ kind: "partly", short: "no email service yet" }],
+    missing: "You can choose which emails you get. DCLab sends no email until an email service is chosen for this server, and emails have no unsubscribe link yet.",
+  },
+  {
+    id: "webhooks", name: "Integrations (webhooks, in Settings)", group: "Admin", href: "/settings?tab=integrations", feature: null,
+    tags: [{ kind: "partly", short: "off until set up on the server" }],
+    missing: "Owners and administrators can add a webhook (its secret is shown once), make a new secret, send a test call, turn it on or off and read its delivery log. Webhooks work only once signing is set up on the server, and a webhook's name, address or events cannot be changed on this screen.",
+  },
+  {
+    id: "connect", name: "Connect (API, SDK, MCP)", group: "Admin", href: "/agents", feature: "agents",
+    tags: [{ kind: "working" }],
+    missing: "Nothing.",
+  },
+  {
+    id: "aiSettings", name: "AI settings", group: "Admin", href: "/governance", feature: "governance",
+    tags: [{ kind: "partly", short: "Beta" }],
+    missing: "Read-mostly during the beta: what AI may do per kind of decision cannot be changed here, and \"Automatic\" stays locked until it is earned on tested cases.",
+  },
+  {
+    id: "assistant", name: "Assistant", group: "Admin", href: null, feature: "assistant",
+    tags: [{ kind: "partly", short: "Beta" }],
+    missing: "Shown only where DCLab switched the beta on and AI is on; the model and its budget are not confirmed yet. Everything works without it: every action is also a button.",
+  },
+  {
+    id: "business", name: "Business view", group: "Other views", href: "/outcomes", feature: "client_outcomes",
+    tags: [{ kind: "working" }],
+    missing: "Questions from your data team, with a reply box, work. Asking questions in plain words is not built yet.",
+  },
+  {
+    id: "console", name: "Platform console (DCLab staff only)", group: "Other views", href: null, feature: "operator_overview",
+    tags: [{ kind: "partly", short: "some tabs planned" }],
+    missing: "Overview, workspaces (with plan, usage and the assistant beta flag) and failed jobs work. Files held for review, AI limits per workspace, benchmark results and backups are not built yet.",
+  },
+];
+
+/** Summary sentence of the `/real` page, written from the registry's real state. */
+export const REAL_SUMMARY =
+  "The whole project flow works today: data with its upload log, goal and test design with who decided, experiments with trust checks, guided improve and the improvement loop, " +
+  "the model and approving it for scoring, predictions for one file or every week, monitoring with retrain on newest data and editable alert lines, and history, " +
+  "plus questions to the business view, usage, email choices, webhooks and the platform console. " +
+  "The assistant and AI settings are a beta: AI is off by default, and the assistant shows only where DCLab switched its beta on. No email is sent until an email service is chosen.";
+
+/** Words of the `/real` page. */
+export const REAL_PAGE_WORDS = {
+  subtitle: "Every screen of DCLab with its status, written from what the product does today. Nothing is hidden: what is missing is named.",
+  purpose: "An honest list of every screen: what works today, what works partly, what is built but switched off, and what is planned.",
+  howTo: "Read the summary first, then find a screen in the table and read what is missing. The tag under each page title opens this list.",
+  youGet: "No surprises about what you can use now, and which parts are not built yet.",
+  footnote: "Project screens are reached inside a project. AI pieces stay switched off until they pass testing; every action works without them.",
+} as const;
+
+const BY_ID: Readonly<Record<string, ScreenStatus>> = Object.fromEntries(SCREEN_STATUS.map((entry) => [entry.id, entry]));
+
+/** Own keys only: an id such as `__proto__` or `constructor` has no status. */
+export function screenStatus(id: string): ScreenStatus | null {
+  return Object.hasOwn(BY_ID, id) ? BY_ID[id] : null;
+}
+
+/** Pill text of one tag, e.g. "Working today", "Partly working · no screen yet", "Screen: Planned". The roadmap phase stays in the data, never on screen. */
+export function tagLabel(tag: StatusTag): string {
+  let text = STATUS_WORDS[tag.kind].label;
+  if (tag.kind === "partly" && tag.short) text += ` · ${tag.short}`;
+  return tag.part ? `${tag.part}: ${text}` : text;
+}
+
+export function tagTone(tag: StatusTag): StatusTone {
+  return STATUS_WORDS[tag.kind].tone;
+}
+
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const PROJECT_PAGE = new RegExp(`^/projects/${UUID}/([a-z]+)(?:/|$)`);
+
+/** Project route section -> screen. Own keys only. */
+const PROJECT_SECTION: Readonly<Record<string, ScreenId>> = {
+  data: "data", splits: "goal", goal: "goal", experiments: "experiments", pipeline: "experiments", features: "experiments",
+  improve: "improve", models: "model", predictions: "predictions", monitoring: "monitoring",
+  decisions: "history", graph: "history", lab: "assistant", questions: "questions",
+};
+
+const WORKSPACE_PAGE: Readonly<Record<string, ScreenId>> = {
+  "/home": "home", "/inbox": "inbox", "/projects": "projects", "/projects/new": "projects",
+  "/settings": "settings", "/agents": "connect", "/governance": "aiSettings", "/outcomes": "business", "/operator": "console",
+};
+
+/** Which screen a path shows (null for pages without a status, such as `/real` itself). */
+export function screenForPath(pathname: string): ScreenId | null {
+  const path = pathname.split(/[?#]/)[0].replace(/\/+$/, "") || "/";
+  if (Object.hasOwn(WORKSPACE_PAGE, path)) return WORKSPACE_PAGE[path];
+  const match = PROJECT_PAGE.exec(path);
+  if (match && Object.hasOwn(PROJECT_SECTION, match[1])) return PROJECT_SECTION[match[1]];
+  return null;
+}
+
+/** True when the screen's status agrees with its feature flag (on = working or partly; off = switched off or planned). */
+export function agreesWithFeatureFlag(entry: ScreenStatus): boolean {
+  if (entry.feature === null) return true;
+  const flags = { ...STUDIO_BACKEND_FEATURES, ...OPERATOR_FEATURES };
+  const on = flags[entry.feature] === true;
+  const kind = entry.tags[0].kind;
+  return on ? kind === "working" || kind === "partly" : kind === "off" || kind === "planned";
+}
+
+/** Link of a row on `/real`: none for project screens and staff-only pages; the Business view only for people who may open it. */
+export function rowHref(entry: ScreenStatus, mayOpenBusinessView: boolean): string | null {
+  if (entry.id === "business" && !mayOpenBusinessView) return null;
+  return entry.href;
+}

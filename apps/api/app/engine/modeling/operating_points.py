@@ -10,7 +10,8 @@ under time-ordered CV), before the final holdout is scored. No row ids, no score
 
 Everything else is computed from that curve: derived rates, Wilson intervals, fold
 spread, the Pareto frontier over (precision, recall) [and expected cost], a
-constraint-aware or cost-weighted search and the re-solve of the run's own objective.
+constraint-aware or cost-weighted search and the re-solve of the run's own objective;
+``goal_fold_scores`` (P5.4-A1b) scores every CV fold at the run's own solved threshold.
 The search is ``objective.select_index`` (one threshold search: same constraints rule,
 same tie-break: closest to 0.5, then the higher threshold). Too few positives or
 negatives: ``not_evaluated``, never an invented point. Figures picked from many
@@ -271,6 +272,93 @@ def fold_spread(curve: Curve, index: int) -> dict[str, Any] | None:
     }
 
 
+# --- per-fold goal scores (P5.4-A1b, ADR 0007 §5) ---------------------------------------------------
+
+GOAL_FOLD_METRICS = ("precision", "recall", "specificity", "f1", "accuracy", "balanced_accuracy")
+
+
+class GoalScoreRefusal(ValueError):
+    """A fold has no finite goal score (or the folds do not pair): the comparison is not_comparable."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+@dataclass(frozen=True)
+class GoalFoldScores:
+    """Each CV fold at the run's own solved threshold ``t_E`` (positional: curve folds carry no number)."""
+
+    goal: str
+    index: int
+    threshold: float
+    feasible: bool
+    fold_counts: tuple[tuple[int, int], ...]  # (positives, negatives) per fold
+    values: tuple[float, ...]  # the goal metric per fold
+    denominators: tuple[int, ...]  # the goal metric's denominator per fold (flagged rows for precision, ...)
+    shortfalls: tuple[float, ...]  # total constraint shortfall per fold (0 where every constraint holds)
+    rule_denominators: tuple[int | None, ...] = ()  # smallest constraint denominator per fold (None: no rule)
+
+
+def _fold_rates(positives: int, negatives: int, tp: float, fp: float) -> dict[str, float]:
+    rows = positives + negatives
+    rates = rates_from_counts(np.array([tp]), np.array([fp]), np.array([positives - tp]),
+                              np.array([negatives - fp]), total=max(rows, 1))
+    out = {name: float(values[0]) for name, values in rates.items()}
+    out["flagged_share"] = (tp + fp) / max(rows, 1)
+    return out
+
+
+def _fold_denominator(metric: str, positives: int, negatives: int, tp: float, fp: float) -> int:
+    flagged = int(tp + fp)
+    return {
+        "precision": flagged, "recall": positives, "specificity": negatives, "f1": min(positives, flagged),
+        "accuracy": positives + negatives, "balanced_accuracy": min(positives, negatives),
+        "flagged_share": positives + negatives,
+    }[metric]
+
+
+def goal_fold_scores(curve: Curve, objective: PointObjective, *,
+                     fold_counts: Any = None) -> GoalFoldScores:
+    """The goal metric (and the constraint shortfall) on every CV fold at ``t_E = solve(curve,
+    objective).index`` (returned even when infeasible). Refuses (``GoalScoreRefusal``):
+    ``goal_not_per_fold`` (expected cost), ``no_folds``, ``fold_counts_differ`` (``fold_counts``
+    given and the per-fold (positives, negatives) differ: the two curves were not built on the
+    same folds), the curve's ``not_evaluated`` reason, and ``fold_below_min_denominator`` when the
+    goal or a constraint metric has fewer than ``FOLD_MIN_DENOMINATOR`` rows in its denominator on
+    some fold (no finite score)."""
+
+    if objective.goal not in GOAL_FOLD_METRICS:
+        raise GoalScoreRefusal("goal_not_per_fold")
+    if not curve.folds:
+        raise GoalScoreRefusal("no_folds")
+    counts = tuple((int(pos), int(neg)) for pos, neg, _tp, _fp in curve.folds)
+    if fold_counts is not None and tuple((int(pos), int(neg)) for pos, neg in fold_counts) != counts:
+        raise GoalScoreRefusal("fold_counts_differ")
+    solved = solve(curve, objective)
+    if solved["status"] == "not_evaluated":
+        raise GoalScoreRefusal(str(solved["reason"]))
+    index = int(solved["index"])
+    metrics = (objective.goal, *(item.metric for item in objective.constraints))
+    values, denominators, shortfalls, rule_denominators = [], [], [], []
+    for (positives, negatives), (_pos, _neg, tp_all, fp_all) in zip(counts, curve.folds):
+        tp, fp = float(tp_all[index]), float(fp_all[index])
+        if any(_fold_denominator(name, positives, negatives, tp, fp) < FOLD_MIN_DENOMINATOR for name in metrics):
+            raise GoalScoreRefusal("fold_below_min_denominator")
+        rates = _fold_rates(positives, negatives, tp, fp)
+        values.append(rates[objective.goal])
+        denominators.append(_fold_denominator(objective.goal, positives, negatives, tp, fp))
+        gaps = ((item.value - rates[item.metric]) if item.op == ">=" else (rates[item.metric] - item.value)
+                for item in objective.constraints)
+        shortfalls.append(float(sum(gap for gap in gaps if gap > 1e-12)))
+        rule_denominators.append(min((_fold_denominator(item.metric, positives, negatives, tp, fp)
+                                      for item in objective.constraints), default=None))
+    return GoalFoldScores(goal=objective.goal, index=index, threshold=float(curve.thresholds[index]),
+                          feasible=solved["status"] == "optimal", fold_counts=counts, values=tuple(values),
+                          denominators=tuple(denominators), shortfalls=tuple(shortfalls),
+                          rule_denominators=tuple(rule_denominators))
+
+
 def pareto_indices(curve: Curve, cost: tuple[float, float] | None = None) -> list[int]:
     """Thresholds no other one beats on precision and recall (and expected cost, when a
     cost matrix applies) without being worse on one; identical points keep one
@@ -354,15 +442,16 @@ def constraint_report(curve: Curve, index: int, constraints: tuple[MetricConstra
     return report
 
 
-def solve_lock(curve: Curve, objective: Objective | None, primary_metric: str | None) -> float:
+def solve_lock(curve: Curve, objective: Objective | None, primary_metric: str | None,
+               goal_metric: str | None = None) -> float:
     """The threshold ``select_decision_threshold`` locks for this objective, re-solved on
     the stored curve (same goal, same constraints, same search)."""
 
     objective = objective or Objective()
     tunable = [item for item in objective.constraints if item.metric in THRESHOLD_METRICS]
-    if not (tunable or objective.has_cost_matrix or primary_metric in THRESHOLD_METRICS):
+    if not (tunable or objective.has_cost_matrix or primary_metric in THRESHOLD_METRICS or goal_metric):
         return DEFAULT_THRESHOLD
     rates = curve.rates()
-    goal, _metric, _source, _cost = lock_goal(rates, objective, primary_metric)
+    goal, _metric, _source, _cost = lock_goal(rates, objective, primary_metric, goal_metric)
     index, _feasible, _shortfall = select_index(curve.thresholds, rates, tunable, goal)
     return float(curve.thresholds[index])

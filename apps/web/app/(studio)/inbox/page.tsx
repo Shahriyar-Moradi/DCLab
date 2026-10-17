@@ -22,7 +22,7 @@ function TabBody({ tab, onDone }: { tab: InboxTabId; onDone: (text: string) => v
       {inbox.isError ? <QueryNotice error={inbox.error} what="inbox" /> : null}
       {inbox.isPending ? <p role="status">Loading the inbox…</p> : null}
       {inbox.data && !canDecide && items.some((item) => item.actions.length > 0) ? (
-        <Banner tone="info">You can read everything here but not decide: your role cannot write ML work in this workspace. Buttons are disabled and say why.</Banner>
+        <Banner tone="info">You can read everything here but not decide: your role cannot change ML work in this workspace. Buttons are disabled and say why.</Banner>
       ) : null}
       {inbox.data && items.length === 0 ? <div className="empty" role="note"><p>{meta.empty}</p></div> : null}
       <div style={{ display: "grid", gap: 16 }}>
@@ -42,12 +42,12 @@ export default function InboxPage() {
   const waiting = counts.data?.needs_decision ?? 0;
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Inbox" subtitle="Decisions and questions that wait for a person, across every project." actions={<Link className="btn" href="/home">Home</Link>} />
+      <PageHead eyebrow="Workspace" title="Inbox" subtitle="What waits for you, what was applied automatically, and what is finished, across every project." actions={<Link className="btn" href="/home">Home</Link>} />
       <PageGuide
-        purpose="One place for everything that needs your answer: suggested decisions, suggestions from the assistant, and runs that ask a question."
-        howTo={<>Read the evidence, compare the <Term definition="The deterministic rule's answer. It is always computed, with or without AI.">rule answer</Term> with the AI answer, then Approve or Reject with a reason. The decision is recorded and the item moves to Done.</>}
-        youGet="Three lists: needs a decision, applied automatically, and done. Nothing is changed by opening this page."
-        attention={waiting ? `${waiting} item${waiting === 1 ? " is" : "s are"} waiting for a decision.` : undefined}
+        purpose="One place for everything that needs your answer: decisions suggested by the rules, the assistant, connected tools or people, runs that ask you a question, and drift alerts on the model in use."
+        howTo={<>Read the evidence and compare <Term definition="The answer the fixed rules give. It is always worked out, with or without AI.">what the rules say</Term> with what the AI says, then Approve or Reject with a reason. The decision is recorded in History and the item moves to Done.</>}
+        youGet="Three lists: Needs your decision, Applied automatically, and Done. Nothing changes by opening this page."
+        attention={waiting ? `${waiting} item${waiting === 1 ? " is" : "s are"} waiting for your decision.` : undefined}
       />
       <div role="status" aria-live="polite">{message ? <Banner tone="info">{message}</Banner> : null}</div>
       <Tabs

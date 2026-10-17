@@ -1,0 +1,29 @@
+{
+  "case": "budget_exhausted",
+  "exchanges": [
+    {
+      "events": [
+        {
+          "event": "turn_started"
+        },
+        {
+          "event": "budget_exhausted",
+          "scope": "workspace"
+        },
+        {
+          "error_code": "budget_exhausted",
+          "event": "turn_done",
+          "proposals": 0,
+          "status": "over_budget"
+        }
+      ],
+      "request": {
+        "text": "Explain the best run."
+      },
+      "status": 200
+    }
+  ],
+  "ledger_rows": 0,
+  "model_calls": 0,
+  "proposals": []
+}

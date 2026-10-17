@@ -99,14 +99,18 @@ def test_catalog_is_the_mcp_tool_set_with_get_impact():
     tools = catalog()
     reads = {name for name, item in tools.items() if item.effect == "read"}
     writes = {name for name, item in tools.items() if item.effect == "proposal"}
-    assert len(tools) == 23 and len(reads) == 16 and len(writes) == 7 and "get_impact" in reads
+    assert len(tools) == 28 and len(reads) == 20 and len(writes) == 8 and "get_impact" in reads
     assert writes == {"create_problem_spec", "propose_problem_spec", "run_experiment", "branch_experiment",
-                      "predict", "record_decision", "request_agent_review"}
+                      "predict", "record_decision", "request_agent_review", "improve"}  # P5.4-A3: improve
+    assert "get_improve_run" in reads
     assert {item.name for item in visible("mcp")} == set(tools)
     # P6.6-A: the assistant surface is unchanged (no accept, no proposal listing, no review request).
-    # P5.2-A: get_operating_points is MCP-only (the lead agent's released prompt lists its tools).
+    # P5.2-A: get_operating_points is MCP-only (the lead agent's released prompt lists its tools); so are
+    # P7.2-A list_releases, the weekly scoring get_scoring_schedule and P7.4-A get_monitoring.
     assert {item.name for item in visible("assistant")} == set(tools) - {
-        "accept_proposal", "list_proposals", "request_agent_review", "inspect_governance", "get_operating_points"}
+        "accept_proposal", "list_proposals", "request_agent_review", "inspect_governance", "get_operating_points",
+        "list_releases", "get_scoring_schedule", "get_monitoring",
+        "improve", "get_improve_run"}  # P5.4-A3: MCP (+ Studio forms) until A5-A releases a lead prompt listing them
     assert tools["accept_proposal"].surfaces == {"mcp"}  # a hand-off; the lead agent never gets it
     assert tools["list_proposals"].surfaces == {"mcp"} and "accept_proposal" not in {
         item.name for item in visible("studio_forms")}
@@ -317,9 +321,16 @@ def trained_project(client, db, st, tmp_path) -> SimpleNamespace:  # noqa: F811
                                               rationale="branch holds CV quality",
                                               evidence_refs=[{"kind": "experiment", "id": branch.id}])
     headers = {"Authorization": f"Bearer {create_access_token(st.admin)}", "X-Workspace-Id": str(st.alpha.id)}
+    # P5.4-A3: an improve loop on the root (queued; get_improve_run reads it).
+    from app.services.experiment_verdict_service import _selection
+    from app.services.improve.service import start_improve_run
+
+    root_id = UUID(str(root.id))
+    loop = start_improve_run(db, actor=st.admin, workspace_id=st.alpha.id, start_experiment_id=root_id,
+                             goal={"plain": {"metric": _selection(db, st.alpha.id, root_id).selection_metric}})
     return SimpleNamespace(project=str(project.id), dataset=str(dataset.id), root=str(root.id),
                            branch=str(branch.id), root_mv=str(root_mv), prediction=str(prediction.id),
-                           decision=str(decision.id), headers=headers)
+                           decision=str(decision.id), headers=headers, improve_run=str(loop.id))
 
 
 def _read_calls(t: SimpleNamespace) -> list[tuple[str, dict]]:
@@ -333,7 +344,9 @@ def _read_calls(t: SimpleNamespace) -> list[tuple[str, dict]]:
         ("get_model_card", {"model_version_id": t.root_mv}), ("get_prediction", {"prediction_id": t.prediction}),
         ("get_impact", {"kind": "experiment", "node_id": t.root}), ("accept_proposal", {"proposal_id": t.decision}),
         ("list_proposals", {"project_id": t.project}), ("inspect_governance", {}),
-        ("get_operating_points", {"experiment_id": t.root}),
+        ("get_operating_points", {"experiment_id": t.root}), ("list_releases", {"project_id": t.project}),
+        ("get_scoring_schedule", {"project_id": t.project}), ("get_monitoring", {"project_id": t.project}),
+        ("get_improve_run", {"improve_run_id": t.improve_run}),
     ]
 
 

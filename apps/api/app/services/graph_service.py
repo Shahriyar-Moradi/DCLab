@@ -20,10 +20,11 @@ from datetime import datetime
 from typing import Any, Iterable
 from uuid import UUID
 
-from sqlalchemy import and_, select, tuple_
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, exists, func, select, tuple_
+from sqlalchemy.orm import Session, aliased
 
 from app.db.models import (
+    Artifact,
     Dataset,
     Experiment,
     ExperimentCandidate,
@@ -36,6 +37,7 @@ from app.db.models import (
     User,
     WorkflowRun,
 )
+from app.domain.data_plane import DATASET_PURPOSE_TRAINING, DERIVED_DATASET_TYPE
 from app.domain.errors import (
     GraphNodeNotFoundError,
     IdentityError,
@@ -47,6 +49,7 @@ from app.domain.project_graph import (
     GraphNode,
     GraphNodeRef,
     GraphRef,
+    NewerDatasetRead,
     NodeImpactRead,
     ProjectGraphRead,
     StaleReason,
@@ -112,6 +115,7 @@ class _Graph:
     limit: int
     truncated_kinds: set[str]
     next_cursor: str | None
+    newer: tuple[UUID, UUID, datetime, int] | None = None  # (in use, newest, its created_at, count)
 
     @property
     def truncated(self) -> bool:
@@ -447,7 +451,32 @@ def _load_graph(
 
     # Never emit a dangling edge (capped kinds, cross-project parents).
     edges = list(dict.fromkeys(e for e in edges if e[0] in nodes and e[1] in nodes))
-    return _Graph(project, refs, nodes, edges, limit, truncated, next_cursor)
+    return _Graph(project, refs, nodes, edges, limit, truncated, next_cursor, newer_dataset(db, project, refs))
+
+
+def uploaded_file() -> Any:
+    """A file someone uploaded: a run's prepared table is a Dataset row too, never an upload."""
+
+    return ~exists().where(Artifact.id == Dataset.artifact_id, Artifact.workspace_id == Dataset.workspace_id,
+                           Artifact.artifact_type == DERIVED_DATASET_TYPE)
+
+
+def newer_dataset(db: Session, project: Project, refs: list[ProjectRef]) -> tuple[UUID, UUID, datetime, int] | None:
+    """10. Training uploads of the project newer than the `dataset` ref target (one statement, only with that ref)."""
+
+    in_use = next((ref.dataset_id for ref in refs if ref.ref_kind == "dataset" and ref.dataset_id), None)
+    if in_use is None:
+        return None
+    current = aliased(Dataset)
+    row = db.execute(
+        select(Dataset.id, Dataset.created_at, func.count().over())
+        .join(current, and_(current.workspace_id == Dataset.workspace_id, current.id == in_use))
+        .where(Dataset.workspace_id == project.workspace_id, Dataset.project_id == project.id,
+               Dataset.purpose == DATASET_PURPOSE_TRAINING, Dataset.id != in_use,
+               Dataset.created_at > current.created_at, uploaded_file())
+        .order_by(Dataset.created_at.desc(), Dataset.id.desc()).limit(1)
+    ).first()
+    return (in_use, row[0], row[1], int(row[2])) if row is not None else None
 
 
 # --- staleness and impact ---------------------------------------------------------
@@ -634,6 +663,10 @@ def _read(graph: _Graph) -> ProjectGraphRead:
         truncated=graph.truncated,
         truncated_kinds=sorted(graph.truncated_kinds),
         next_cursor=graph.next_cursor,
+        newer_dataset=NewerDatasetRead(
+            in_use=_node_ref(("dataset_version", graph.newer[0])), newest=_node_ref(("dataset_version", graph.newer[1])),
+            newest_created_at=graph.newer[2], count=graph.newer[3],
+        ) if graph.newer else None,
     )
 
 
@@ -651,7 +684,7 @@ def _load_project_graph(
     cursor: str | None = None,
     limit: int = GRAPH_EXPERIMENT_WINDOW,
 ) -> ProjectGraphRead:
-    """Project an already-authorized project (≤ 9 statements, ADR §6).
+    """Project an already-authorized project (≤ 10 statements, ADR §6; the 10th is the newer-file flag).
 
     Performs no authorization: callers (routes, MCP, agents) must obtain
     ``project`` through ``project_service.get_project`` first.

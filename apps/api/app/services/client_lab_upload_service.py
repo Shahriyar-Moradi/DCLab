@@ -6,6 +6,7 @@ docs/LABS_DATA_UNDERSTANDING.md.
 
 from __future__ import annotations
 
+import logging
 import mimetypes
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -31,9 +32,11 @@ from app.db.models import (
 from app.domain.client_lab import ClientLabUploadRead, TargetConfirmationRequired
 from app.domain.data_access import ACCESS_TYPE_UPLOAD, EXECUTION_MODE_COPY
 from app.domain.data_plane import DATASET_PURPOSE_TRAINING
+from app.domain.usage import QUOTA_COMPUTE_SECONDS_MONTH, QUOTA_RUNS_PER_DAY, QUOTA_STORAGE_BYTES
 from app.domain.errors import (
     IdentityError,
     OpenLabFileError,
+    QuotaExceededError,
     TargetIntentConflictError,
     TargetNotInDatasetError,
     UnknownLabCategoryError,
@@ -59,6 +62,7 @@ from app.domain.privacy_audit import (
 )
 from app.engine.data.loaders import infer_schema, load_table
 from app.engine.lab.open_ingest import OpenIngestError, OpenIngestPreview, preview_upload_path
+from app.services import upload_attempt_service as upload_attempts
 from app.services.artifact_service import artifact_object_key, record_artifact
 from app.services.authorization_service import can_perform_ml_write
 from app.services.auto_train_service import enqueue_auto_train
@@ -74,11 +78,15 @@ from app.services.ingestion_run_service import (
 )
 from app.services.lab_service import seed_dogfood
 from app.services.project_service import get_or_create_labs_project, get_project
+from app.services.upload_checks import run_upload_checks
 from app.services.upload_structure_scan import inspect_upload_structure
+from app.services.usage_service import ensure_within_quota
 from app.storage.base import ObjectPutResult
 from app.storage.factory import get_object_storage
 from app.storage.materialize import materialize_object, object_location_uri
 from app.translation.models import InsightCategory
+
+logger = logging.getLogger(__name__)
 
 SAVED_MESSAGE = (
     "We saved your file. Turning unstructured files into a usable table is not available yet."
@@ -127,8 +135,10 @@ def _persist_upload_dataset(
     size_bytes: int,
     location: str,
     purpose: str = DATASET_PURPOSE_TRAINING,
+    uploaded_by_service_token_id: UUID | None = None,
 ) -> Dataset:
-    """Persist the physical upload even when it is not yet training-ready."""
+    """Persist the physical upload even when it is not yet training-ready. A service token's
+    upload is attributed in the INSERT (dataset rows are immutable, never updated later)."""
 
     env = seed_dogfood(db, commit=False)
     from app.services.lineage_service import slugify
@@ -154,6 +164,13 @@ def _persist_upload_dataset(
         "column_count": len(fields),
     }
     schema_digest = schema_digest_from_columns(list(schema.get("columns") or []))
+    try:  # D3a: fast whole-file checks, stored with the (immutable) dataset row at INSERT
+        checks = run_upload_checks(frame)
+    except Exception as exc:  # noqa: BLE001 - checks never block an upload
+        logger.warning("upload checks skipped: %s", type(exc).__name__)
+        checks = None
+    if checks is not None:
+        schema = {**schema, "upload_checks": checks}
     dataset = Dataset(
         workspace_id=workspace_id,
         dataset_asset_id=asset.id,
@@ -172,6 +189,7 @@ def _persist_upload_dataset(
         row_count=preview.record_count,
         column_count=len(schema.get("columns") or fields),
         purpose=purpose,
+        uploaded_by_service_token_id=uploaded_by_service_token_id,
     )
     db.add(dataset)
     db.flush()
@@ -327,6 +345,22 @@ class IngestedUpload:
     dataset: Dataset
 
 
+def _payload_size(payload: bytes | BinaryIO) -> int:
+    """Bytes still to read when cheaply known (bytes, or a seekable stream); else 0."""
+
+    if isinstance(payload, (bytes, bytearray)):
+        return len(payload)
+    try:
+        if not payload.seekable():
+            return 0
+        position = payload.tell()
+        end = payload.seek(0, 2)
+        payload.seek(position)
+        return max(int(end) - int(position), 0)
+    except (AttributeError, OSError, ValueError):
+        return 0
+
+
 @contextmanager
 def _staged_upload(
     db: Session,
@@ -342,6 +376,9 @@ def _staged_upload(
     (ADR 0005 §2, §8): nothing is retained for a rejected or failed upload.
     """
 
+    # P8.4-A: a workspace at (or, with this file, past) its storage limit stores nothing more
+    # (429 quota_exceeded, before any byte is written).
+    ensure_within_quota(db, workspace_id, QUOTA_STORAGE_BYTES, requested=_payload_size(payload))
     storage = get_object_storage()
     artifact_id = uuid4()
     object_key = artifact_object_key(workspace_id, artifact_id, filename)
@@ -377,6 +414,7 @@ def _ingest_and_publish(
     project_id: UUID,
     filename: str,
     purpose: str = DATASET_PURPOSE_TRAINING,
+    uploaded_by_service_token_id: UUID | None = None,
 ) -> IngestedUpload:
     """The one upload ingestion path: artifact → source → access → ingestion run →
     dataset → ADR 0005 publication. The caller owns commit."""
@@ -444,6 +482,7 @@ def _ingest_and_publish(
         size_bytes=put.size_bytes,
         location=staged.location,
         purpose=purpose,
+        uploaded_by_service_token_id=uploaded_by_service_token_id,
     )
     complete_ingestion_run(
         db,
@@ -521,8 +560,12 @@ def ingest_dataset(
     declared_mime: str | None = None,
     before_commit: Callable[[Dataset], None] | None = None,
     purpose: str = DATASET_PURPOSE_TRAINING,
+    uploaded_by_service_token_id: UUID | None = None,
 ) -> IngestedUpload:
     """``POST /v1/datasets``: the Labs ingestion path without the Labs run.
+
+    ``uploaded_by_service_token_id``: the authenticated service token of the request (None for a
+    signed-in person); recorded on the dataset so weekly scoring can ignore connected-tool uploads.
 
     Same storage, structural validation, lineage and ADR 0005 publication as
     ``save_upload``, but no ClientLabUpload, workflow/pipeline run, execution
@@ -536,24 +579,32 @@ def ingest_dataset(
     project = get_project(db, actor=user, workspace_id=workspace_id, project_id=project_id)
     if not can_perform_ml_write(db, user, workspace_id):
         raise IdentityError("uploading a dataset requires an ML-write workspace role", status_code=403)
-    with _staged_upload(
-        db,
-        workspace_id=workspace_id,
-        filename=filename,
-        payload=upload_stream,
-        declared_mime=declared_mime,
-    ) as staged:
-        ingested = _ingest_and_publish(
-            db, staged, user=user, workspace_id=workspace_id, project_id=project.id, filename=filename,
-            purpose=purpose,
-        )
-        _append_ingest_event(
-            db, staged, ingested, user=user, workspace_id=workspace_id, filename=filename
-        )
-        db.flush()
-        if before_commit is not None:
-            before_commit(ingested.dataset)
-        db.commit()
+    attempt = {"workspace_id": workspace_id, "project_id": project.id, "user": user, "file_name": filename,
+               "service_token_id": uploaded_by_service_token_id, "source": "v1_api"}
+    size = _payload_size(upload_stream)
+    try:
+        with _staged_upload(
+            db,
+            workspace_id=workspace_id,
+            filename=filename,
+            payload=upload_stream,
+            declared_mime=declared_mime,
+        ) as staged:
+            ingested = _ingest_and_publish(
+                db, staged, user=user, workspace_id=workspace_id, project_id=project.id, filename=filename,
+                purpose=purpose, uploaded_by_service_token_id=uploaded_by_service_token_id,
+            )
+            _append_ingest_event(
+                db, staged, ingested, user=user, workspace_id=workspace_id, filename=filename
+            )
+            upload_attempts.record_accepted(db, **attempt, size_bytes=staged.put.size_bytes,
+                                            dataset_id=ingested.dataset.id)
+            if before_commit is not None:
+                before_commit(ingested.dataset)
+            db.commit()
+    except (OpenLabFileError, QuotaExceededError) as exc:  # D3a: the refusal is logged (metadata only)
+        upload_attempts.record_rejected(db, **attempt, size_bytes=size, reason_code=upload_attempts.reason_for(exc))
+        raise
     return ingested
 
 
@@ -573,6 +624,12 @@ def save_upload(
     origin: dict[str, str] | None = None,
 ) -> ClientLabUploadRead:
     parsed_category = _parse_category(category)
+    if (project_id is not None or problem_spec_id is not None) and not can_perform_ml_write(
+        db, user, workspace_id
+    ):
+        # The legacy /app gate lets a client_user upload into its own Labs project only; choosing
+        # a shared project or problem spec writes the shared ML core.
+        raise IdentityError("choosing a project or problem spec requires an ML-write workspace role", status_code=403)
     if data is None and upload_stream is None:
         raise ValueError("data or upload_stream is required")
     if data is not None and upload_stream is not None:
@@ -581,6 +638,31 @@ def save_upload(
     filename = filename or "upload"
     payload = data if data is not None else upload_stream
     assert payload is not None
+    # P8.4-A cheap early refusal (no lock) before the file is written and scanned; the locked
+    # ensure_run_capacity below decides.
+    ensure_within_quota(db, workspace_id, QUOTA_RUNS_PER_DAY, requested=1, lock=False)
+    ensure_within_quota(db, workspace_id, QUOTA_COMPUTE_SECONDS_MONTH)
+    size = _payload_size(payload)
+    try:
+        return _save_staged_upload(
+            db, user=user, parsed_category=parsed_category, filename=filename, payload=payload,
+            declared_mime=declared_mime, target_column=target_column, workspace_id=workspace_id,
+            project_id=project_id, problem_spec_id=problem_spec_id, origin=origin, size=size,
+        )
+    except (OpenLabFileError, QuotaExceededError) as exc:  # D3a: the refusal is logged (metadata only)
+        upload_attempts.record_rejected(
+            db, workspace_id=workspace_id, project_id=project_id or upload_attempts.labs_project_id(db, workspace_id),
+            user=user, service_token_id=None, file_name=filename, size_bytes=size,
+            reason_code=upload_attempts.reason_for(exc), source="labs",
+        )
+        raise
+
+
+def _save_staged_upload(
+    db: Session, *, user: User, parsed_category: InsightCategory, filename: str, payload: bytes | BinaryIO,
+    declared_mime: str | None, target_column: str | None, workspace_id: UUID, project_id: UUID | None,
+    problem_spec_id: UUID | None, origin: dict[str, str] | None, size: int,
+) -> ClientLabUploadRead:
     with _staged_upload(
         db,
         workspace_id=workspace_id,
@@ -613,6 +695,9 @@ def save_upload(
             db, staged, user=user, workspace_id=workspace_id, project_id=project.id, filename=filename
         )
         dataset, ingestion = ingested.dataset, ingested.ingestion
+        upload_attempts.record_accepted(db, workspace_id=workspace_id, project_id=project.id, user=user,
+                                        service_token_id=None, file_name=filename, size_bytes=staged.put.size_bytes,
+                                        dataset_id=dataset.id, source="labs")
         from app.services.problem_spec_service import populate_unlocked_problem_spec_target
         from app.services.target_intent_service import (
             dataset_schema_column_names,
@@ -697,7 +782,7 @@ def save_upload(
         from app.services.execution_request_service import (
             attach_legacy_labs_model_build_request,
         )
-        from app.services.ml_job_service import create_auto_train_job
+        from app.services.ml_job_service import create_auto_train_job, ensure_run_capacity
 
         request = attach_legacy_labs_model_build_request(
             db,
@@ -720,6 +805,9 @@ def save_upload(
             execution_request_id=request.id,
         )
         db.flush()
+        # The same admission check as POST /v1/experiments (active runs + P8.4-A plan limits);
+        # refused: everything rolls back and the stored file is deleted.
+        ensure_run_capacity(db, workspace_id)
         create_auto_train_job(
             db,
             workspace_id=workspace_id,

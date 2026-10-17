@@ -11,6 +11,8 @@ export type ShellProps = {
   currentHref?: string;
   workspace?: { name: string; detail?: string };
   user?: { name: string; detail?: string };
+  /** Sign out (shown under the account; also on the narrow-screen strip). Omit in previews. */
+  onSignOut?: () => void;
   /** Top bar: breadcrumbs, command bar and right-side slot. */
   crumbs?: ReactNode;
   commandBar?: ReactNode;
@@ -30,8 +32,8 @@ export type ShellProps = {
   children: ReactNode;
 };
 
-/** Sidebar (264 px) plus sticky glass top bar. Landmarks: nav, header, main (div in embedded mode). */
-export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, topbarRight, steps, guide, assistant, theme, embedded, mainId = "main", badges, children }: ShellProps) {
+/** Sidebar (264 px; a sticky horizontal strip at 860 px and below) plus a glass top bar. Landmarks: nav, header, main (div in embedded mode). */
+export function Shell({ nav, currentHref, workspace, user, onSignOut, crumbs, commandBar, topbarRight, steps, guide, assistant, theme, embedded, mainId = "main", badges, children }: ShellProps) {
   const Aside = embedded ? "div" : "aside";
   const Side = embedded ? "div" : "nav";
   const Top = embedded ? "div" : "header";
@@ -49,7 +51,7 @@ export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, t
             {workspace.detail ? <small>{workspace.detail}</small> : null}
           </div>
         ) : null}
-        <Side aria-label={embedded ? undefined : "Studio"} style={{ display: "grid", gap: 22 }}>
+        <Side className="nav-groups" aria-label={embedded ? undefined : "Studio"}>
           {nav.map((group) => (
             <div className="nav-group" key={group.id}>
               <div className="nav-label">{group.label}</div>
@@ -67,8 +69,8 @@ export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, t
                     <span>{item.label}</span>
                     {item.available ? null : (
                       <span className="cnt" style={{ whiteSpace: "nowrap" }}>
-                        <span className="sr-only">Planned in </span>
-                        {item.phase}
+                        {/* The plan's internal id stays in sidebar-config.ts; people read a plain word. */}
+                        Planned
                       </span>
                     )}
                   </span>
@@ -83,6 +85,7 @@ export function Shell({ nav, currentHref, workspace, user, crumbs, commandBar, t
             {user.detail ? <small>{user.detail}</small> : null}
           </div>
         ) : null}
+        {onSignOut ? <button type="button" className="nav-signout" onClick={onSignOut}>Sign out</button> : null}
       </Aside>
       <div className="main">
         <Top className="topbar">

@@ -392,6 +392,12 @@ def _review_proposals(db: Session, resolution: PointResolution, *, workspace_id:
         db.add(row)
         db.flush()
         out[answer.question_key] = row.id
+        if row.status == "proposed":  # P8.8-A: one "decision waiting" per run and point; never raises
+            from app.services.notification_service import notify_decision_needed
+
+            notify_decision_needed(db, workspace_id=workspace_id, project_id=project_id, subject_kind="experiment",
+                                   subject_id=experiment_id,
+                                   dedupe_key=f"decision:review:{experiment_id}:{resolution.key}"[:200])
     return out
 
 

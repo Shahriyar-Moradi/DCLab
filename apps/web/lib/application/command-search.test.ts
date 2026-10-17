@@ -42,6 +42,7 @@ test("search covers projects, experiments, models and decisions with safe projec
 
 test("names stay plain text and hostile ids never become hrefs", () => {
   assert.equal(plainText("a\u0000b\nc\u2028d"), "a b c d");
+  assert.equal(plainText("a\u202ebc\u2066d\u2069e\u202ax"), "a bc d e x"); // text-direction controls are removed
   assert.equal(plainText("x".repeat(200)).length, 120);
   for (const bad of ["javascript:alert(1)", "//evil.example", "../admin", `${P1}/../x`, ""]) {
     assert.equal(projectHref(bad, "experiments"), null, bad);
@@ -105,16 +106,20 @@ test("Studio sidebar: project pages only inside a project and only with a backen
   assert.deepEqual(studioNavigationForUser({ capabilities: { application_access: true } }), []);
   assert.equal(studioRoleForUser({ capabilities: { platform_read: true, development_access: true } }), "admin");
   const outside = studioNavigationForUser(developer);
-  assert.deepEqual(outside.map((g) => g.id), ["workspace", "admin"]);
+  assert.deepEqual(outside.map((g) => g.id), ["workspace", "admin", "help"]);
   assert.deepEqual(outside[0]!.items.map((i) => i.href), ["/home", "/inbox", "/projects"]);
-  assert.deepEqual(outside[1]!.items.map((i) => i.href), ["/agents"]);
+  assert.deepEqual(outside[1]!.items.map((i) => i.href), ["/settings", "/governance", "/agents"]);
   const inside = studioNavigationForUser(developer, P1).find((g) => g.id === "project")!;
-  assert.deepEqual(inside.items.map((i) => i.id), ["data", "experiments", "models", "decisions"]);
+  // V7 UI-C: Goal is always listed (the project-level Goal page until a test design exists); Predictions needs a model.
+  assert.deepEqual(inside.items.map((i) => i.id), ["data", "goal", "experiments", "improve", "models", "monitoring", "decisions", "questions"]);
+  assert.equal(inside.items.find((i) => i.id === "goal")?.href, `/projects/${P1}/goal`);
   const T = "44444444-4444-4444-8444-444444444444";
   const withTargets = studioNavigationForUser(developer, P1, { split_plan: T, project_model: T }).find((g) => g.id === "project")!;
-  assert.deepEqual(withTargets.items.map((i) => i.id), ["data", "goal", "experiments", "models", "predictions", "decisions"]);
+  assert.deepEqual(withTargets.items.map((i) => i.id), ["data", "goal", "experiments", "improve", "models", "predictions", "monitoring", "decisions", "questions"]);
   assert.ok(inside.items.every((i) => i.href.startsWith(`/projects/${P1}/`)));
-  for (const hidden of ["lab", "improve", "monitoring"] as const) assert.equal(STUDIO_BACKEND_FEATURES[hidden], false);
-  assert.equal(STUDIO_BACKEND_FEATURES.assistant, false);
-  assert.deepEqual(studioNavigationForUser(developer, "../../evil?x=1").map((g) => g.id), ["workspace", "admin"]);
+  assert.equal(STUDIO_BACKEND_FEATURES.lab, false);
+  assert.equal(STUDIO_BACKEND_FEATURES.monitoring, true);
+  assert.equal(STUDIO_BACKEND_FEATURES.improve, true);
+  assert.equal(STUDIO_BACKEND_FEATURES.assistant, true); // D6b: the panel exists; its toggle is gated per workspace at run time (assistantGate)
+  assert.deepEqual(studioNavigationForUser(developer, "../../evil?x=1").map((g) => g.id), ["workspace", "admin", "help"]);
 });

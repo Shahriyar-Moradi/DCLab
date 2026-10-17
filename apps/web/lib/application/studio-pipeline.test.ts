@@ -166,7 +166,7 @@ test("replay results in plain words and typed errors", () => {
   assert.match(replayErrorText(err(429, "rate_limited")).title, /Too many/);
   assert.match(replayErrorText(err(504, "replay_timeout")).title, /timed out/);
   assert.match(replayErrorText(err(403, "forbidden")).title, /cannot replay/);
-  assert.match(replayErrorText(new Error("boom")).detail, /boom/);
+  assert.doesNotMatch(replayErrorText(new Error("boom")).detail, /boom/);
 });
 
 test("downloads only for artifact types that carry no holdout rows or pickles", () => {

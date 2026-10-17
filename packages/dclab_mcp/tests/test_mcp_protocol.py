@@ -27,9 +27,13 @@ TOKEN = "dclab_st_" + "a" * 32 + "_" + "B" * 43
 READ_TOOLS = {"inspect_project", "inspect_dataset", "get_experiment", "compare_experiments", "get_experiment_code",
               "get_evidence", "get_findings", "list_decisions", "get_model", "get_model_card", "get_prediction",
               "get_impact", "accept_proposal", "list_proposals", "inspect_governance",
-              "get_operating_points"}  # P5.2-A
+              "get_operating_points",  # P5.2-A
+              "list_releases",  # P7.2-A
+              "get_scoring_schedule",  # weekly scoring
+              "get_monitoring",  # P7.4-A
+              "get_improve_run"}  # P5.4-A3
 WRITE_TOOLS = {"create_problem_spec", "propose_problem_spec", "run_experiment", "branch_experiment",
-               "predict", "record_decision", "request_agent_review"}
+               "predict", "record_decision", "request_agent_review", "improve"}
 PACKAGES = Path(__file__).resolve().parents[2]
 DEAD_API = "http://127.0.0.1:9"  # nothing listens: any /v1 call is a network error
 
@@ -279,3 +283,14 @@ def test_get_model_card_is_holdout_blind_and_wraps_user_text():
     assert card["cv"]["mean"] == 0.81 and card["baseline"]["beats_baseline"] is True
     invalid = _call_with(handler, "get_model_card", {"model_version_id": "../x"})
     assert invalid.is_error and len(seen) == 1
+
+
+def test_help_and_version_answer_without_config_or_starting_the_server(capsys, monkeypatch):
+    from dclab_mcp import __version__
+    from dclab_mcp.server import main
+
+    monkeypatch.setattr("dclab_mcp.server.build_server", lambda *_: pytest.fail("server must not start"))
+    assert main(["--help"]) == 0
+    assert "usage: dclab-mcp" in capsys.readouterr().out
+    assert main(["--version"]) == 0
+    assert capsys.readouterr().out.strip() == f"dclab-mcp {__version__}"

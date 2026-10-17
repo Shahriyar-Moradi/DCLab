@@ -2,6 +2,7 @@
  "ids": {
   "branch": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
   "decision": "a0ff9dca-afe0-41d4-b032-0a77c0789cf8",
+  "improve_run": "5e1f0c2a-4b7d-4c1e-9a3f-2d6b8e0f1a77",
   "model_version": "4810b254-866c-42a9-b41d-045c9749aa83",
   "project": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
   "root": "59c35e71-34a0-462b-996e-abc42cb4842a"
@@ -18,6 +19,11 @@
     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
     "purpose": "scoring",
     "row_count": 30,
+    "uploaded_by": "person",
+    "uploader": {
+     "is_you": true,
+     "kind": "person"
+    },
     "version": "v1",
     "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
    },
@@ -31,6 +37,11 @@
     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
     "purpose": "training",
     "row_count": 240,
+    "uploaded_by": "person",
+    "uploader": {
+     "is_you": true,
+     "kind": "person"
+    },
     "version": "v1",
     "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
    },
@@ -44,6 +55,11 @@
     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
     "purpose": "training",
     "row_count": 240,
+    "uploaded_by": "person",
+    "uploader": {
+     "is_you": true,
+     "kind": "person"
+    },
     "version": "v1",
     "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
    },
@@ -57,6 +73,11 @@
     "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
     "purpose": "training",
     "row_count": 240,
+    "uploaded_by": "person",
+    "uploader": {
+     "is_you": true,
+     "kind": "person"
+    },
     "version": "v1",
     "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
    }
@@ -83,6 +104,11 @@
    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
    "purpose": "training",
    "row_count": 240,
+   "uploaded_by": "person",
+   "uploader": {
+    "is_you": true,
+    "kind": "person"
+   },
    "version": "v1",
    "workspace_id": "7c8e5349-cdc1-4b0b-9e7f-5558c97b65e5"
   },
@@ -2420,6 +2446,130 @@
    },
    "workspace_id": "5d1c3f0e-8a2b-4c6d-9e1f-0a1b2c3d4e5f"
   },
+  "GET /v1/improve-runs/5e1f0c2a-4b7d-4c1e-9a3f-2d6b8e0f1a77": {
+   "accepted_by_user_id": null,
+   "accepted_iteration_seq": null,
+   "actions": {
+    "accept": false,
+    "cancel": false,
+    "keep_current": false
+   },
+   "ai": "off",
+   "budget": {
+    "comparison_bound": 30,
+    "max_iterations": 6,
+    "max_llm_micros": 2000000,
+    "max_training_seconds_total": 1200.0,
+    "max_wall_seconds": 7200,
+    "patience": 3
+   },
+   "cancel_requested_at": null,
+   "created_at": "2026-10-05T04:53:26.410599+04:00",
+   "created_by_user_id": null,
+   "final_attempts": 0,
+   "final_experiment_id": null,
+   "finished_at": "2026-10-05T04:53:26.410599+04:00",
+   "goal": {
+    "plain": {
+     "metric": "roc_auc"
+    }
+   },
+   "id": "5e1f0c2a-4b7d-4c1e-9a3f-2d6b8e0f1a77",
+   "incumbent_experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+   "iterations": [
+    {
+     "action": {
+      "family": "extra_trees",
+      "kind": "family_include"
+     },
+     "agent": "off",
+     "comparison": {
+      "basis": "locked_cv_fold_evaluations",
+      "comparisons": 3,
+      "fold_scores": [
+       {
+        "difference": 0.01,
+        "fold_number": 1,
+        "incumbent": 0.801,
+        "probe": 0.811
+       },
+       {
+        "difference": 0.01,
+        "fold_number": 2,
+        "incumbent": 0.802,
+        "probe": 0.812
+       },
+       {
+        "difference": 0.01,
+        "fold_number": 3,
+        "incumbent": 0.803,
+        "probe": 0.8130000000000001
+       },
+       {
+        "difference": 0.01,
+        "fold_number": 4,
+        "incumbent": 0.804,
+        "probe": 0.8140000000000001
+       },
+       {
+        "difference": 0.01,
+        "fold_number": 5,
+        "incumbent": 0.805,
+        "probe": 0.8150000000000001
+       }
+      ],
+      "folds": 5,
+      "goal_metric": "roc_auc",
+      "margin": 0.0402,
+      "mean_difference": 0.0123,
+      "reason": "inside_margin",
+      "se_nb": 0.0081,
+      "status": "rejected",
+      "version": "dclab.improve_comparison.v1"
+     },
+     "created_at": "2026-10-05T04:53:26.410599+04:00",
+     "experiment_id": "1aa95c9b-e3be-4547-9f1b-b03da5467571",
+     "finished_at": "2026-10-05T04:53:26.410599+04:00",
+     "incumbent_experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+     "kind": "family_include",
+     "planned_candidate_ids": [
+      "extra_trees",
+      "extra_trees__balanced",
+      "extra_trees__class_weight"
+     ],
+     "planned_new_candidates": 3,
+     "reason": "inside_margin",
+     "seq": 0,
+     "status": "rejected",
+     "training_seconds": 41.5
+    }
+   ],
+   "llm_micros_spent": 0,
+   "looks_before": 1,
+   "outcome": "kept_current",
+   "plan": [
+    {
+     "family": "extra_trees",
+     "index": 1,
+     "k": 3,
+     "kind": "family_include"
+    }
+   ],
+   "planned_comparisons": 3,
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "sealed_set_consulted": false,
+   "sealed_set_label": "reported_before",
+   "split_plan_id": "be649d46-2229-4587-8c3a-0a9d4819469a",
+   "start_experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a",
+   "started_at": "2026-10-05T04:53:26.410599+04:00",
+   "started_by": "service_token",
+   "status": "completed",
+   "stop_detail": null,
+   "stop_reason": "no_improvement",
+   "training_seconds_spent": 41.5,
+   "validation_folds": 5,
+   "waiting_user_expires_at": null
+  },
   "GET /v1/model-builds/1aa95c9b-e3be-4547-9f1b-b03da5467571": {
    "compatibility_fallback_used": false,
    "generator_version": "dclab.model_build_reproduction.v2",
@@ -4349,6 +4499,162 @@
    "truncated": false,
    "truncated_kinds": []
   },
+  "GET /v1/projects/04ff56bd-dbc8-4286-88f3-aad5cf1ad8da/monitoring": {
+   "enabled": true,
+   "finding": {
+    "body": "Inputs look different from training: plan (PSI 0.31), visits (PSI 0.22). Drift means the inputs look different from training; it does not mean the model is wrong. Nothing was retrained or switched; check whether the data source or the population scored has changed before acting.",
+    "code": "inputs_look_different",
+    "severity": "alert",
+    "title": "Inputs look different from training: plan, visits"
+   },
+   "latest": {
+    "computed_at": "2026-10-19T09:05:11Z",
+    "coverage": 0.3417,
+    "max_psi": 0.3127,
+    "model_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+    "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+    "n_batch_predictions": 2,
+    "n_labelled": 410,
+    "n_rows": 1200,
+    "outcome_metric": "roc_auc",
+    "outcome_metric_value": 0.7712,
+    "outcomes_status": "measured",
+    "prediction_psi": 0.0841,
+    "revision": 2,
+    "status": "alert",
+    "summary": "Inputs look different from training: plan (PSI 0.31), visits (PSI 0.22). Drift means the inputs look different from training; it does not mean the model is wrong.",
+    "summary_code": "inputs_moved",
+    "window_end": "2026-10-19T00:00:00Z",
+    "window_start": "2026-10-12T00:00:00Z"
+   },
+   "model_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+   "model_version": "v1",
+   "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+   "notes": [
+    "Drift means the inputs look different from training; it does not mean the model is wrong."
+   ],
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "status": "alert",
+   "thresholds": {
+    "flagged_share_absolute_watch": 0.02,
+    "flagged_share_relative_watch": 0.3,
+    "min_labels": 100,
+    "min_per_class": 10,
+    "min_rows": 500,
+    "psi_alert": 0.2,
+    "psi_watch": 0.1,
+    "significance_level": 0.01
+   },
+   "windows": [
+    {
+     "computed_at": "2026-10-19T09:05:11Z",
+     "coverage": 0.3417,
+     "max_psi": 0.3127,
+     "model_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+     "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "n_batch_predictions": 2,
+     "n_labelled": 410,
+     "n_rows": 1200,
+     "outcome_metric": "roc_auc",
+     "outcome_metric_value": 0.7712,
+     "outcomes_status": "measured",
+     "prediction_psi": 0.0841,
+     "revision": 2,
+     "status": "alert",
+     "summary": "Inputs look different from training: plan (PSI 0.31), visits (PSI 0.22). Drift means the inputs look different from training; it does not mean the model is wrong.",
+     "summary_code": "inputs_moved",
+     "window_end": "2026-10-19T00:00:00Z",
+     "window_start": "2026-10-12T00:00:00Z"
+    },
+    {
+     "computed_at": "2026-10-12T09:04:02Z",
+     "coverage": null,
+     "max_psi": 0.0412,
+     "model_release_id": null,
+     "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "n_batch_predictions": 1,
+     "n_labelled": null,
+     "n_rows": 640,
+     "outcome_metric": null,
+     "outcome_metric_value": null,
+     "outcomes_status": "not_linked",
+     "prediction_psi": 0.0213,
+     "revision": 1,
+     "status": "ok",
+     "summary": "The 640 compared rows look like training (largest PSI 0.04, tenure).",
+     "summary_code": "stable",
+     "window_end": "2026-10-12T00:00:00Z",
+     "window_start": "2026-10-05T00:00:00Z"
+    }
+   ]
+  },
+  "GET /v1/projects/04ff56bd-dbc8-4286-88f3-aad5cf1ad8da/releases": {
+   "current_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+   "items": [
+    {
+     "approved_at": "2026-10-12T08:00:00Z",
+     "approved_by_user_id": null,
+     "decision_record_id": "c3a5e2a8-1b7d-4c55-8f3e-6a1d2b4e9f70",
+     "id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+     "is_current": true,
+     "model_version": "v1",
+     "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "package_manifest_digest": "baae802c9077c67a7e840209671de9e7b5a9afb315216366e1343e0fe00fe5e5",
+     "previous_release_id": null,
+     "rationale": "Best CV score on the current test design; approved for scoring.",
+     "saved_format": "package_v1"
+    }
+   ],
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+  },
+  "GET /v1/projects/04ff56bd-dbc8-4286-88f3-aad5cf1ad8da/scoring-schedule": {
+   "about": "Every week on the chosen day and hour (UTC) DCLab scores the newest file you uploaded for scoring since the last run, with the model in use approved for scoring.",
+   "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da",
+   "recent_runs": [
+    {
+     "batch_prediction_id": null,
+     "created_at": "2026-10-19T09:00:04Z",
+     "id": "5b0e3c1a-7f2d-4e8b-9c61-2d4f8a1b3e90",
+     "input_dataset_id": null,
+     "message": "Nothing scored: no new file was uploaded for scoring since the last run.",
+     "model_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+     "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "outcome": "skipped_no_new_file",
+     "planned_for": "2026-10-19T09:00:00Z",
+     "reason_code": null
+    },
+    {
+     "batch_prediction_id": "84886b60-18ba-40a1-a73b-e9849ee76c8e",
+     "created_at": "2026-10-12T09:00:03Z",
+     "id": "8c2d4e6f-1a3b-4c5d-8e7f-9a0b1c2d3e4f",
+     "input_dataset_id": "d2a3b364-b20e-4ba0-af89-fcb69fc23d8c",
+     "message": "Scored the newest file uploaded for scoring; the result is this week's list.",
+     "model_release_id": "7d1f1c52-3a52-4f0e-9a0e-2f4b6f2b9c11",
+     "model_version_id": "4810b254-866c-42a9-b41d-045c9749aa83",
+     "outcome": "queued",
+     "planned_for": "2026-10-12T09:00:00Z",
+     "reason_code": null
+    }
+   ],
+   "schedule": {
+    "created_at": "2026-10-10T07:30:00Z",
+    "created_by_user_id": null,
+    "enabled": true,
+    "hour_utc": 9,
+    "id": "3e9a1f2b-6c4d-4a8e-b7f0-1d2c3b4a5e6f",
+    "last_planned_for": "2026-10-19T09:00:00Z",
+    "next_planned_for": "2026-10-26T09:00:00Z",
+    "owner_can_score": true,
+    "timezone": "UTC",
+    "updated_at": "2026-10-10T07:30:00Z",
+    "updated_by_user_id": null,
+    "warning": null,
+    "weekday": 0,
+    "weekday_name": "Monday"
+   },
+   "status": "on",
+   "status_message": null
+  },
   "GET /v1/proposals": {
    "items": [
     {
@@ -4561,6 +4867,30 @@
     "experiment_id": "59c35e71-34a0-462b-996e-abc42cb4842a"
    },
    "tool": "get_operating_points"
+  },
+  {
+   "args": {
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+   },
+   "tool": "list_releases"
+  },
+  {
+   "args": {
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+   },
+   "tool": "get_scoring_schedule"
+  },
+  {
+   "args": {
+    "project_id": "04ff56bd-dbc8-4286-88f3-aad5cf1ad8da"
+   },
+   "tool": "get_monitoring"
+  },
+  {
+   "args": {
+    "improve_run_id": "5e1f0c2a-4b7d-4c1e-9a3f-2d6b8e0f1a77"
+   },
+   "tool": "get_improve_run"
   }
  ]
 }

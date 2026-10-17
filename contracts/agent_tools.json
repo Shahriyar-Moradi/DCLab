@@ -545,6 +545,48 @@
       ],
       "decision_point_cap": null,
       "decision_point_key": null,
+      "description": "One improve loop: status, outcome and stop reason, goal and budget, and every try (a sealed branch on the same folds) with its per-fold cross-validation verdict. Never a final-test value; only a person accepts a try, in DCLab Studio.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "improve_run_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Improve Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "improve_run_id"
+        ],
+        "title": "ImproveRunInput",
+        "type": "object"
+      },
+      "name": "get_improve_run",
+      "notes": [],
+      "operations": [
+        "GET /v1/improve-runs/{improve_run_id}",
+        "GET /v1/experiments/{experiment_id}"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.improve.service.improve_run_read",
+        "app.services.experiment_service.experiment_read"
+      ],
+      "surfaces": [
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
       "description": "Model version: locked winner CV metrics, champion flag, lineage, artifacts by id + digest; never final-holdout values.",
       "effect": "read",
       "input_schema": {
@@ -627,6 +669,46 @@
       ],
       "decision_point_cap": null,
       "decision_point_key": null,
+      "description": "Monitoring of a project's model in use, read-only and deterministic: the latest weekly status (ok / watch / alert / not_enough_data) and the last 12 weeks (Monday 00:00 UTC) with the largest input drift (PSI vs the training rows), score drift, rows scored and, once a person linked real outcomes, labelled rows, coverage and the primary metric on them; the project's thresholds in force (version, precision / recall floors) and the alert finding code. Drift means the inputs look different from training, not that the model is wrong; it never retrains or switches a model.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "project_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "MonitoringInput",
+        "type": "object"
+      },
+      "name": "get_monitoring",
+      "notes": [],
+      "operations": [
+        "GET /v1/projects/{project_id}/monitoring"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "aggregates",
+        "outcome_scope": "cv"
+      },
+      "services": [
+        "app.services.monitoring_service.monitoring_overview"
+      ],
+      "surfaces": [
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
       "description": "Operating points of a binary experiment, all from the locked winner's out-of-fold predictions: the threshold curve summary, up to 20 Pareto points over precision and recall (and expected cost) with 95% intervals and fold spread, the locked threshold and the chosen operating point with its reason. Never a final-evaluation value; choosing a point is a person's act in DCLab Studio.",
       "effect": "read",
       "input_schema": {
@@ -700,6 +782,110 @@
       "surfaces": [
         "assistant",
         "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "A project's weekly scoring schedule, read-only: on / off / paused by the platform, weekday and hour (UTC), next and last slot, whether the person it acts as can still score, and the newest handled weeks (queued with the week's prediction, or why nothing was scored). Only a person turns it on or off, in DCLab Studio.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "project_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "ScoringScheduleInput",
+        "type": "object"
+      },
+      "name": "get_scoring_schedule",
+      "notes": [],
+      "operations": [
+        "GET /v1/projects/{project_id}/scoring-schedule"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.scoring_schedule_service.schedule_state"
+      ],
+      "surfaces": [
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "experiments:write"
+      ],
+      "decision_point_cap": 1,
+      "decision_point_key": "lead.improve",
+      "description": "Start an improve loop on a completed run: a goal and a budget; each try is a sealed branch on the same folds (the final test set is not used), judged per fold against noise. It never accepts a try: only a person does, in DCLab Studio, and only then is the final test set scored once.",
+      "effect": "proposal",
+      "input_schema": {
+        "properties": {
+          "budget": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional lower limits: max_iterations (<= 6), max_wall_seconds (<= 7200), patience, comparison_bound.",
+            "title": "Budget"
+          },
+          "experiment_id": {
+            "description": "The completed, locked run to improve (its split plan and folds are reused).",
+            "format": "uuid",
+            "title": "Experiment Id",
+            "type": "string"
+          },
+          "goal": {
+            "additionalProperties": true,
+            "description": "{\"plain\": {\"metric\": <the run's primary metric>}} or {\"objective\": {\"maximize\": \"precision\", \"constraints\": [{\"metric\": \"recall\", \"op\": \">=\", \"value\": 0.6}]}}, optionally with a target.",
+            "title": "Goal",
+            "type": "object"
+          }
+        },
+        "required": [
+          "experiment_id",
+          "goal"
+        ],
+        "title": "ImproveInput",
+        "type": "object"
+      },
+      "name": "improve",
+      "notes": [
+        "A service token's budget is only lowered (at most 6 tries, 2 hours), 5 starts per hour, and no fresh split; the loop uses no AI."
+      ],
+      "operations": [
+        "POST /v1/improve-runs"
+      ],
+      "read_only": false,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.improve.service.start_improve_run"
+      ],
+      "surfaces": [
+        "mcp",
+        "studio_forms"
       ]
     },
     {
@@ -1029,6 +1215,46 @@
       "services": [
         "app.services.proposal_review_service.list_proposals",
         "app.services.graph_service.project_graph"
+      ],
+      "surfaces": [
+        "mcp"
+      ]
+    },
+    {
+      "capability": [
+        "read"
+      ],
+      "decision_point_cap": null,
+      "decision_point_key": null,
+      "description": "Approvals of a project's model in use (\"approved for scoring\"), newest first: model version, previous approval, when, saved format, package manifest digest, whether it is current, and the person's reason as untrusted text (never who). Read-only: only a person puts a model in use, in DCLab Studio.",
+      "effect": "read",
+      "input_schema": {
+        "properties": {
+          "project_id": {
+            "description": "Resource UUID.",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "ListReleasesInput",
+        "type": "object"
+      },
+      "name": "list_releases",
+      "notes": [],
+      "operations": [
+        "GET /v1/projects/{project_id}/releases"
+      ],
+      "read_only": true,
+      "result": {
+        "data_class": "metadata",
+        "outcome_scope": "none"
+      },
+      "services": [
+        "app.services.model_release_service.list_releases"
       ],
       "surfaces": [
         "mcp"

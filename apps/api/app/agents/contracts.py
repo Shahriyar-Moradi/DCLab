@@ -81,9 +81,10 @@ class ContextEnvelope(_Frozen):
 
 
 class TranscriptItem(_Frozen):
-    """A prior turn or tool result; its fields are redacted exactly like the envelope."""
+    """A prior turn or tool result; its fields are redacted exactly like the envelope.
+    ``page_context`` (D6a): the screen the user is on and the node ids it shows (system ids only)."""
 
-    kind: Literal["user_message", "assistant_message", "tool_result"]
+    kind: Literal["user_message", "assistant_message", "tool_result", "page_context"]
     tool_name: str | None = Field(default=None, pattern=KEY_PATTERN)
     fields: tuple[ContextField, ...] = Field(default=(), max_length=200)
 

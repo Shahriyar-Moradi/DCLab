@@ -1,5 +1,6 @@
 import { DataTable, type DataTableColumn } from "@/app/components/ui/DataTable";
 import { StatusBadge } from "@/app/components/ui/StatusBadge";
+import { roleLabelWithDetail } from "@/lib/application/role-labels";
 import type {
   PlatformMembership,
   PlatformModel,
@@ -174,7 +175,7 @@ export function MembershipTable({ rows }: { rows: PlatformMembership[] }) {
       columns={[
         { id: "email", header: "User", mono: true, cell: (row) => row.email },
         { id: "name", header: "Name", cell: (row) => nonempty(row.full_name) ?? "—" },
-        { id: "role", header: "Role", cell: (row) => row.role },
+        { id: "role", header: "Role", cell: (row) => roleLabelWithDetail(row.role) },
         { id: "status", header: "Status", cell: (row) => (row.is_active ? "Active" : "Disabled") },
       ]}
       rows={rows}

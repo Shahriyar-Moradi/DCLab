@@ -19,6 +19,7 @@ import { z } from "zod";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
+import { actionErrorSentence } from "@/lib/application/api-error-text";
 
 export default function DatasetDetailPage() {
   const params = useParams<{ id: string }>();
@@ -56,7 +57,7 @@ export default function DatasetDetailPage() {
       try {
         await train.mutateAsync(item.slug);
       } catch (error) {
-        setBatchMessage(error instanceof Error ? error.message : "Training failed.");
+        setBatchMessage(`Training failed. ${actionErrorSentence(error, "training")}`);
         setActiveSlug(null);
         return;
       }
@@ -153,7 +154,7 @@ export default function DatasetDetailPage() {
         </Button>
       </p>
       {!canWrite ? <p className="mt-3 text-body text-ink-muted">Read-only platform access. Training requires DCLab Admin.</p> : null}
-      {train.isError ? <p className="mt-3 text-body text-oxblood">{train.error.message}</p> : null}
+      {train.isError ? <p className="mt-3 text-body text-oxblood">{actionErrorSentence(train.error, "training")}</p> : null}
       {batchMessage ? <p className="mt-3 text-body text-ink">{batchMessage}</p> : null}
 
       <SectionHeader className="mt-10" title="Profile" />

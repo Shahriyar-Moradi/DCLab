@@ -376,7 +376,8 @@ async function saveDownloadedFile(
   document.body.appendChild(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Revoking in the same task can cancel the download in Chromium; the other download helpers wait too.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function useUploadLabFile(): ReturnType<

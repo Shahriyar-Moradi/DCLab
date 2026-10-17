@@ -8,11 +8,12 @@ from pydantic import BaseModel, ConfigDict
 
 from app.db.models import Experiment
 from app.domain.lab_run_stages import SPLITTING
+from app.domain.pipeline_run_branch import ServiceOverrides
 from app.engine.modeling.holdout_planner import HoldoutPlan
 from app.engine.modeling.leakage_auditor import ModelDevelopmentPlan
 from app.engine.models.registry import available_families
 from app.services.auto_train.context import RunContext, StageHalt, service_module
-from app.services.lab_service import execute_experiment
+from app.services.lab_service import HELD_STATUS, execute_experiment
 
 
 class TrainingInput(BaseModel):
@@ -34,6 +35,8 @@ class TrainingInput(BaseModel):
     outer_fold_assignment: dict[int, int] | None = None
     # (holdout rows, train rows) of a reused SplitPlan; None = runner re-splits.
     holdout_partition: tuple[frozenset[int], frozenset[int]] | None = None
+    # P7.4-A: the binary target's uploaded spellings (``StructuralCleaningOutput.target_labels``).
+    target_labels: dict[str, Any] | None = None
 
 
 class TrainingOutput(BaseModel):
@@ -85,8 +88,12 @@ def run_training(ctx: RunContext, inp: TrainingInput) -> TrainingOutput:
             persist_scientific=False,
             outer_fold_assignment=inp.outer_fold_assignment,
             holdout_partition=inp.holdout_partition,
+            target_labels=inp.target_labels,
+            # ADR 0007 §6.2: only a run branch_experiment inserted with service overrides has a record.
+            service_overrides=ServiceOverrides.from_config(experiment.config),
+            hold_completion=True,  # D8a: COMPLETED is written with the evidence lock (persistence)
         )
-        if experiment.status != "COMPLETED":
+        if experiment.status != HELD_STATUS:
             result = dict(experiment.result or {})
             reason = result.get("error") or f"experiment ended with status {experiment.status}"
             ctx.fail(

@@ -3,9 +3,9 @@
   "case": "needs_work",
   "exchanges": [
     {
-      "input_digest": "471d3a219abb5d33990c4e75e8dbc3f85777c05934f046dc083468fed3205fb4",
+      "input_digest": "2fd385f82636d8d35213987beab69214f54474d13eae99c3581e51c015b2dd5b",
       "instructions_digest": "63155764b21951299e2ad07e851042e1a6e8b12d989e85e8e6dec5c5e6e5ae23",
-      "model": "gpt-6.1-sol",
+      "model": "claude-sonnet-5-5",
       "output": {
         "confidence": 0.7,
         "cv_metrics": [
@@ -26,7 +26,7 @@
         "verdict": "needs_work"
       },
       "output_schema_digest": "edeb43523172d238315913a2560f699624e532a70e5466d7ae94d2ab24fff32c",
-      "payload_digest": "6e96bcd41701fda0f04e221c763068e9729103bd06187dadeaed81982b663d63",
+      "payload_digest": "b9606cd14cd6beccc0058edc0c91f74833510ccf69fe1f9479d46c2e9eb83b59",
       "payload_keys": [
         "$.context",
         "$.context[].data_class",
@@ -48,6 +48,8 @@
         "$.context[].value.description",
         "$.context[].value.edge_count",
         "$.context[].value.ended_at",
+        "$.context[].value.evidence_mode",
+        "$.context[].value.evidence_mode.scored",
         "$.context[].value.experiment_id",
         "$.context[].value.failure_reason",
         "$.context[].value.failures",

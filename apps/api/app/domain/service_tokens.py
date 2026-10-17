@@ -62,10 +62,17 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/projects/{project_id}/decisions",
             "/v1/projects/{project_id}/refs",
             "/v1/projects/{project_id}/refs/{ref_kind}",
+            # P7.2-A: approvals of the model in use; tokens never get the approving person's id.
+            "/v1/projects/{project_id}/releases",
             "/v1/nodes/{kind}/{node_id}/impact",
             "/v1/datasets",
             "/v1/datasets/{dataset_id}",
             "/v1/datasets/{dataset_id}/profile",  # P4.1-C: training-row statistics, holdout-free
+            # V7 BE-C: goal versions and the test design; no user or token ids, final test = a row count only
+            # (no dates, rates or statistics) and the rule's reason text withheld from tokens.
+            "/v1/projects/{project_id}/problem-specs",
+            "/v1/projects/{project_id}/problem-specs/{spec_id}",
+            "/v1/split-plans/{split_plan_id}",
             "/v1/execution-requests/{request_id}",
             "/v1/model-builds/{pipeline_run_id}",
             "/v1/model-builds/{pipeline_run_id}/events",
@@ -78,11 +85,37 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             "/v1/experiments/{experiment_id}/findings",
             # P5.2-A: out-of-fold operating points only (no final-evaluation figure at any point).
             "/v1/experiments/{experiment_id}/operating-points",
+            # P5.5-B-read: CV-only verdict + test-set look counts (metadata, no final-evaluation value).
+            "/v1/experiments/{experiment_id}/verdict",
             "/v1/decisions/{decision_id}",
             "/v1/model-versions/{model_version_id}",
             "/v1/model-versions/{model_version_id}/card",
+            # V7 B2/B3: versions with CV metrics only (no final-test value); input column names + types only.
+            "/v1/projects/{project_id}/model-versions",
+            "/v1/model-versions/{model_version_id}/feature-contract",
             "/v1/predictions/{prediction_id}",
             "/v1/predictions/{prediction_id}/download",
+            # V7 B6: capped pages of the same file the download returns (same scope, no extra columns).
+            "/v1/predictions/{prediction_id}/rows",
+            # Weekly scheduled scoring: the schedule and its runs (no user ids for tokens).
+            "/v1/projects/{project_id}/scoring-schedule",
+            "/v1/projects/{project_id}/scoring-schedule/runs",
+            # P7.4-A: monitoring aggregates and linked outcome files (no rows, no holdout, no person ids).
+            "/v1/projects/{project_id}/monitoring",
+            "/v1/projects/{project_id}/monitoring/windows/{window_start}",
+            "/v1/projects/{project_id}/monitoring/outcomes",
+            # D5a: the retrain policy and state (no user ids, never the comparison figures); starting a
+            # retrain and changing the policy stay with people.
+            "/v1/projects/{project_id}/retrain-policy",
+            "/v1/projects/{project_id}/retrain-status",
+            # P5.4-A3: improve loops (CV evidence only, no person ids, no key naming the holdout).
+            "/v1/improve-runs/{improve_run_id}",
+            "/v1/projects/{project_id}/improve-runs",
+            # D5b: the monitoring thresholds in force (no user ids); changing them stays with people.
+            "/v1/projects/{project_id}/monitoring-thresholds",
+            # P7.6-A: the Business view; tokens get the final-test headline withheld (no person ids).
+            "/v1/projects/{project_id}/outcomes",
+            "/v1/outcomes/projects",  # id and name of projects with a model in use
             # P6.6-A: proposals and agent runs, read with holdout-free output.
             "/v1/agent-runs",
             "/v1/agent-runs/{run_id}",
@@ -97,6 +130,11 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
             # tool call, and every action is `allowed: false` (deciding stays with people).
             "/v1/inbox",
             "/v1/inbox/counts",
+            # D3a: training-row monthly target rate (final test always sealed for tokens); the upload log
+            # (metadata, no person ids, file names untrusted); who decided the goal (never "you", no ids).
+            "/v1/datasets/{dataset_id}/target-by-period",
+            "/v1/projects/{project_id}/upload-attempts",
+            "/v1/projects/{project_id}/goal/decisions",
         )
     },
     ("POST", "/v1/projects"): SCOPE_PROJECTS_WRITE,
@@ -107,6 +145,10 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
     ("POST", "/v1/experiments"): SCOPE_EXPERIMENTS_WRITE,
     ("POST", "/v1/experiments/{experiment_id}/branches"): SCOPE_EXPERIMENTS_WRITE,
     ("POST", "/v1/experiments/{experiment_id}/cancel"): SCOPE_EXPERIMENTS_WRITE,
+    # P5.4-A3 (ADR 0007 §10): a token start is clamped (budget only lowered, 5 per hour, half the
+    # comparison bound, no fresh split); a token cancels only a queued / running loop and never accepts.
+    ("POST", "/v1/improve-runs"): SCOPE_EXPERIMENTS_WRITE,
+    ("POST", "/v1/improve-runs/{improve_run_id}/cancel"): SCOPE_EXPERIMENTS_WRITE,
     # Scoring runs a worker job like a run; it never changes the model or a ref.
     ("POST", "/v1/model-versions/{model_version_id}/predictions"): SCOPE_EXPERIMENTS_WRITE,
     # P6.6-A: queues a specialist run that only proposes (the harness authorizes the token again).
@@ -118,6 +160,12 @@ TOKEN_ROUTE_SCOPES: dict[tuple[str, str], str] = {
 HUMAN_ONLY_ROUTES = frozenset(
     {
         ("GET", "/v1/service-tokens"),
+        # V7-B6: members' names and emails are for signed-in administrators (session_required for any bearer).
+        ("GET", "/v1/workspaces/{workspace_id}/members"),
+        # P8.4-A: usage and plan limits are for signed-in owners, administrators and ML engineers.
+        ("GET", "/v1/workspaces/{workspace_id}/usage"),
+        # V7 BE-A: the Studio flow bar's composed read (tokens use the underlying reads instead).
+        ("GET", "/v1/projects/{project_id}/flow"),
         ("POST", "/v1/service-tokens"),
         ("POST", "/v1/service-tokens/{token_id}/revoke"),
         ("POST", "/v1/decisions/{decision_id}/accept"),
@@ -127,6 +175,8 @@ HUMAN_ONLY_ROUTES = frozenset(
         # P5.2-A: choosing an operating point records a person's decision (tokens: 403
         # service_token_not_permitted; the route refuses any token again as human_session_required).
         ("POST", "/v1/experiments/{experiment_id}/operating-point"),
+        # Weekly scheduled scoring is set by people (the route refuses any token as human_session_required).
+        ("PUT", "/v1/projects/{project_id}/scoring-schedule"),
         # P6.9-A: a split confirmation is a person's answer (ADR 0008 §2).
         ("POST", "/v1/execution-requests/{request_id}/split-confirmation"),
         # P6.6-A: deciding a proposal is a person's act (403 human_session_required for any bearer).
@@ -139,11 +189,49 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("POST", "/v1/governance/policy/{proposal_id}/accept"),
         ("POST", "/v1/governance/switches"),
         ("POST", "/v1/agent-runs/{run_id}/replay"),
+        # D6a: resolving an incident is a workspace owner's or administrator's act.
+        ("POST", "/v1/governance/incidents/{incident_id}/resolve"),
+        # P7.4-A: linking real outcomes is a person's act (tokens: 403 service_token_not_permitted; the
+        # route refuses any token again as human_session_required).
+        ("POST", "/v1/projects/{project_id}/monitoring/outcomes"),
+        # D5a: starting a retrain (ML-write) and setting the retrain policy (owners and administrators)
+        # are a person's acts, even for a token with experiments:write (ADR 0012).
+        ("POST", "/v1/projects/{project_id}/retrain"),
+        ("PUT", "/v1/projects/{project_id}/retrain-policy"),
+        # P5.4-A3 (ADR 0007 §7): accepting an improve try (or keeping the current model) is a person's act
+        # (403 human_session_required for any token).
+        ("POST", "/v1/improve-runs/{improve_run_id}/accept"),
+        # D5b: changing the monitoring thresholds is an owner's or administrator's act (ADR 0012 D4).
+        ("PUT", "/v1/projects/{project_id}/monitoring-thresholds"),
         # P6.3-B2: the in-app assistant is for signed-in people (403 human_session_required).
         ("GET", "/v1/assistant/threads"),
         ("POST", "/v1/assistant/threads"),
         ("GET", "/v1/assistant/threads/{thread_id}"),
         ("POST", "/v1/assistant/threads/{thread_id}/messages"),
+        # P8.5-A: the operator reads are for signed-in platform staff (403 human_session_required).
+        ("GET", "/v1/operator/overview"),
+        ("GET", "/v1/operator/workspaces"),
+        ("GET", "/v1/operator/failed-jobs"),
+        # P8.8-A: your notification preferences and the workspace's webhooks are for signed-in sessions
+        # (any bearer 403 session_required; webhooks need an owner or administrator).
+        ("GET", "/v1/me/notification-preferences"),
+        ("PUT", "/v1/me/notification-preferences"),
+        ("GET", "/v1/workspaces/{workspace_id}/webhooks"),
+        ("POST", "/v1/workspaces/{workspace_id}/webhooks"),
+        ("PATCH", "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}"),
+        ("POST", "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/rotate-secret"),
+        ("POST", "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/test"),
+        ("GET", "/v1/workspaces/{workspace_id}/webhooks/{webhook_id}/deliveries"),
+        # D7a: business-view questions are person to person (signed-in sessions only: any bearer 403
+        # session_required; no agent tool, no MCP, no SDK).
+        ("GET", "/v1/questions"),
+        ("GET", "/v1/projects/{project_id}/questions"),
+        ("POST", "/v1/projects/{project_id}/questions"),
+        ("GET", "/v1/questions/{question_id}"),
+        ("POST", "/v1/questions/{question_id}/replies"),
+        ("POST", "/v1/questions/{question_id}/close"),
+        # No principal at all: the signed link from an email is the only authority (one kind, off only).
+        ("POST", "/v1/notifications/unsubscribe"),
     }
 )
 
