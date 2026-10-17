@@ -851,7 +851,7 @@ class Spend(BaseModel):
     per_run_limits_micros: dict[str, int] = Field(default_factory=dict)
 
 
-class GovernanceIncident(BaseModel):
+class GovernanceIncident(_Versioned):
     id: UUID
     kind: str
     subject_kind: str
@@ -860,6 +860,9 @@ class GovernanceIncident(BaseModel):
     status: str
     opened_at: datetime
     evidence: dict[str, Any] = Field(default_factory=dict)
+    resolved_at: datetime | None = None
+    resolved_by: str | None = None
+    resolution: str | None = None  # plain text
 
 
 class PolicyFieldChange(BaseModel):
@@ -918,6 +921,11 @@ class Governance(BaseModel):
     open_incidents: list[GovernanceIncident] = Field(default_factory=list)
     policy_changes: list[PolicyChange] = Field(default_factory=list)
     recent_changes: list[RecentChange] = Field(default_factory=list)
+    assistant_beta: bool = False
+    model_in_use: dict[str, Any] | None = None
+    month_spend: dict[str, Any] | None = None
+    incidents: list[GovernanceIncident] = Field(default_factory=list)
+    provider_notice: str = ""
 
 
 class ReplayTool(BaseModel):

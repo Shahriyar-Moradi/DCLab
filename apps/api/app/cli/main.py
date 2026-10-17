@@ -184,6 +184,44 @@ def cmd_usage_set_plan(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_entitlements_set(args: argparse.Namespace) -> int:
+    """D6a: a named platform admin switches a workspace feature flag (``ai_assistant_beta``); no HTTP
+    route. The row records ``platform_staff:<admin id>`` and the change is logged on ``dclab.audit``.
+    Like ``usage set-plan``, ``--admin`` is recorded, not authenticated: database credentials are the
+    control."""
+
+    from uuid import UUID
+
+    from sqlalchemy import func, select
+
+    from app.config import get_settings
+    from app.db.models import User
+    from app.domain.errors import IdentityError
+    from app.observability.logging import configure_logging
+    from app.services.workspace_entitlement_service import set_feature_flag
+
+    settings = get_settings()  # the dclab.audit line reaches the process log (stderr) like the API's
+    configure_logging(log_format=settings.log_format, log_level=settings.log_level)
+    db = _session()
+    try:
+        admin = db.scalar(select(User).where(func.lower(User.email) == args.admin.strip().lower()))
+        if admin is None:
+            print(json.dumps({"error": "unknown admin"}))
+            return 2
+        try:
+            result = set_feature_flag(db, actor=admin, workspace_id=UUID(args.workspace), key=args.key,
+                                      enabled=args.state == "on")
+        except (IdentityError, ValueError) as exc:
+            db.rollback()
+            print(json.dumps({"error": str(exc)}))
+            return 2
+        db.commit()
+        print(json.dumps(result))
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_improve_start(args: argparse.Namespace) -> int:
     """P5.4-A2 (local runs): start an improve loop as a named person (their own ML-write authority is
     checked); the worker steps it. Acceptance stays a person's act through the API (P5.4-A3)."""
@@ -802,6 +840,19 @@ def build_parser() -> argparse.ArgumentParser:
     for flag in ("--compute-seconds-month", "--storage-bytes", "--runs-per-day"):
         set_plan.add_argument(flag, default=None, help="whole number, 'unlimited' or 'default'")
     set_plan.set_defaults(func=cmd_usage_set_plan)
+
+    entitlements = sub.add_parser("entitlements", help="D6a workspace feature flags (platform staff)")
+    entitlements_sub = entitlements.add_subparsers(dest="entitlements_cmd", required=True)
+    flag = entitlements_sub.add_parser("set", help="switch a workspace feature flag on or off")
+    flag.add_argument("--workspace", required=True, help="workspace id")
+    flag.add_argument("--key", required=True, choices=["ai_assistant_beta"])
+    state = flag.add_mutually_exclusive_group(required=True)
+    state.add_argument("--on", dest="state", action="store_const", const="on")
+    state.add_argument("--off", dest="state", action="store_const", const="off")
+    flag.add_argument("--admin", required=True,
+                      help="email of the platform admin (recorded only, not authenticated: database credentials "
+                           "are the control)")
+    flag.set_defaults(func=cmd_entitlements_set)
 
     improve = sub.add_parser("improve", help="P5.4-A2 improve loops (local runs)")
     improve_sub = improve.add_subparsers(dest="improve_cmd", required=True)

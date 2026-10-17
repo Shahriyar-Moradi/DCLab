@@ -22,7 +22,7 @@ ROUTES = ("/v1/operator/overview", "/v1/operator/workspaces", "/v1/operator/fail
 OVERVIEW_KEYS = {"generated_at", "workspaces", "jobs_last_24h", "queue", "workers", "failed_jobs_last_24h",
                  "failed_jobs_last_24h_truncated", "platform_ai_caps", "readiness"}
 WORKSPACE_KEYS = {"id", "name", "kind", "created_at", "member_count", "project_count", "jobs_last_30d",
-                  "failed_jobs_last_24h", "active_last_7d"}
+                  "failed_jobs_last_24h", "active_last_7d", "assistant_beta"}
 FAILED_JOB_KEYS = {"id", "workspace_id", "job_type", "handler_key", "code", "attempts", "failed_at"}
 SECRET_REASON = "KeyError: customer.email@acme.test salary=91000 /tmp/upload/clients.csv"
 

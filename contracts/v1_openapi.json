@@ -945,6 +945,36 @@
         "successSchema": "GovernanceRead"
       }
     },
+    "/v1/governance/incidents/{incident_id}/resolve": {
+      "POST": {
+        "operationId": "resolve_governance_incident_v1_governance_incidents__incident_id__resolve_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false
+          },
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true
+          }
+        ],
+        "requestSchema": "IncidentResolveRequest",
+        "statusCodes": [
+          "200",
+          "400",
+          "401",
+          "403",
+          "404",
+          "409",
+          "422",
+          "428",
+          "500"
+        ],
+        "successSchema": "IncidentRead"
+      }
+    },
     "/v1/governance/policy": {
       "POST": {
         "operationId": "propose_governance_policy_v1_governance_policy_post",

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.governance.platform_default import CAPS, PLATFORM_MODEL_ALLOWLIST
 from app.config import get_settings
-from app.db.models import MlJob, Project, Workspace, WorkspaceMembership
+from app.db.models import MlJob, Project, Workspace, WorkspaceEntitlement, WorkspaceMembership
 from app.domain import batch_predictions as bp
 from app.domain.errors import InvalidCursorError
 from app.domain.ml_jobs import JOB_FAILED
@@ -33,6 +33,7 @@ from app.domain.operator import (
 )
 from app.services import system_health_service as health
 from app.services.cursor_codec import open_cursor, sign_cursor
+from app.services.workspace_entitlement_service import AI_ASSISTANT_BETA
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
 FAILED_CODES_SCAN_MAX = 5000
@@ -158,12 +159,16 @@ def list_workspaces(db: Session, *, cursor: str | None = None, limit: int = PAGE
     ).group_by(MlJob.workspace_id), ids)
     active = _counts(db, select(MlJob.workspace_id, func.count()).where(
         in_page, MlJob.created_at >= moment - timedelta(days=7)).group_by(MlJob.workspace_id), ids)
+    beta = {ws for ws, value in db.execute(select(WorkspaceEntitlement.workspace_id, WorkspaceEntitlement.value_json)
+                                           .where(WorkspaceEntitlement.workspace_id.in_(ids),
+                                                  WorkspaceEntitlement.entitlement_key == AI_ASSISTANT_BETA))
+            if value is True}
     items = [
         OperatorWorkspaceRead(
             id=row.id, name=row.name, kind=row.kind, created_at=row.created_at,
             member_count=members.get(row.id, 0), project_count=projects.get(row.id, 0),
             jobs_last_30d=jobs_30d.get(row.id, 0), failed_jobs_last_24h=failed_24h.get(row.id, 0),
-            active_last_7d=active.get(row.id, 0) > 0,
+            active_last_7d=active.get(row.id, 0) > 0, assistant_beta=row.id in beta,
         )
         for row in page
     ]

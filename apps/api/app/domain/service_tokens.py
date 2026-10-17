@@ -189,6 +189,8 @@ HUMAN_ONLY_ROUTES = frozenset(
         ("POST", "/v1/governance/policy/{proposal_id}/accept"),
         ("POST", "/v1/governance/switches"),
         ("POST", "/v1/agent-runs/{run_id}/replay"),
+        # D6a: resolving an incident is a workspace owner's or administrator's act.
+        ("POST", "/v1/governance/incidents/{incident_id}/resolve"),
         # P7.4-A: linking real outcomes is a person's act (tokens: 403 service_token_not_permitted; the
         # route refuses any token again as human_session_required).
         ("POST", "/v1/projects/{project_id}/monitoring/outcomes"),

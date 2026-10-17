@@ -23,6 +23,14 @@ the thread as ``user_message`` + ``assistant_message`` with ``templated: true`` 
 Replies are plain text with ``dclab://<kind>/<id>`` references only (the lead validator
 allows no other link); clients render them with linkify off, and any model free text
 (proposal ``reason``, ``rationale``, ``business_objective``, ``intent``) as plain text.
+
+D6a: the assistant is a labelled beta. Without the workspace's ``ai_assistant_beta`` flag
+(``workspace_entitlements``, set by platform staff only) every thread call is
+``403 assistant_beta_off`` and nothing reaches a model. A message may carry ``page_context``
+(the screen from ``PAGE_SCREENS`` and node ids of the thread's project, each checked here; any
+other id is one ``422 page_context_invalid``): it reaches the lead as one system transcript
+item (a code key and ids, metadata only) under the gateway's redaction, never holdout. The
+improve tools stay off the assistant surface until a new lead prompt release (A5-A).
 """
 
 from __future__ import annotations
@@ -37,7 +45,7 @@ from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.orm import Session
 
 from app.agents.assistant import templates
@@ -59,16 +67,19 @@ from app.agents.harness.service import (
     AgentRunRefused,
     AgentService,
     end_abandoned_turns,
+    lead_model,
     lead_spec,
     policy_limits,
 )
 from app.agents.tools.catalog import ToolContext
 from app.config import get_settings
-from app.db.models import AgentEvent, AgentProposal, AgentRun, Dataset, User
-from app.domain.agent_records import AGENT_RUN_TERMINAL_STATUSES
-from app.domain.errors import IdempotencyKeyReusedError
+from app.agents.gateway.router import provider_for
+from app.db.models import AgentEvent, AgentProposal, AgentRun, Dataset, LlmInvocation, User
+from app.domain.agent_records import AGENT_RUN_TERMINAL_STATUSES, AGENT_SUBJECT_COLUMNS
+from app.domain.errors import IdempotencyKeyReusedError, InvalidDecisionRecordError
 from app.services import idempotency_service
 from app.services.authorization_service import can_execute_workspace_ml
+from app.services.workspace_entitlement_service import assistant_beta_enabled
 
 logger = logging.getLogger("dclab.agents.assistant")
 
@@ -90,6 +101,15 @@ _FIELDS = {"tool_call": ("call", "tool"), "tool_result": ("call", "tool", "ok", 
            "assistant_message": ("kind", "message", "citations", "llm_used", "fallback", "templated", "actions"),
            "budget_exhausted": ("scope", "limit", "call"), "turn_done": ("status", "error_code", "proposal_ids"),
            "user_message": ("message",)}
+
+
+BETA_OFF = "assistant_beta_off"
+# The screens a client may name in ``page_context`` (a fixed vocabulary, never free text) and the
+# node ids it may send: ``<column>`` -> subject kind, each a node of the thread's project.
+PAGE_SCREENS = ("home", "project", "data", "goal", "experiments", "experiment", "improve", "models", "model",
+                "predictions", "monitoring", "decisions", "graph", "inbox")
+PAGE_ID_KINDS = {column: kind for kind, column in AGENT_SUBJECT_COLUMNS.items()}
+PROVIDER_NAMES = {"anthropic": "Anthropic", "openai": "OpenAI", "typesafe": "TypeSafe"}
 
 
 class AssistantError(Exception):
@@ -117,12 +137,86 @@ def _refused(exc: AgentRunRefused) -> AssistantError:
     return _not_found() if status == 404 else AssistantError(status, exc.code, f"turn refused: {exc.code}")
 
 
+# --- beta, model, notice, cost -----------------------------------------------------------------
+
+
+def require_beta(db: Session, workspace_id: UUID) -> None:
+    if not assistant_beta_enabled(db, workspace_id):
+        raise AssistantError(403, BETA_OFF, "the assistant beta is not switched on for this workspace")
+
+
+def assistant_route(policy: Any) -> tuple[str | None, str | None]:
+    """(model, provider) the lead routes to under the effective policy; (None, None) without one."""
+
+    if policy is None:
+        return None, None
+    model = lead_model(policy)
+    return model, provider_for(model)
+
+
+def provider_notice(provider: str | None) -> str:
+    name = PROVIDER_NAMES.get(provider or "", "the AI provider")
+    return (f"What you type to the assistant is sent to {name} to answer it, under this workspace's AI data "
+            "rules; anything you paste is sent with it.")
+
+
+def _thread_calls(thread: AgentRun) -> tuple[Any, ...]:
+    turns = select(AgentRun.id).where(AgentRun.workspace_id == thread.workspace_id,
+                                      AgentRun.parent_run_id == thread.id)
+    return LlmInvocation.workspace_id == thread.workspace_id, LlmInvocation.agent_run_id.in_(turns)
+
+
+def turn_costs(db: Session, thread: AgentRun) -> dict[UUID, int]:
+    """Ledger cost (``llm_invocations.cost_micros``) of each model turn of the thread."""
+
+    rows = db.execute(select(LlmInvocation.agent_run_id, func.coalesce(func.sum(LlmInvocation.cost_micros), 0))
+                      .where(*_thread_calls(thread)).group_by(LlmInvocation.agent_run_id)).all()
+    return {run_id: int(total) for run_id, total in rows}
+
+
+def billed_at_upper_bound(db: Session, thread: AgentRun, models: Any) -> bool:
+    """Some of the thread's cost was priced with an unconfirmed (upper-bound) model price."""
+
+    return bool(db.scalar(select(exists().where(*_thread_calls(thread), LlmInvocation.cost_micros > 0,
+                                                LlmInvocation.model.in_(models)))))
+
+
+def page_item(db: Session, thread: AgentRun, page: dict[str, Any] | None) -> TranscriptItem | None:
+    """The screen the user is on and the ids it shows, as one system transcript item. Untrusted
+    input: the screen must be in ``PAGE_SCREENS`` and every id a node of the thread's project in
+    its workspace (a foreign or unknown id is the same ``422``, no existence oracle)."""
+
+    from app.services import decision_record_service as drs
+
+    if not page:
+        return None
+    invalid = AssistantError(422, "page_context_invalid", "page_context names an unknown screen or node")
+    screen = page.get("screen")
+    if screen not in PAGE_SCREENS:
+        raise invalid
+    value: dict[str, Any] = {"screen": {screen: True}}
+    for column, node_id in sorted(page.items()):
+        if column == "screen" or node_id is None:
+            continue
+        if column not in PAGE_ID_KINDS or not isinstance(node_id, UUID):
+            raise invalid
+        try:
+            drs.load_subject(db, workspace_id=thread.workspace_id, project_id=thread.project_id,
+                             subject_kind=PAGE_ID_KINDS[column], subject_id=node_id)
+        except InvalidDecisionRecordError:
+            raise invalid from None
+        value[column] = node_id
+    return TranscriptItem(kind="page_context", fields=(ContextField(
+        key="page", value=value, data_class="metadata", outcome_scope="none", sources=(SYSTEM_SOURCE,)),))
+
+
 # --- threads -------------------------------------------------------------------------------
 
 
 def thread_spec(db: Session, *, user: User, workspace_id: UUID, project_id: UUID) -> Any:
     from app.services import decision_record_service as drs
 
+    require_beta(db, workspace_id)
     try:
         drs.load_project(db, workspace_id=workspace_id, project_id=project_id)
     except Exception:  # noqa: BLE001 - unknown or foreign project: one answer
@@ -159,6 +253,8 @@ def list_threads(db: Session, *, user: User, workspace_id: UUID, project_id: UUI
 
 
 def ai_blocked(db: Session, thread: AgentRun) -> str | None:
+    if not assistant_beta_enabled(db, thread.workspace_id):
+        return "entitlement:ai_assistant_beta"
     settings = ai_settings()
     return effective_switches(db, thread.workspace_id).blocking(
         ai_enabled=bool(getattr(settings, "ai_enabled", False)), agent_key=thread.agent_key, purpose=thread.purpose)
@@ -342,9 +438,12 @@ def _user_limits(db: Session, thread: AgentRun, policy: Any, *, templated: bool 
     return None
 
 
-def post_message(db: Session, *, user: User, thread: AgentRun, text: str, scope: Any, binding: Any) -> Turn:
+def post_message(db: Session, *, user: User, thread: AgentRun, text: str, scope: Any, binding: Any,
+                 page: dict[str, Any] | None = None) -> Turn:
     """Replay the turn bound to the Idempotency-Key, or start one (LLM or template)."""
 
+    require_beta(db, thread.workspace_id)
+    seen = page_item(db, thread, page)
     try:
         found = idempotency_service.find_bound(db, scope, binding)
     except IdempotencyKeyReusedError:
@@ -375,7 +474,9 @@ def post_message(db: Session, *, user: User, thread: AgentRun, text: str, scope:
     user_limit = _user_limits(db, thread, policy)
     if user_limit is not None:
         raise _limit_reached(db, thread, user_limit, scope="user", code="user_turn_limit")
-    turn = LeadTurn(user_text=Untrusted(untrusted_text=text), transcript=transcript(db, thread, policy))
+    earlier = transcript(db, thread, policy)
+    turn = LeadTurn(user_text=Untrusted(untrusted_text=text),
+                    transcript=(*earlier[-(TRANSCRIPT_ITEMS - 1):], seen) if seen is not None else earlier)
     spec = lead_spec(db, workspace_id=thread.workspace_id, project_id=thread.project_id, user_id=user.id, turn=turn,
                      parent_run_id=thread.id, may_propose=can_execute_workspace_ml(db, user, thread.workspace_id),
                      limits=RunLimits(steps=left["steps"], tokens=left["tokens"], wall_s=min(3600, left["wall_s"]),
@@ -417,7 +518,9 @@ def post_message(db: Session, *, user: User, thread: AgentRun, text: str, scope:
         try:  # started here, not by the stream: a client gone before the first byte never strands it
             Recorder(bind_, workspace_id=thread.workspace_id, run_id=run_id).record("user_message", {
                 "message": preview(text, MESSAGE_MAX_CHARS), "chars": len(text),
-                "transcript_items": len(turn.transcript)})
+                "transcript_items": len(turn.transcript),
+                **({"page": {k: str(v) if isinstance(v, UUID) else v for k, v in seen.fields[0].value.items()}}
+                   if seen is not None else {})})  # the screen and node ids the model was shown
             with _GUARD:
                 _RUNNING.add(run_id)
             worker = threading.Thread(target=execute, name=f"assistant-turn-{run_id}")

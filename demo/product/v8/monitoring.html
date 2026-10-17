@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Monitoring · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="monitoring.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Monitoring</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch" title="Admins only: preview what another role sees. Your rights and every request stay yours."><span>View as</span><select id="role-switch"><option value="admin">Admin (your own view)</option><option value="ds">Data scientist</option><option value="analyst">Analyst (view only)</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant <span class="beta">Beta</span></button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Monitoring <span class="pill warn">Alert · week of 28 Sep</span></h1><p class="sub">Each week the model in use scored is compared with its training data. Once real outcomes are linked (about 4 weeks later), how good the predictions really were is shown too.</p></div>
+</div>
+<div class="statusrow"><a class="stag ok" href="real.html" title="See what is real today">Working today</a></div>
+
+<div class="grid cols-3">
+  <div class="card"><div class="stat"><span class="v">0.22</span><span class="l">drift (PSI) on <code>plan_type</code> · alert line 0.20 · week of 28 Sep</span></div></div>
+  <div class="card"><div class="stat"><span class="v">0.48</span><span class="l">real precision · below the floor of 0.55 · week of 31 Aug</span></div></div>
+  <div class="card"><div class="stat"><span class="v">0.80</span><span class="l">real recall · week of 31 Aug · 2,140 rows with a real outcome</span></div></div>
+</div>
+
+<div class="tabs" data-tabs="mon">
+  <button data-tab="drift" aria-selected="true">Input drift</button>
+  <button data-tab="real">Real results</button>
+  <button data-tab="auto">What the system does on its own</button>
+  <button data-tab="limits">Thresholds</button>
+</div>
+
+<div data-tabpanel="mon:drift" class="on">
+  <div class="card">
+    <h3>Drift of <code>plan_type</code>, by week <span class="sp">weeks run Monday to Monday, UTC</span></h3>
+    <svg class="chart" viewBox="0 0 460 170" role="img" aria-label="Weekly drift (PSI) of plan_type, week of 3 August to week of 28 September. It rises from 0.04 to 0.22 and crosses the alert line of 0.20 in the week of 28 September. The week of 7 September is at the watch line but within chance."><line class="grid-l" x1="44" y1="140.0" x2="440" y2="140.0"/><text class="axis" x="38" y="144.0" text-anchor="end">0</text><line class="grid-l" x1="44" y1="100.0" x2="440" y2="100.0"/><text class="axis" x="38" y="104.0" text-anchor="end">0.1</text><line class="grid-l" x1="44" y1="60.0" x2="440" y2="60.0"/><text class="axis" x="38" y="64.0" text-anchor="end">0.2</text><line class="grid-l" x1="44" y1="20.0" x2="440" y2="20.0"/><text class="axis" x="38" y="24.0" text-anchor="end">0.3</text><line class="lim" x1="44" y1="60.0" x2="440" y2="60.0"/><text class="axis" x="48" y="55.0">alert line 0.20</text><line class="lim-w" x1="44" y1="100.0" x2="440" y2="100.0"/><text class="axis" x="48" y="95.0">watch line 0.10</text><path class="area" d="M60.0,140 L60.0,124.0 L105.5,120.0 L151.0,120.0 L196.5,112.0 L242.0,104.0 L287.5,92.0 L333.0,80.0 L378.5,64.0 L424.0,52.0 L424.0,140 Z"/><polyline class="ln-a" points="60.0,124.0 105.5,120.0 151.0,120.0 196.5,112.0 242.0,104.0 287.5,92.0 333.0,80.0 378.5,64.0 424.0,52.0"/><circle class="pt-a" cx="60.0" cy="124.0" r="3"/><circle class="pt-a" cx="105.5" cy="120.0" r="3"/><circle class="pt-a" cx="151.0" cy="120.0" r="3"/><circle class="pt-a" cx="196.5" cy="112.0" r="3"/><circle class="pt-a" cx="242.0" cy="104.0" r="3"/><circle class="pt-o" cx="287.5" cy="92.0" r="4"/><text class="axis" x="287.5" y="83.0" text-anchor="middle">within chance</text><circle class="pt-a" cx="333.0" cy="80.0" r="3"/><circle class="pt-a" cx="378.5" cy="64.0" r="3"/><circle class="pt-a" cx="424.0" cy="52.0" r="3"/><text class="axis" x="60.0" y="160" text-anchor="middle">3 Aug</text><text class="axis" x="242.0" y="160" text-anchor="middle">31 Aug</text><text class="axis" x="424.0" y="160" text-anchor="middle">28 Sep</text></svg>
+    <p class="small muted">A change at or above the watch line counts only when a statistical test says it is not chance, so a small week can show a large number and still look like training (marked “within chance”). Drift means the inputs look different from training. It does not mean the model is wrong.</p>
+  </div>
+</div>
+<div data-tabpanel="mon:real">
+  <div class="card">
+    <h3>Real precision and recall, by week <span class="sp">from outcome files a person linked</span></h3>
+    <svg class="chart" viewBox="0 0 460 170" role="img" aria-label="Real precision and recall by week, from linked outcomes, week of 6 July to week of 31 August. Recall stays near 0.80 while precision falls from 0.62 to 0.48, below the precision floor of 0.55. The week of 13 July is not judged: too few rows with a real outcome."><line class="grid-l" x1="44" y1="140.0" x2="440" y2="140.0"/><text class="axis" x="38" y="144.0" text-anchor="end">0.4</text><line class="grid-l" x1="44" y1="116.0" x2="440" y2="116.0"/><text class="axis" x="38" y="120.0" text-anchor="end">0.5</text><line class="grid-l" x1="44" y1="92.0" x2="440" y2="92.0"/><text class="axis" x="38" y="96.0" text-anchor="end">0.6</text><line class="grid-l" x1="44" y1="68.0" x2="440" y2="68.0"/><text class="axis" x="38" y="72.0" text-anchor="end">0.7</text><line class="grid-l" x1="44" y1="44.0" x2="440" y2="44.0"/><text class="axis" x="38" y="48.0" text-anchor="end">0.8</text><line class="grid-l" x1="44" y1="20.0" x2="440" y2="20.0"/><text class="axis" x="38" y="24.0" text-anchor="end">0.9</text><line class="lim" x1="44" y1="104.0" x2="440" y2="104.0"/><text class="axis" x="440" y="117.0" text-anchor="end">precision floor 0.55</text><polyline class="ln-a" points="60.0,41.6 105.5,41.6 151.0,44.0 196.5,41.6 242.0,44.0 287.5,44.0 333.0,41.6 378.5,44.0 424.0,44.0"/><polyline class="ln-d" points="60.0,87.2 105.5,87.2 151.0,89.6 196.5,94.4 242.0,99.2 287.5,104.0 333.0,111.2 378.5,116.0 424.0,120.8"/><circle class="pt-d" cx="60.0" cy="87.2" r="3"/><circle class="pt-o" cx="105.5" cy="87.2" r="4"/><circle class="pt-d" cx="151.0" cy="89.6" r="3"/><circle class="pt-d" cx="196.5" cy="94.4" r="3"/><circle class="pt-d" cx="242.0" cy="99.2" r="3"/><circle class="pt-d" cx="287.5" cy="104.0" r="3"/><circle class="pt-d" cx="333.0" cy="111.2" r="3"/><circle class="pt-d" cx="378.5" cy="116.0" r="3"/><circle class="pt-d" cx="424.0" cy="120.8" r="3"/><text class="axis" x="50" y="12"><tspan class="k-a">■</tspan> recall   <tspan class="k-d">■</tspan> precision   ○ not judged</text><text class="axis" x="60.0" y="160" text-anchor="middle">6 Jul</text><text class="axis" x="242.0" y="160" text-anchor="middle">3 Aug</text><text class="axis" x="424.0" y="160" text-anchor="middle">31 Aug</text></svg>
+    <p class="small muted">These are real outcomes of rows the model scored, not the final test. They are never used to train or to choose a model. A floor is judged only when enough rows with a real outcome are linked (an exact test); otherwise the week reads “not judged”. A week below a floor is an alert, but it is not drift. Rows with outcomes may differ from rows without.</p>
+    <div class="toolbar"><button class="btn" type="button" data-mock="edit">Link an outcomes file</button></div>
+  </div>
+</div>
+<div data-tabpanel="mon:auto">
+  <div class="card">
+    <h3>What the system does on its own <span class="sp">and where it stops for a person</span></h3>
+    <ol class="flow-steps">
+      <li><b>Find drift and floors</b><span class="small muted">A rule, every week after scoring: drift against the alert line, real results against the floors.</span><span class="pill ok">Automatic</span></li>
+      <li><b>Retrain on newest data</b><span class="small muted">Retrain policy: Ask me. The week of 28 Sep was an alert and Maya uploaded a newer labelled file, so the Inbox asked. You started the retrain on Tuesday; it finished as Run 5.</span><span class="pill ok">Finished</span></li>
+      <li><b>Show the retrained model beside the model in use</b><span class="small muted">Both scored on the retrained model’s final-test rows, only because every one of them is later than the training rows of the model in use.</span><span class="pill gray">Compared</span></li>
+      <li><b>Switch or keep</b><span class="small muted">Nothing switches the model in use on its own: a person decides, and it is saved in History. Automatic never switches.</span><span class="pill warn">Waiting for you</span></li>
+    </ol>
+    <p class="small muted">Explaining the drift in plain words with the assistant is not part of this; the sentences on this page are built from the numbers.</p>
+  </div>
+  <div class="card">
+    <h3>Retrain policy for this project <span class="sp">owners and administrators</span></h3>
+    <div class="fields">
+      <label class="field">Policy<select class="input" data-demo-select aria-label="Retrain policy"><option>Off</option><option selected>Ask me</option><option>Automatic</option></select></label>
+      <label class="field">Why (saved in History)<input type="text" value="Retention team wants a say before compute is spent" aria-label="Reason"></label>
+    </div>
+    <dl class="kv">
+      <dt>Off</dt><dd>DCLab never retrains on its own. A person can still retrain on a newer labelled file.</dd>
+      <dt>Ask me</dt><dd>When the newest week of the model in use is an alert and a newer labelled file was uploaded by a person who can start runs, DCLab asks in the Inbox: “Retrain on newest data?”. Nothing starts until a person does.</dd>
+      <dt>Automatic</dt><dd>In that case DCLab starts the retrain by itself, acting as the person who chose Automatic. It never switches the model in use.</dd>
+    </dl>
+    <p class="small muted">The rule acts at most once per project in any 7 days, and never twice on the same file or week. Set to Ask me by Sam 3 weeks ago; Off is the default.</p>
+  </div>
+</div>
+<div data-tabpanel="mon:limits">
+  <div class="card">
+    <h3>Thresholds <span class="sp">owners and administrators can change them</span></h3>
+    <div class="fields">
+      <label class="field">Watch line (PSI) · 0.05 to 0.5<input type="text" value="0.10" aria-label="Watch line"></label>
+      <label class="field">Alert line (PSI) · above the watch line, at most 1.0<input type="text" value="0.20" aria-label="Alert line"></label>
+      <label class="field">Precision floor · 0.01 to 0.99, or off<input type="text" value="0.55" aria-label="Precision floor"></label>
+      <label class="field">Recall floor · 0.01 to 0.99, or off<input type="text" value="off" aria-label="Recall floor"></label>
+      <label class="field">Why (saved in History)<input type="text" value="" placeholder="Give a reason" aria-label="Reason"></label>
+    </div>
+    <div class="toolbar"><button class="btn primary" type="button" data-save-thresholds>Save thresholds</button></div>
+    <p class="small muted">Set by Sam, version 2, two weeks ago (precision floor off → 0.55, “Retention team capacity”). Weeks computed with new scored data after you save use the new values; past weeks keep the values they used. Nothing is computed again now. Platform staff and access tokens cannot change these.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h3>What changed in the week of 28 Sep</h3>
+  <p><code>plan_type</code> has a value not seen in training, <code>family_5g</code>: 6% of this week’s rows. The average <code>monthly_fee</code> is 4% higher than in training. Other judged columns look like training. Date columns are shown but not judged; dates in new files are later than in training, as expected over time.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Column</th><th class="r">Drift (PSI)</th><th>Status</th><th>What moved</th></tr></thead>
+    <tbody>
+      <tr><td><code>plan_type</code></td><td class="r">0.22</td><td><span class="pill crit">alert</span></td><td>new value <code>family_5g</code>, 6% of rows</td></tr>
+      <tr><td><code>monthly_fee</code></td><td class="r">0.11</td><td><span class="pill warn">watch</span></td><td>average 4% higher</td></tr>
+      <tr><td><code>region_code</code></td><td class="r">0.03</td><td><span class="pill ok">like training</span></td><td></td></tr>
+      <tr><td><code>last_login_days</code></td><td class="r">0.02</td><td><span class="pill ok">like training</span></td><td></td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card">
+  <h3>The retrained model beside the model in use <span class="pill det">Same kind of test, latest months</span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th></th><th class="r">Retrained (v5, Run 5)</th><th class="r">Model in use (v1)</th></tr></thead>
+    <tbody>
+      <tr><td>PR-AUC (higher is better)</td><td class="r"><b>0.69</b></td><td class="r">0.64</td></tr>
+      <tr><td>Precision</td><td class="r"><b>0.59</b></td><td class="r">0.52</td></tr>
+      <tr><td>Recall</td><td class="r">0.81</td><td class="r">0.80</td></tr>
+      <tr><td>Threshold (each model’s own)</td><td class="r">0.29</td><td class="r">0.31</td></tr>
+      <tr><td>Final-test rows scored</td><td class="r">9,610</td><td class="r">9,610</td></tr>
+    </tbody>
+  </table></div>
+  <ul class="small muted">
+    <li>Both models were scored on the retrained model’s final-test rows (9,610), every one later than the training rows of the model in use (by <code>snapshot_month</code>: the final test starts Jul 2026; the model in use was trained on rows up to Mar 2026).</li>
+    <li>Each model has its own final test and its own threshold; this is the same kind of test, latest months.</li>
+    <li>Nothing is fit or chosen on these rows: they are evidence for your decision.</li>
+  </ul>
+  <div class="banner warn"><div class="sp"><span class="pill gray">Not the same data</span> Real outcomes of the model in use in the week of 31 Aug: precision 0.48, recall 0.80 on 2,140 rows with a real outcome. These are scored rows of the model in use, not the rows above.</div></div>
+</div>
+
+<div class="card">
+  <h3>Your decision</h3>
+  <p class="small muted">Switch makes the retrained model the model in use, with its data, test design and features, in one History entry (the same approval as on the Model screen). Keep records that you said no, with your reason; the model in use stays and nothing is deleted.</p>
+  <div class="toolbar" id="decision-buttons"><button class="btn primary" type="button" data-decide="switch">Switch to the retrained model</button><button class="btn" type="button" data-decide="keep">Keep the model in use</button></div>
+  <div id="decision-result" class="banner" hidden></div>
+  <h4>History</h4>
+  <ul class="hist" id="history"><li>Retrained model compared with the model in use · Wed</li><li>Run 5 finished on the Sep 2026 file · Wed</li><li>You started a retrain on newest data · Tue</li><li>Drift alert on <code>plan_type</code> · week of 28 Sep</li></ul>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v8"></script>
+<script src="guide.js"></script>
+</body>
+</html>

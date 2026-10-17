@@ -1,0 +1,47 @@
+{
+  "case": "column_excluded",
+  "exchanges": [
+    {
+      "events": [
+        {
+          "event": "turn_started"
+        },
+        {
+          "event": "tool_call",
+          "tool": "inspect_dataset"
+        },
+        {
+          "event": "tool_result",
+          "ok": true,
+          "tool": "inspect_dataset"
+        },
+        {
+          "citations": [
+            {
+              "id": "<id:1>",
+              "kind": "dataset_version"
+            }
+          ],
+          "event": "assistant_message",
+          "fallback": null,
+          "kind": "answer",
+          "llm_used": true,
+          "message": "The [source data](dclab://dataset_version/<id:1>) marks it as an identifier, so training leaves it out."
+        },
+        {
+          "error_code": null,
+          "event": "turn_done",
+          "proposals": 0,
+          "status": "completed"
+        }
+      ],
+      "request": {
+        "text": "Why was the id column left out?"
+      },
+      "status": 200
+    }
+  ],
+  "ledger_rows": 2,
+  "model_calls": 2,
+  "proposals": []
+}

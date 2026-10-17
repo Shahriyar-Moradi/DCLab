@@ -8,6 +8,12 @@ report body, no ``workspace_evidence``, no other tenant's aggregates, no pseudon
 policy document, no platform incidents and no operator identity (a platform user who changed
 something in this workspace reads as ``platform_staff``). Authorization: workspace read plus an
 ML-write membership, an approver membership or a platform role (viewers are refused).
+
+D6a adds what the AI settings page shows: the ``ai_assistant_beta`` flag, the model the router
+picks for the assistant, this month's spend summed from the ledger (flagged when an unconfirmed,
+upper-bound price applied), every incident (open and resolved, newest first), per point the
+"tested cases so far" scalar of the newest live verified R3 run (agreement rate and n only), and a
+fixed note that assistant chat text goes to the provider.
 """
 
 from __future__ import annotations
@@ -16,10 +22,10 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session, aliased
 
-from app.agents.gateway.budget import period_start
+from app.agents.gateway.budget import PRICE_UNVERIFIED_MODELS, period_start
 from app.agents.governance.decision_points import REGISTRY
 from app.agents.governance.incidents import open_incident_counts
 from app.agents.governance.platform_default import DATA_CLASS_ORDER, ROLE_NAMES
@@ -41,11 +47,13 @@ from app.db.models import (
     AiPolicy,
     AiSwitch,
     DecisionPointPolicy,
+    LlmInvocation,
     R3Run,
     User,
     WorkspaceLlmBudget,
 )
 from app.domain.governance_console import (
+    AssistantModelRead,
     BudgetPeriodRead,
     DataClassesRead,
     DecisionPointLevelRead,
@@ -53,6 +61,7 @@ from app.domain.governance_console import (
     GovernanceRead,
     GovernanceViewer,
     IncidentRead,
+    LedgerSpendRead,
     ModelRoleRead,
     PolicyChangeRead,
     PolicyFieldChange,
@@ -61,6 +70,7 @@ from app.domain.governance_console import (
     SpendRead,
     SwitchesRead,
     SwitchRead,
+    TestedCasesRead,
 )
 from app.services.authorization_service import (
     can_approve_ai_policy,
@@ -70,6 +80,7 @@ from app.services.authorization_service import (
     is_ml_write_role,
     platform_role_for,
 )
+from app.services.workspace_entitlement_service import assistant_beta_enabled
 
 CHANGES_LIMIT = 20
 RECENT_LIMIT = 30
@@ -200,10 +211,36 @@ def _r3_read(db: Session, row: R3Run, key: str, *, head_pair_current: bool = Tru
         demotion_allowed=bool(demotion.get("allowed")) if demotion else None), run_pair_current
 
 
+def _tested_run(db: Session) -> R3Run | None:
+    """The newest live R3 run of the current (release, model) pair, if it verifies and covers both partitions."""
+
+    from app.services.r3_evaluation_service import release_pair
+
+    pair = release_pair()
+    row = db.scalar(select(R3Run).where(R3Run.live.is_(True), R3Run.pair_release == pair["release"],
+                                        R3Run.model_id == pair["model_id"]).order_by(R3Run.recorded_at.desc()).limit(1))
+    ok = row is not None and _run_verified(row) and (row.report or {}).get("partition") in (None, "both")
+    return row if ok else None
+
+
+def _tested(row: R3Run | None, key: str) -> TestedCasesRead | None:
+    """Agreement rate and n of the run's answered cases for ``key`` (the whole corpus); None when untested."""
+
+    point = ((row.report or {}).get("points") or {}).get(key) if row is not None else None
+    stats = ((point or {}).get("sources") or {}).get("all") or {}
+    n, rates = stats.get("n"), (stats.get("disagreement_rate"), stats.get("abstain_rate"))
+    if isinstance(n, bool) or not isinstance(n, int) or n <= 0 or not all(
+            isinstance(r, (int, float)) and not isinstance(r, bool) for r in rates):
+        return None
+    return TestedCasesRead(agreement_rate=round(min(1.0, max(0.0, 1.0 - rates[0] - rates[1])), 4), n=n,
+                           run_id=row.id, recorded_at=row.recorded_at)
+
+
 def _levels(db: Session, workspace_id: UUID) -> list[DecisionPointLevelRead]:
     from app.agents.semantic.releases import RELEASES
     from app.services.r3_evaluation_service import _max_level, _platform_level, current_pair
 
+    tested = _tested_run(db)
     heads = {key: (_level_head(db, workspace_id, key), _level_head(db, None, key)) for key in REGISTRY}
     runs = _r3_links(db, {rid for _, platform in heads.values() if (rid := _evidence_run_id(platform))})
     out = []
@@ -236,7 +273,8 @@ def _levels(db: Session, workspace_id: UUID) -> list[DecisionPointLevelRead]:
             pair_current=pair_current,
             prompt_release_id=platform_head.prompt_release_id if platform_head is not None else None,
             model_id=platform_head.model_id if platform_head is not None else None,
-            open_incidents=open_incident_counts(db, workspace_id, key), r3_evidence=evidence))
+            open_incidents=open_incident_counts(db, workspace_id, key), r3_evidence=evidence,
+            tested=_tested(tested, key)))
     return out
 
 
@@ -283,12 +321,34 @@ def workspace_month_spend(db: Session, workspace_id: UUID) -> BudgetPeriodRead |
     return month
 
 
-def _incidents(db: Session, workspace_id: UUID) -> list[IncidentRead]:
-    rows = db.scalars(select(AiIncident).where(AiIncident.workspace_id == workspace_id, AiIncident.status == "open")
-                      .order_by(AiIncident.opened_at.desc()).limit(INCIDENT_LIMIT))
-    return [IncidentRead(id=r.id, kind=r.kind, subject_kind=r.subject_kind, subject_key=r.subject_key,
-                         action=r.action, status=r.status, opened_at=r.opened_at,
-                         evidence=_scalars_only(r.evidence)) for r in rows]
+def _month_spend(db: Session, workspace_id: UUID) -> LedgerSpendRead:
+    start = period_start("month", datetime.now(UTC).date())
+    month = (LlmInvocation.workspace_id == workspace_id,
+             LlmInvocation.created_at >= datetime.combine(start, datetime.min.time(), tzinfo=UTC))
+    spent, calls = db.execute(select(func.coalesce(func.sum(LlmInvocation.cost_micros), 0),
+                                     func.count().filter(LlmInvocation.llm_used.is_(True))).where(*month)).one()
+    upper = db.scalar(select(exists().where(*month, LlmInvocation.cost_micros > 0,
+                                            LlmInvocation.model.in_(PRICE_UNVERIFIED_MODELS))))
+    return LedgerSpendRead(period_start=start, spent_micros=int(spent), calls=int(calls), price_is_upper_bound=bool(upper))
+
+
+def _incident_read(r: AiIncident, actors: _Actors) -> IncidentRead:
+    return IncidentRead(id=r.id, kind=r.kind, subject_kind=r.subject_kind, subject_key=r.subject_key,
+                        action=r.action, status=r.status, opened_at=r.opened_at, evidence=_scalars_only(r.evidence),
+                        resolved_at=r.resolved_at, resolved_by=actors.ref(r.resolved_by_user_id),
+                        resolution=r.resolution)
+
+
+def incident_read(db: Session, row: AiIncident) -> IncidentRead:
+    return _incident_read(row, _Actors(db))
+
+
+def _incidents(db: Session, workspace_id: UUID, actors: _Actors, *, open_only: bool = True) -> list[IncidentRead]:
+    query = select(AiIncident).where(AiIncident.workspace_id == workspace_id)
+    if open_only:
+        query = query.where(AiIncident.status == "open")
+    rows = db.scalars(query.order_by(AiIncident.opened_at.desc(), AiIncident.id).limit(INCIDENT_LIMIT))
+    return [_incident_read(r, actors) for r in rows]
 
 
 def _change(r: AiPolicy, decided: bool, actors: _Actors) -> PolicyChangeRead:
@@ -357,6 +417,10 @@ def _recent(db: Session, workspace_id: UUID, actors: _Actors) -> list[RecentChan
     return sorted(items, key=lambda item: item.at, reverse=True)[:RECENT_LIMIT]
 
 
+def _bare(incident: IncidentRead) -> IncidentRead:
+    return incident.model_copy(update={"evidence": {}, "resolved_by": None, "resolution": None})
+
+
 def agent_view(g: GovernanceRead) -> GovernanceRead:
     """The console as an agent (service token) may read it: states, ids, counts and digests; every free-text
     field (rationales, switch reasons, incident evidence) and every actor ref is dropped."""
@@ -364,7 +428,7 @@ def agent_view(g: GovernanceRead) -> GovernanceRead:
     return g.model_copy(update={
         "switches": g.switches.model_copy(update={"workspace": [
             s.model_copy(update={"reason": "", "changed_by": "withheld"}) for s in g.switches.workspace]}),
-        "open_incidents": [i.model_copy(update={"evidence": {}}) for i in g.open_incidents],
+        "open_incidents": [_bare(i) for i in g.open_incidents], "incidents": [_bare(i) for i in g.incidents],
         "policy_changes": [c.model_copy(update={"rationale": "", "proposed_by": None, "decided_by": None,
                                                 "document": None, "diff_vs_head": None, "diff_vs_effective": None})
                            for c in g.policy_changes],
@@ -382,6 +446,9 @@ def console_read(db: Session, *, actor: User, workspace_id: UUID, agent: bool = 
     except PolicyUnavailable as exc:
         unavailable = exc.code
     doc = effective.policy if effective is not None else None
+    from app.agents.assistant.service import assistant_route, provider_notice
+
+    model, provider = assistant_route(doc)
     view = GovernanceRead(
         workspace_id=workspace_id, viewer=viewer, ai_enabled_setting=ai_enabled, policy_unavailable=unavailable,
         policy=EffectivePolicyRead(digest=effective.digest, platform_version=effective.platform_version,
@@ -397,12 +464,17 @@ def console_read(db: Session, *, actor: User, workspace_id: UUID, agent: bool = 
                                      share_r3_aggregates=doc.data.share_r3_aggregates) if doc is not None else None,
         switches=_switches(db, workspace_id, actors, ai_enabled), levels=_levels(db, workspace_id),
         spend=_spend(db, workspace_id, effective) if effective is not None else None,
-        open_incidents=_incidents(db, workspace_id),
+        open_incidents=_incidents(db, workspace_id, actors),
         policy_changes=_policy_changes(db, workspace_id, actors, actor=None if agent else actor, viewer=viewer,
                                        effective=effective),
-        recent_changes=_recent(db, workspace_id, actors))
+        recent_changes=_recent(db, workspace_id, actors),
+        assistant_beta=assistant_beta_enabled(db, workspace_id),
+        model_in_use=AssistantModelRead(model=model, provider=provider,
+                                        price_is_upper_bound=model in PRICE_UNVERIFIED_MODELS) if model else None,
+        month_spend=_month_spend(db, workspace_id), incidents=_incidents(db, workspace_id, actors, open_only=False),
+        provider_notice=provider_notice(provider))
     return agent_view(view) if agent else view
 
 
-__all__ = ["authorize_console", "console_read", "policy_change_read", "switch_read", "viewer_for",
+__all__ = ["authorize_console", "console_read", "incident_read", "policy_change_read", "switch_read", "viewer_for",
            "workspace_month_spend"]

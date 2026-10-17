@@ -1,0 +1,15 @@
+{
+  "case": "beta_off",
+  "exchanges": [
+    {
+      "error": "assistant_beta_off",
+      "request": {
+        "text": "Explain the best run."
+      },
+      "status": 403
+    }
+  ],
+  "ledger_rows": 0,
+  "model_calls": 0,
+  "proposals": []
+}

@@ -1,0 +1,111 @@
+<!-- title: Experiments · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Northwind churn › <b>Experiments</b> -->
+<!-- status: ok | Working today -->
+<div class="page-head">
+  <div><h1>Experiments</h1><p class="sub">Five runs. Each run trains a baseline and several models and picks the best on cross-validation only. A change to try is a new run that starts from a finished one; the original never changes.</p></div>
+  <div class="toolbar"><button class="btn primary" type="button" data-mock="edit">New run</button><button class="btn" type="button" data-mock="edit">Try a change</button></div>
+</div>
+
+<div class="tabs" data-tabs="exp">
+  <button data-tab="runs" aria-selected="true">Runs</button>
+  <button data-tab="detail">Run detail</button>
+  <button data-tab="trust">Trust checks</button>
+  <button data-tab="compare">Compare two runs</button>
+  <button data-tab="change">Try a change</button>
+</div>
+
+<div data-tabpanel="exp:runs" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>Run</th><th>Chosen model</th><th>What changed</th><th class="r">PR-AUC (CV) ± spread</th><th>Beats the baseline?</th><th>Trust checks</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr class="win"><td><b>Run 1</b> · first run <br><span class="pill ok">model in use (v1)</span></td><td>LightGBM, balanced class weights</td><td>Tried 9 models: a baseline that always says “no”, logistic regression, random forest, XGBoost, LightGBM, CatBoost, and balanced class-weight versions of three of them (churners are 21% of training rows)</td><td class="r"><b>0.70 ± 0.02</b></td><td>Yes (baseline 0.22)</td><td><span class="pill warn">1 to review</span> <span class="pill gray">2 not checked</span></td><td><span class="pill ok">finished</span></td></tr>
+      <tr><td><b>Run 2</b> · from Run 1</td><td>LightGBM, balanced class weights</td><td>Column treatment: left out <code>region_code</code></td><td class="r">0.69 ± 0.02</td><td>Yes</td><td><span class="pill warn">1 to review</span> <span class="pill gray">2 not checked</span></td><td><span class="pill ok">finished</span></td></tr>
+      <tr><td><b>Run 3</b> · from Run 1</td><td>LightGBM, balanced class weights</td><td>Model settings: 500 trees instead of 300 <br><small class="muted">Tries: 2 · the first stopped (out of memory) and it was retried automatically</small></td><td class="r">0.70 ± 0.02</td><td>Yes</td><td><span class="pill warn">1 to review</span> <span class="pill gray">2 not checked</span></td><td><span class="pill ok">finished</span></td></tr>
+      <tr><td><b>Run 4</b> · from Run 1 · Improve</td><td>LightGBM, balanced class weights</td><td>Added the extra trees model family (it did not beat LightGBM; this try added 1 new model)</td><td class="r">0.70 ± 0.02</td><td>Yes</td><td><span class="pill warn">1 to review</span> <span class="pill gray">2 not checked</span></td><td><span class="pill ok">finished</span></td></tr>
+      <tr><td><b>Run 5</b> · retrain on newest data <br><span class="pill det">Sep 2026 file · its own test design</span></td><td>LightGBM, balanced class weights</td><td>A new run on the newer file; the target and the goal were carried over, branch settings were decided again</td><td class="r">0.71 ± 0.02</td><td>Yes (baseline 0.21)</td><td><span class="pill ok">None to review</span> <span class="pill gray">2 not checked</span></td><td><span class="pill ok">finished</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">PR-AUC is averaged over 5 time-ordered folds; ± is the spread between folds. Runs 1–4 share one test design, and their leads are within the spread, so none is marked best. Run 5 is on the newer file with its own test design, so its score is not compared with them here; Monitoring compares it fairly with the model in use. The final test set was not used to choose anything.</p>
+</div>
+
+<div data-tabpanel="exp:detail">
+  <div class="card">
+    <h3>Steps of Run 1 <span class="sp">in the order the engine runs them · 16 min 14 s in total</span></h3>
+    {{chart:run_steps}}
+    <p class="small muted">The final test set is set aside right after the file is read, before anything else looks at the data. Training is almost all of the time: 5 folds × 9 models.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Step</th><th class="r">Time</th><th>What happened</th></tr></thead>
+      <tbody>
+        <tr><td>Read the file</td><td class="r">0:08</td><td><span class="pill ok">done</span> 48,210 rows, 31 columns</td></tr>
+        <tr><td>Set the final test set aside</td><td class="r">0:03</td><td><span class="pill ok">done</span> the latest 8,904 rows</td></tr>
+        <tr><td>Profile the training rows</td><td class="r">0:21</td><td><span class="pill ok">done</span> types, missing values, the 5 folds</td></tr>
+        <tr><td>Build features</td><td class="r">0:46</td><td><span class="pill ok">done</span> 29 used, 2 left out</td></tr>
+        <tr><td>Train</td><td class="r">14:12</td><td><span class="pill ok">done</span> 9 models × 5 folds</td></tr>
+        <tr><td>Choose the best on cross-validation</td><td class="r">0:01</td><td><span class="pill ok">done</span> LightGBM, balanced class weights</td></tr>
+        <tr><td>Final test, once</td><td class="r">0:09</td><td><span class="pill ok">done</span> the result is on the Model card, not here</td></tr>
+        <tr><td>Save the model and run the trust checks</td><td class="r">0:34</td><td><span class="pill ok">done</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <h3>Tries of Run 3 <span class="sp">a failure, shown honestly</span></h3>
+    <ul class="timeline">
+      <li><span class="dotk fail"></span><span>Try 1 stopped: <b>out of memory</b></span><span class="t">3:41</span></li>
+      <li><span class="dotk run"></span><span>Retried automatically: the same job, unchanged</span><span class="t">—</span></li>
+      <li><span class="dotk"></span><span>Try 2 finished · CV PR-AUC 0.70 ± 0.02</span><span class="t">9:57</span></li>
+    </ul>
+    <p class="small muted">Each try keeps its number, how it ended and how long it took. The failure type is one of a fixed list (out of memory, timeout, worker lost, data error, internal error, cancelled), never free text.</p>
+  </div>
+</div>
+
+<div data-tabpanel="exp:trust">
+  <div class="card">
+    <h3>Trust checks for Run 1 <span class="sp">15 checks, in the order they run · 12 passed · 1 to review · 2 not checked</span></h3>
+    <div class="tbl"><table>
+      <thead><tr><th>#</th><th>Check</th><th>Result</th><th>In plain words</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>Leakage</td><td><span class="pill ok">passed</span></td><td>No column gives away the answer. <code>churned_at</code> was left out.</td></tr>
+        <tr><td>2</td><td>Overfitting gap</td><td><span class="pill ok">passed</span></td><td>Training score 0.78, cross-validation 0.70. The gap is small.</td></tr>
+        <tr><td>3</td><td>Duplicates</td><td><span class="pill ok">passed</span></td><td>No repeated rows reach both training and checking.</td></tr>
+        <tr><td>4</td><td>Class imbalance</td><td><span class="pill ok">passed</span></td><td>Churners are 21% of training rows; balanced class weights were tried.</td></tr>
+        <tr><td>5</td><td>Too good to be true</td><td><span class="pill ok">passed</span></td><td>The best single column alone reaches PR-AUC 0.38, far from the model’s 0.70.</td></tr>
+        <tr><td>6</td><td>Fold stability</td><td><span class="pill ok">passed</span></td><td>Fold scores range from 0.68 to 0.72.</td></tr>
+        <tr><td>7</td><td>Calibration</td><td><span class="pill warn">to review</span></td><td>Class weights push scores up, so a score of 0.3 is not a 30% chance. Ranking and the threshold are fine.</td></tr>
+        <tr><td>8</td><td>Weak group</td><td><span class="pill ok">passed</span></td><td>No plan type or region scores far below the rest.</td></tr>
+        <tr><td>9</td><td>Repeated columns</td><td><span class="pill ok">passed</span></td><td>No two columns carry almost the same information.</td></tr>
+        <tr><td>10</td><td>Drift between train and test</td><td><span class="pill ok">passed</span></td><td>No column moved much between the training rows and the final test set.</td></tr>
+        <tr><td>11</td><td>Time order of the split</td><td><span class="pill ok">passed</span></td><td>Every fold is checked on rows later than the rows it learned from.</td></tr>
+        <tr><td>12</td><td>Missing values: train vs test</td><td><span class="pill ok">passed</span></td><td>Empty cells are about as common in both.</td></tr>
+        <tr><td>13</td><td>Train rows in the test set</td><td><span class="pill ok">passed</span></td><td>No training row is also in the final test set.</td></tr>
+        <tr><td>14</td><td>Future rows in the features</td><td><span class="pill gray">not checked</span></td><td>Usually not checked on a plain run; it is not counted as passed.</td></tr>
+        <tr><td>15</td><td>One new column’s jump</td><td><span class="pill gray">not checked</span></td><td>Usually not checked on a plain run; it is not counted as passed.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="small muted">A check can pass, need review, fail or be not checked. “Not checked” is never counted as passed. Each check that needs review offers “Try this change” where one fits.</p>
+  </div>
+</div>
+
+<div data-tabpanel="exp:compare">
+  <div class="card" data-compare>
+    <h3>Compare two runs <span class="sp">same test design, side by side</span></h3>
+    <div class="toolbar">
+      <select class="input" data-cmp-a aria-label="First run"><option value="1" selected>Run 1 · first run</option><option value="2">Run 2 · left out region_code</option><option value="3">Run 3 · 500 trees</option><option value="4">Run 4 · added extra trees</option></select>
+      <span class="muted">vs</span>
+      <select class="input" data-cmp-b aria-label="Second run"><option value="1">Run 1 · first run</option><option value="2" selected>Run 2 · left out region_code</option><option value="3">Run 3 · 500 trees</option><option value="4">Run 4 · added extra trees</option></select>
+    </div>
+    <div data-cmp-out></div>
+    <p class="small muted">Run 5 is not offered: it uses a different test design, and Compare refuses runs whose folds differ.</p>
+  </div>
+</div>
+
+<div data-tabpanel="exp:change">
+  <div class="card">
+    <h3>Try a change <span class="sp">starts a new run from a finished one; the original is never changed</span></h3>
+    <div class="fields">
+      <label class="field">Start from<select aria-label="Start from"><option>Run 1 · first run (model in use)</option><option>Run 2 · left out region_code</option><option>Run 3 · 500 trees</option></select></label>
+      <label class="field">Change<select aria-label="Change"><option>Model settings</option><option>Add a model family</option><option>Leave out a model family</option><option>Class weights</option><option>Threshold rule</option><option>Ranking metric</option><option>Column treatment: leave out a column</option><option>Column treatment: keep, fill or use date parts</option></select></label>
+    </div>
+    <div class="toolbar"><button class="btn primary" type="button" data-mock="edit">Start the run</button></div>
+    <p class="small muted">The new run keeps the parent’s test design, so the two are scored on the same folds. Several changes can go in one run. There is no feature engineering: a column can be left out, kept, filled or split into date parts, but no new column is made. A run can also start from a trust check’s “Try this change”.</p>
+  </div>
+</div>

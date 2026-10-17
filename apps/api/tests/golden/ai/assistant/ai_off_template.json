@@ -1,0 +1,41 @@
+{
+  "case": "ai_off_template",
+  "exchanges": [
+    {
+      "events": [
+        {
+          "event": "turn_started",
+          "templated": true
+        },
+        {
+          "citations": [
+            {
+              "id": "<id:1>",
+              "kind": "experiment"
+            }
+          ],
+          "event": "assistant_message",
+          "fallback": null,
+          "kind": "answer",
+          "llm_used": false,
+          "message": "Project \u201cAlpha project\u201d: 2 dataset version, 4 experiment, 4 feature recipe, 3 model version, 1 problem spec, 2 split plan. Refs set: none. The [latest experiment](dclab://experiment/<id:1>) is completed.",
+          "templated": true
+        },
+        {
+          "error_code": null,
+          "event": "turn_done",
+          "proposals": 0,
+          "status": "completed",
+          "templated": true
+        }
+      ],
+      "request": {
+        "text": "Summarize this project"
+      },
+      "status": 200
+    }
+  ],
+  "ledger_rows": 0,
+  "model_calls": 0,
+  "proposals": []
+}

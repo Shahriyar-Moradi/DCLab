@@ -713,6 +713,44 @@
         "title": "ArtifactRead",
         "type": "object"
       },
+      "AssistantCostRead": {
+        "properties": {
+          "by_turn_micros": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Ledger cost per model turn (turn_id); templated turns cost 0.",
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "By Turn Micros",
+            "type": "object"
+          },
+          "conversation_micros": {
+            "description": "Sum of the ledger cost (llm_invocations) of every turn.",
+            "title": "Conversation Micros",
+            "type": "integer"
+          },
+          "currency": {
+            "const": "USD",
+            "default": "USD",
+            "title": "Currency",
+            "type": "string"
+          },
+          "price_is_upper_bound": {
+            "description": "Some of it was priced with a conservative bound, not yet confirmed.",
+            "title": "Price Is Upper Bound",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "conversation_micros",
+          "by_turn_micros",
+          "price_is_upper_bound"
+        ],
+        "title": "AssistantCostRead",
+        "type": "object"
+      },
       "AssistantEventRead": {
         "properties": {
           "created_at": {
@@ -759,6 +797,17 @@
       "AssistantMessageCreate": {
         "additionalProperties": false,
         "properties": {
+          "page_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssistantPageContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional: the screen and node ids in view, passed to the assistant as context."
+          },
           "text": {
             "description": "The new user message only; the server rebuilds the conversation from its record.",
             "maxLength": 4000,
@@ -771,6 +820,135 @@
           "text"
         ],
         "title": "AssistantMessageCreate",
+        "type": "object"
+      },
+      "AssistantModelRead": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "description": "The model the router picks for the assistant under the effective policy.",
+            "title": "Model",
+            "type": "string"
+          },
+          "price_is_upper_bound": {
+            "description": "Its price is a conservative bound, not yet confirmed.",
+            "title": "Price Is Upper Bound",
+            "type": "boolean"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "role": {
+            "const": "lead",
+            "default": "lead",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "price_is_upper_bound"
+        ],
+        "title": "AssistantModelRead",
+        "type": "object"
+      },
+      "AssistantPageContext": {
+        "additionalProperties": false,
+        "description": "The screen the user is on and the nodes it shows (untrusted: every id is checked to be a node of\nthe thread's project; another workspace's or an unknown id is ``422 page_context_invalid``).",
+        "properties": {
+          "dataset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Id"
+          },
+          "experiment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experiment Id"
+          },
+          "model_version_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Version Id"
+          },
+          "problem_spec_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Spec Id"
+          },
+          "screen": {
+            "enum": [
+              "home",
+              "project",
+              "data",
+              "goal",
+              "experiments",
+              "experiment",
+              "improve",
+              "models",
+              "model",
+              "predictions",
+              "monitoring",
+              "decisions",
+              "graph",
+              "inbox"
+            ],
+            "title": "Screen",
+            "type": "string"
+          },
+          "split_plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split Plan Id"
+          }
+        },
+        "required": [
+          "screen"
+        ],
+        "title": "AssistantPageContext",
         "type": "object"
       },
       "AssistantThreadCreate": {
@@ -807,6 +985,9 @@
             "title": "Ai Available",
             "type": "boolean"
           },
+          "cost": {
+            "$ref": "#/components/schemas/AssistantCostRead"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -839,6 +1020,11 @@
           "project_id": {
             "format": "uuid",
             "title": "Project Id",
+            "type": "string"
+          },
+          "provider_notice": {
+            "description": "Fixed text for the composer: where chat text goes.",
+            "title": "Provider Notice",
             "type": "string"
           },
           "quick_actions": {
@@ -882,6 +1068,8 @@
           "usage",
           "ai_available",
           "quick_actions",
+          "cost",
+          "provider_notice",
           "events"
         ],
         "title": "AssistantThreadDetail",
@@ -3024,6 +3212,17 @@
           "stage": {
             "title": "Stage",
             "type": "string"
+          },
+          "tested": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TestedCasesRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null: not tested yet (no live R3 run)."
           },
           "workspace_level": {
             "title": "Workspace Level",
@@ -6756,6 +6955,12 @@
             "title": "Ai Enabled Setting",
             "type": "boolean"
           },
+          "assistant_beta": {
+            "default": false,
+            "description": "The workspace's ai_assistant_beta flag (DCLab staff set it).",
+            "title": "Assistant Beta",
+            "type": "boolean"
+          },
           "data_classes": {
             "anyOf": [
               {
@@ -6765,6 +6970,14 @@
                 "type": "null"
               }
             ]
+          },
+          "incidents": {
+            "description": "Open and resolved incidents, newest first (at most 50).",
+            "items": {
+              "$ref": "#/components/schemas/IncidentRead"
+            },
+            "title": "Incidents",
+            "type": "array"
           },
           "levels": {
             "items": {
@@ -6779,6 +6992,26 @@
             },
             "title": "Model Allowlist",
             "type": "array"
+          },
+          "model_in_use": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssistantModelRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "month_spend": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LedgerSpendRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "open_incidents": {
             "items": {
@@ -6815,6 +7048,12 @@
             ],
             "description": "Set when the policy cannot load: AI is refused.",
             "title": "Policy Unavailable"
+          },
+          "provider_notice": {
+            "default": "",
+            "description": "Fixed text: where assistant chat text goes.",
+            "title": "Provider Notice",
+            "type": "string"
           },
           "recent_changes": {
             "items": {
@@ -8354,6 +8593,41 @@
             "title": "Opened At",
             "type": "string"
           },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Plain text written by the person who resolved it.",
+            "title": "Resolution"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -8378,6 +8652,22 @@
           "evidence"
         ],
         "title": "IncidentRead",
+        "type": "object"
+      },
+      "IncidentResolveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "resolution": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Resolution",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolution"
+        ],
+        "title": "IncidentResolveRequest",
         "type": "object"
       },
       "JobCountRead": {
@@ -8471,6 +8761,45 @@
           "created_at"
         ],
         "title": "LatestRunRead",
+        "type": "object"
+      },
+      "LedgerSpendRead": {
+        "additionalProperties": false,
+        "description": "This UTC month's AI spend of the workspace summed from the ledger (``llm_invocations``), every purpose.",
+        "properties": {
+          "calls": {
+            "description": "Model calls answered by a provider this month.",
+            "title": "Calls",
+            "type": "integer"
+          },
+          "currency": {
+            "const": "USD",
+            "default": "USD",
+            "title": "Currency",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "price_is_upper_bound": {
+            "description": "Some of it was priced with an unconfirmed (upper-bound) price.",
+            "title": "Price Is Upper Bound",
+            "type": "boolean"
+          },
+          "spent_micros": {
+            "title": "Spent Micros",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "period_start",
+          "spent_micros",
+          "calls",
+          "price_is_upper_bound"
+        ],
+        "title": "LedgerSpendRead",
         "type": "object"
       },
       "LockedOperatingPointRead": {
@@ -12997,6 +13326,11 @@
             "title": "Active Last 7D",
             "type": "boolean"
           },
+          "assistant_beta": {
+            "description": "The ai_assistant_beta flag (set with `dclab entitlements set`).",
+            "title": "Assistant Beta",
+            "type": "boolean"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -13042,7 +13376,8 @@
           "project_count",
           "jobs_last_30d",
           "failed_jobs_last_24h",
-          "active_last_7d"
+          "active_last_7d",
+          "assistant_beta"
         ],
         "title": "OperatorWorkspaceRead",
         "type": "object"
@@ -18546,6 +18881,40 @@
         "title": "TargetPeriodFinalTestRead",
         "type": "object"
       },
+      "TestedCasesRead": {
+        "additionalProperties": false,
+        "description": "\"Tested cases so far\" for a decision point (D6a): a scalar summary of the newest live, digest-verified\nR3 run of the current (release, model) pair, partition ``both``. Never the report body.",
+        "properties": {
+          "agreement_rate": {
+            "description": "Share of the answered cases where the AI agreed with the rule.",
+            "title": "Agreement Rate",
+            "type": "number"
+          },
+          "n": {
+            "description": "Answered cases of the run.",
+            "title": "N",
+            "type": "integer"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agreement_rate",
+          "n",
+          "run_id",
+          "recorded_at"
+        ],
+        "title": "TestedCasesRead",
+        "type": "object"
+      },
       "UnsubscribeRead": {
         "properties": {
           "kind": {
@@ -21160,7 +21529,7 @@
     },
     "/v1/assistant/threads/{thread_id}/messages": {
       "post": {
-        "description": "Run one turn and stream it as Server-Sent Events: ``turn_started``, ``tool_call``, ``tool_result``\n(shaped, holdout-free preview), ``step_rejected`` (the model's step failed validation),\n``call_refused`` (a tool or model call refused by capability, limit or policy), ``proposal_created``\n(pending your confirmation), ``assistant_message``, ``budget_exhausted`` and ``turn_done``. Requires\n``Idempotency-Key``: the same key replays the stored turn (never a second turn or proposal); a turn\nalready running on the thread is ``409 turn_in_progress``; an exhausted thread or user limit is ``429``.\nWith AI off the turn is a deterministic template (``templated: true``, ``llm_used: false``). Replies\nfollow the rendering contract above: plain text, ``dclab://`` references only, linkify off. A dropped\nstream never stops the turn: resend the same request and key to replay it (``Last-Event-ID`` is\nnot read yet).",
+        "description": "Run one turn and stream it as Server-Sent Events: ``turn_started``, ``tool_call``, ``tool_result``\n(shaped, holdout-free preview), ``step_rejected`` (the model's step failed validation),\n``call_refused`` (a tool or model call refused by capability, limit or policy), ``proposal_created``\n(pending your confirmation), ``assistant_message``, ``budget_exhausted`` and ``turn_done``. An optional\n``page_context`` (screen + node ids of this project) reaches the assistant as context. Requires\n``Idempotency-Key``: the same key replays the stored turn (never a second turn or proposal); a turn\nalready running on the thread is ``409 turn_in_progress``; an exhausted thread or user limit is ``429``.\nWith AI off the turn is a deterministic template (``templated: true``, ``llm_used: false``). Replies\nfollow the rendering contract above: plain text, ``dclab://`` references only, linkify off. A dropped\nstream never stops the turn: resend the same request and key to replay it (``Last-Event-ID`` is\nnot read yet).",
         "operationId": "post_message_v1_assistant_threads__thread_id__messages_post",
         "parameters": [
           {
@@ -24634,6 +25003,157 @@
           }
         },
         "summary": "Read Governance",
+        "tags": [
+          "v1"
+        ]
+      }
+    },
+    "/v1/governance/incidents/{incident_id}/resolve": {
+      "post": {
+        "description": "Resolve an open incident of this workspace (owner/admin; a person, never a token). The resolution is plain\ntext. Resolving never restores a level or re-enables a switch: those stay separate human acts. An incident\nalready resolved is ``409 incident_not_open``; another workspace's or a platform incident is 404.",
+        "operationId": "resolve_governance_incident_v1_governance_incidents__incident_id__resolve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 192,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncidentResolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentRead"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "Idempotent-Replayed": {
+                "description": "`true` when this response replays an earlier request with the same Idempotency-Key.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad request (error envelope)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized (error envelope)"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden (error envelope)"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not found (error envelope)"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict (error envelope)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable entity (error envelope)"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition required (error envelope)"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error (error envelope)"
+          }
+        },
+        "summary": "Resolve Governance Incident",
         "tags": [
           "v1"
         ]

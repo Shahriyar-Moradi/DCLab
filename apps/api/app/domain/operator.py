@@ -96,6 +96,7 @@ class OperatorWorkspaceRead(_Read):
     jobs_last_30d: int
     failed_jobs_last_24h: int
     active_last_7d: bool
+    assistant_beta: bool = Field(description="The ai_assistant_beta flag (set with `dclab entitlements set`).")
 
 
 class OperatorWorkspacePage(_Read):

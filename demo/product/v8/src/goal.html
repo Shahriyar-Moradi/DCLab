@@ -1,0 +1,44 @@
+<!-- title: Goal & test design · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Northwind churn › <b>Goal &amp; test design</b> -->
+<!-- status: ok | Working today -->
+<div class="page-head">
+  <div><h1>Goal &amp; test design</h1><p class="sub">What we want to predict, what “good” means, and how we test it fairly. They are set when a project starts a run; this screen shows them.</p></div>
+</div>
+
+<div class="grid cols-3">
+  <div class="card"><h3>What we predict</h3>
+    <p class="big-sentence"><code>churned_next_30d</code></p>
+    <p class="small muted">Will this customer cancel in the next 30 days? A yes/no answer (binary classification). One answer per customer-month. Prediction horizon: 30 days.</p></div>
+  <div class="card"><h3>How we rank models</h3>
+    <p class="big-sentence">PR-AUC</p>
+    <p class="small muted">Only about 1 in 5 training rows has the answer the model treats as yes, and PR-AUC rewards finding them without flagging many others.</p></div>
+  <div class="card"><h3>Business rule</h3>
+    <p class="big-sentence">Recall ≥ 0.80</p>
+    <p class="small muted">Catch at least 80% of the customers who will cancel. The model in use met it on cross-validation.</p></div>
+</div>
+
+<div class="card">
+  <h3>How we test <span class="sp">the same design is used for every run on this file</span></h3>
+  {{chart:cv_timeline}}
+  <div class="chips">
+    <span class="chip"><b>Training rows: 39,306</b><small>5 time-ordered cross-validation folds</small></span>
+    <span class="chip"><b>Final test set: 8,904 rows (18%)</b><small>the latest rows in time · used once per run, at the end</small></span>
+  </div>
+  <p class="small muted">Time-ordered by <code>snapshot_month</code>. Fold 1 learns from the first 6,551 rows and is checked on the next 6,551; each later fold learns from more of the past, up to 32,755 rows in fold 5. The final test set is the latest 8,904 rows (18%). Shuffled rows would let the model peek at the future.</p>
+  <p class="small muted">No dates are shown here, only rows: where the final test set starts in time is part of what it keeps sealed.</p>
+  <div class="banner warn"><div class="sp"><b>What a time-ordered design rules out.</b> The “beats the noise” comparison and the improvement loop assume folds that are not ordered in time, so on this project two runs can be compared side by side but not judged against the noise. See <a href="improve.html">Improve</a>.</div></div>
+</div>
+
+<div class="card">
+  <h3>Who decided <span class="sp">who suggested each part and who confirmed it</span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Part</th><th>Suggested by</th><th>Confirmed by</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>What we predict</td><td>A person</td><td><span class="who-pill you">You</span></td><td>Who will cancel in the next 30 days, so the retention team can call them first.</td></tr>
+      <tr><td>Test design</td><td><span class="who-pill">The rules</span></td><td><span class="who-pill you">You</span></td><td>Kept the rules’ test design <span class="muted">(no reason given)</span></td></tr>
+      <tr><td>Ranking metric</td><td><span class="who-pill">The rules</span></td><td><span class="who-pill you">You</span></td><td>PR-AUC suits a rare outcome.</td></tr>
+      <tr><td>Business rule</td><td>A person</td><td><span class="who-pill you">You</span></td><td>The retention team needs to reach at least 80% of the customers who would cancel.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">A test design the rules chose with nobody asked reads “Nobody was asked”; anything not recorded reads “Not recorded”. Each confirmation is a History entry.</p>
+</div>

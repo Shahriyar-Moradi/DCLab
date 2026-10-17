@@ -222,7 +222,8 @@ test("monitoring: weekly checks and a week's detail, link outcomes, go back from
   await expect(real).toContainText("2 outcome values did not match the training outcome labels and were left out.");
   await expect(real).toContainText("Precision");
   await expect(real).toContainText("not the final test");
-  await page.getByText("Lines this week was judged with").click();
+  // The chart caption also names "the watch and alert lines this week was judged with": open the disclosure itself.
+  await page.locator("summary", { hasText: /^Lines this week was judged with$/ }).click();
   await expect(page.getByText(/^Workspace owners and administrators can change the watch and alert lines and the floors under Thresholds/)).toBeVisible();
   expect(await page.locator("main").innerText()).not.toMatch(BANNED);
   await checkA11y(page, "0-alert");

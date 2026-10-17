@@ -1,0 +1,45 @@
+<!-- title: History · Northwind churn -->
+<!-- crumbs: Northwind Telecom › Northwind churn › <b>History</b> -->
+<!-- status: ok | Working today -->
+<div class="page-head">
+  <div><h1>History</h1><p class="sub">Every decision and event in this project: who, what, the evidence, and where a correction is allowed.</p></div>
+</div>
+
+<div class="banner warn"><div class="sp"><b>A newer file exists.</b> Customer data · Sep 2026 was uploaded after the file the model in use was built on (Jun 2026). A retrained model on it waits for your decision.</div><a class="btn sm" href="monitoring.html">Open Monitoring</a></div>
+
+<div class="tabs" data-tabs="hist">
+  <button data-tab="log" aria-selected="true">Log</button>
+  <button data-tab="lineage">Lineage</button>
+</div>
+
+<div data-tabpanel="hist:log" class="on">
+  <div class="tbl card"><table>
+    <thead><tr><th>When</th><th>Who</th><th>What</th><th>Evidence</th><th>Correct</th></tr></thead>
+    <tbody data-hist-top></tbody>
+    <tbody>
+      <tr><td>Wed</td><td><span class="who-pill">A rule</span></td><td>Compared the retrained model with the model in use</td><td>Same kind of test, latest months · 9,610 rows</td><td>—</td></tr>
+      <tr><td>Wed</td><td><span class="who-pill">A rule</span></td><td>Run 5 finished · LightGBM · CV PR-AUC 0.71</td><td>Sep 2026 file, its own test design</td><td>—</td></tr>
+      <tr><td>Tue</td><td><span class="who-pill you">You</span></td><td>Started a retrain on newest data</td><td>The Inbox asked (retrain policy: Ask me)</td><td>—</td></tr>
+      <tr><td>Tue</td><td><span class="who-pill">Maya Chen</span></td><td>Uploaded <code>customers_2026_09.csv</code></td><td>53,540 rows, 31 columns</td><td>—</td></tr>
+      <tr><td>Mon</td><td><span class="who-pill">A rule</span></td><td>Drift alert on <code>plan_type</code> · week of 28 Sep</td><td>PSI 0.22, alert line 0.20</td><td>—</td></tr>
+      <tr><td>Mon</td><td><span class="who-pill">A rule</span></td><td>Weekly scoring finished · 6,412 of 51,296 flagged</td><td>Churn model v1, approved</td><td>—</td></tr>
+      <tr><td>2 wks ago</td><td><span class="who-pill">Sam (Admin)</span></td><td>Changed the monitoring thresholds: precision floor off → 0.55</td><td>“Retention team capacity” · applies to weeks computed after it</td><td>—</td></tr>
+      <tr><td>2 wks ago</td><td><span class="who-pill">Maya Chen</span></td><td>Linked an outcomes file for August</td><td><code>outcomes_aug.csv</code> · key <code>customer_id</code> · outcome <code>cancelled</code></td><td>—</td></tr>
+      <tr><td>3 wks ago</td><td><span class="who-pill">Sam (Admin)</span></td><td>Set the retrain policy: Off → Ask me</td><td>“Retention team wants a say before compute is spent”</td><td>—</td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Approved Churn model v1 for scoring</td><td>Final test recall 0.81 meets the rule</td><td><a href="model.html">Change it again on Model › Approved for scoring</a></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill">A rule</span></td><td>Run 1 used its final test set once</td><td>The result is on the Model card</td><td>Cannot be repeated</td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill">A rule</span></td><td>Chose the best model of Run 1 on cross-validation</td><td>LightGBM, balanced class weights · PR-AUC 0.70 ± 0.02</td><td>—</td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Confirmed the target and the test design</td><td>Suggested by the rules · Confirmed by you</td><td><button class="btn sm" type="button" data-mock="edit">Correct</button></td></tr>
+      <tr><td>12 wks ago</td><td><span class="who-pill you">You</span></td><td>Uploaded <code>customers_2026Q3.csv</code></td><td>48,210 rows, 31 columns</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Correct is offered only for decisions a person recorded; a correction adds a new entry and the old one stays, marked corrected. Nothing is deleted. Suggestions from AI are undone from the Inbox; AI is off in this workspace, so there are none.</p>
+</div>
+
+<div data-tabpanel="hist:lineage">
+  <div class="card">
+    <h3>How the pieces connect <span class="sp">file → test design → runs → model → predictions</span></h3>
+    {{chart:lineage}}
+    <p class="small muted">The real screen is an interactive diagram with a list view; this is a simple picture of the same links.</p>
+  </div>
+</div>

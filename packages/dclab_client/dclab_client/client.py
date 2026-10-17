@@ -39,6 +39,7 @@ from dclab_client.types import (
     ExperimentVerdict,
     ExperimentPage,
     Governance,
+    GovernanceIncident,
     GovernanceSwitch,
     InboxCounts,
     InboxPage,
@@ -799,6 +800,16 @@ class GovernanceClient:
             "POST", "/v1/governance/switches", json={"switch_key": switch_key, "state": state, "reason": reason},
             request_id=request_id, idempotency_key=idempotency_key)
         return _versioned(GovernanceSwitch, payload, headers)
+
+    def resolve_incident(self, incident_id: UUID | str, *, resolution: str, idempotency_key: str | None = None,
+                         request_id: str | None = None) -> GovernanceIncident:
+        """Resolve an open incident of the workspace (owner/admin, a person: a service token is refused). It never
+        restores a level or re-enables a switch."""
+
+        payload, headers = self._transport.request_with_headers(
+            "POST", f"/v1/governance/incidents/{_id(incident_id)}/resolve", json={"resolution": resolution},
+            request_id=request_id, idempotency_key=idempotency_key)
+        return _versioned(GovernanceIncident, payload, headers)
 
 
 REVIEW_AGENTS = frozenset({"experiment_critic", "dataset_investigator", "experiment_planner"})

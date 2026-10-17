@@ -69,6 +69,9 @@ PRICES_MICROS_PER_MTOK: dict[str, tuple[int, int]] = {
     # "gpt-6-luna": (100_000, 500_000),
     # "jev-1.13.0": (42_000, 0),
 }
+# Models whose price above is still the conservative bound (not confirmed by the founder): reads
+# flag their spend as an upper bound (D6a). Remove a model once its live price is checked.
+PRICE_UNVERIFIED_MODELS = frozenset({"claude-sonnet-5-5"})
 # The ADR names no Jev per-run cap: a Jev batch is bounded like a specialist run.
 _RUN_KIND_POLICY_FIELD = {
     "assistant_turn": "assistant_turn_micros",

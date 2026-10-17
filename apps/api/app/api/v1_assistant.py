@@ -1,7 +1,9 @@
 """/v1/assistant: the in-app assistant's threads (P6.3-B2; ADR 0009 §7.2). Transport only.
 
 Signed-in human sessions only: any ``Authorization`` header (service token or API bearer) is
-``403 human_session_required``; CSRF and ``Origin`` are checked by the middleware for every
+``403 human_session_required``; a workspace without the ``ai_assistant_beta`` flag (set by DCLab
+staff only) gets ``403 assistant_beta_off`` on every route, before any thread lookup and with no
+model call; CSRF and ``Origin`` are checked by the middleware for every
 cookie POST (ADR 0001-0002). A thread is its creator's: another user of the workspace, and
 any other workspace, get ``404``. Membership and ML-write authority are re-resolved on every
 request (write tools only propose, and only for ML-write members). ``app.agents.assistant``
@@ -23,7 +25,7 @@ import json
 import re
 from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -67,10 +69,25 @@ class AssistantThreadCreate(BaseModel):
     _plain = field_validator("title")(_no_control)
 
 
+class AssistantPageContext(BaseModel):
+    """The screen the user is on and the nodes it shows (untrusted: every id is checked to be a node of
+    the thread's project; another workspace's or an unknown id is ``422 page_context_invalid``)."""
+
+    model_config = ConfigDict(extra="forbid")
+    screen: Literal[assistant.PAGE_SCREENS]  # type: ignore[valid-type]
+    experiment_id: UUID | None = None
+    dataset_id: UUID | None = None
+    model_version_id: UUID | None = None
+    problem_spec_id: UUID | None = None
+    split_plan_id: UUID | None = None
+
+
 class AssistantMessageCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: str = Field(min_length=1, max_length=assistant.MESSAGE_MAX_CHARS,
                       description="The new user message only; the server rebuilds the conversation from its record.")
+    page_context: AssistantPageContext | None = Field(
+        default=None, description="Optional: the screen and node ids in view, passed to the assistant as context.")
     _plain = field_validator("text")(_no_control)
 
 
@@ -92,21 +109,36 @@ class AssistantEventRead(BaseModel):
     data: dict[str, Any]
 
 
+class AssistantCostRead(BaseModel):
+    currency: Literal["USD"] = "USD"
+    conversation_micros: int = Field(description="Sum of the ledger cost (llm_invocations) of every turn.")
+    by_turn_micros: dict[UUID, int] = Field(description="Ledger cost per model turn (turn_id); templated turns cost 0.")
+    price_is_upper_bound: bool = Field(description="Some of it was priced with a conservative bound, not yet confirmed.")
+
+
 class AssistantThreadDetail(AssistantThreadRead):
     limits: dict[str, int]
     usage: dict[str, int]
     ai_available: bool
     quick_actions: list[str]
+    cost: AssistantCostRead
+    provider_notice: str = Field(description="Fixed text for the composer: where chat text goes.")
     events: list[AssistantEventRead]
 
 
 def require_assistant_session(request: Request, db: Session = Depends(get_db)) -> User:
-    """A signed-in person with workspace read; never a service token or bearer (ADR 0009 §7.2)."""
+    """A signed-in person with workspace read in a workspace with the assistant beta; never a service
+    token or bearer (ADR 0009 §7.2)."""
 
     if (request.headers.get("Authorization") or "").strip():
         raise HTTPException(status_code=403, detail={
             "code": "human_session_required", "message": "the assistant is for signed-in people; agents use MCP"})
-    return require_workspace_read(request, get_current_user(request, db), db)
+    user = require_workspace_read(request, get_current_user(request, db), db)
+    try:
+        assistant.require_beta(db, request_workspace_id(request))
+    except assistant.AssistantError as exc:
+        raise _error(exc) from exc
+    return user
 
 
 def _error(exc: assistant.AssistantError) -> V1APIError:
@@ -188,17 +220,25 @@ def read_thread(
     """The caller's thread: limits, usage over its turns, whether the model is on, and its history
     (the public events of every turn, oldest first; at most the last 400)."""
 
+    from app.agents.gateway.budget import PRICE_UNVERIFIED_MODELS
     from app.agents.governance.policy import PolicyUnavailable, effective_policy
 
     thread = _thread(request, db, user, thread_id)
     try:
-        held = assistant.allowance(db, thread, effective_policy(db, thread.workspace_id).policy)
+        policy = effective_policy(db, thread.workspace_id).policy
+        held = assistant.allowance(db, thread, policy)
         limits, used = held.limits.model_dump(exclude={"tool_calls"}), held.used
     except PolicyUnavailable:
-        limits, used = {}, {}
+        policy, limits, used = None, {}, {}
+    _model, provider = assistant.assistant_route(policy)
+    costs = assistant.turn_costs(db, thread)
     return AssistantThreadDetail(
         **_thread_read(thread).model_dump(), limits=limits, usage=used,
         ai_available=assistant.ai_blocked(db, thread) is None, quick_actions=list(assistant.QUICK_ACTIONS),
+        cost=AssistantCostRead(conversation_micros=sum(costs.values()), by_turn_micros=costs,
+                               price_is_upper_bound=assistant.billed_at_upper_bound(db, thread,
+                                                                                    PRICE_UNVERIFIED_MODELS)),
+        provider_notice=assistant.provider_notice(provider),
         events=[AssistantEventRead(**item) for item in assistant.history(db, thread)])
 
 
@@ -231,7 +271,8 @@ def post_message(
     """Run one turn and stream it as Server-Sent Events: ``turn_started``, ``tool_call``, ``tool_result``
     (shaped, holdout-free preview), ``step_rejected`` (the model's step failed validation),
     ``call_refused`` (a tool or model call refused by capability, limit or policy), ``proposal_created``
-    (pending your confirmation), ``assistant_message``, ``budget_exhausted`` and ``turn_done``. Requires
+    (pending your confirmation), ``assistant_message``, ``budget_exhausted`` and ``turn_done``. An optional
+    ``page_context`` (screen + node ids of this project) reaches the assistant as context. Requires
     ``Idempotency-Key``: the same key replays the stored turn (never a second turn or proposal); a turn
     already running on the thread is ``409 turn_in_progress``; an exhausted thread or user limit is ``429``.
     With AI off the turn is a deterministic template (``templated: true``, ``llm_used: false``). Replies
@@ -245,7 +286,8 @@ def post_message(
                                   required=True)
     try:
         turn = assistant.post_message(db, user=user, thread=thread, text=payload.text,
-                                      scope=_key_scope(request, user, _MESSAGE), binding=binding)
+                                      scope=_key_scope(request, user, _MESSAGE), binding=binding,
+                                      page=payload.page_context.model_dump() if payload.page_context else None)
     except assistant.AssistantError as exc:
         db.rollback()
         raise _error(exc) from exc

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F4F6FA">
+<title>Data · Northwind churn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="data.html">
+<div class="shell" id="shell">
+<aside class="nav" id="nav"></aside>
+<main>
+  <div class="topbar">
+    <div class="crumbs">Northwind Telecom › Northwind churn › <b>Data</b></div>
+    <div class="right">
+      <label class="role-sw" for="role-switch" title="Admins only: preview what another role sees. Your rights and every request stay yours."><span>View as</span><select id="role-switch"><option value="admin">Admin (your own view)</option><option value="ds">Data scientist</option><option value="analyst">Analyst (view only)</option><option value="biz">Business user</option></select></label>
+      <button class="tbtn asst" type="button" id="asst-toggle" aria-pressed="false">Assistant <span class="beta">Beta</span></button>
+      <button class="ai-switch" type="button" id="ai-switch" role="switch" aria-checked="false"><span>AI suggestions: <b>off</b></span><i aria-hidden="true"></i></button>
+      <button class="tbtn" type="button" data-guide-toggle>Guide</button>
+      <button class="tbtn" type="button" data-glossary>Glossary</button>
+    </div>
+  </div>
+  <div class="content">
+<div class="page-head">
+  <div><h1>Data <span class="pill ok">Customer data · Jun 2026 · in use</span></h1><p class="sub">The files of this project, what is in them, and which columns the model uses. A newer file (Sep 2026) was uploaded on Tuesday.</p></div>
+  <div class="toolbar"><button class="btn" type="button" data-mock="upload">Upload a file</button></div>
+</div>
+<div class="statusrow"><a class="stag ok" href="real.html" title="See what is real today">Working today</a></div>
+
+<div class="grid cols-4">
+  <div class="card"><div class="stat"><span class="v">48,210</span><span class="l">rows (one per customer-month)</span></div></div>
+  <div class="card"><div class="stat"><span class="v">31</span><span class="l">columns · 29 used, 2 left out</span></div></div>
+  <div class="card"><div class="stat"><span class="v">9,412</span><span class="l">customers · Jan 2025 – Mar 2026 · training rows</span></div></div>
+  <div class="card"><div class="stat"><span class="v">20.7%</span><span class="l">cancelled within 30 days · training rows</span></div></div>
+</div>
+<p class="small muted">Customers, dates and the cancel rate count the training rows only. The final test set is not counted here.</p>
+
+<div class="tabs" data-tabs="data">
+  <button data-tab="columns" aria-selected="true">Columns</button>
+  <button data-tab="versions">Versions</button>
+  <button data-tab="balance">Target over time</button>
+  <button data-tab="checks">Data checks</button>
+  <button data-tab="access">Access</button>
+</div>
+
+<div data-tabpanel="data:columns" class="on">
+  <div class="toolbar"><input class="input" placeholder="filter columns…" style="min-width:220px"><span class="small muted">Showing 14 of 31 columns · 29 used, 2 left out · the last column appears only when AI is on</span></div>
+  <div class="tbl card"><table>
+    <thead><tr><th>Column</th><th>Type</th><th class="r">Missing</th><th>Used?</th><th>Why</th><th class="ai-only">Assistant vs rules (AI on only)</th></tr></thead>
+    <tbody>
+      <tr><td><code>customer_id</code></td><td>text</td><td class="r">0%</td><td><span class="pill gray">no</span></td><td>Looks like an ID: every value is different, so it cannot help predict</td><td class="ai-only">Assistant: leave out. Rules: leave out. <span class="pill ok">both agreed</span></td></tr>
+      <tr><td><code>churned_next_30d</code></td><td>yes / no</td><td class="r">0%</td><td><span class="pill det">target</span></td><td>This is what we predict</td><td class="ai-only"></td></tr>
+      <tr><td><code>churned_at</code></td><td>date</td><td class="r">79%</td><td><span class="pill crit">no</span></td><td>Filled in only after the customer cancelled, so it would leak the answer</td><td class="ai-only"></td></tr>
+      <tr><td><code>snapshot_month</code></td><td>date</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>Orders the rows in time</td><td class="ai-only"></td></tr>
+      <tr><td><code>signup_date</code></td><td>date</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>A date: turned into date parts</td><td class="ai-only"></td></tr>
+      <tr><td><code>plan_type</code></td><td>category</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>A category the model can use (6 values)</td><td class="ai-only"></td></tr>
+      <tr><td><code>monthly_fee</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>A number the model can use</td><td class="ai-only"></td></tr>
+      <tr><td><code>monthly_fee_change_3m</code></td><td>number</td><td class="r">1%</td><td><span class="pill ok">yes</span></td><td>A number the model can use; empty cells are filled inside each fold</td><td class="ai-only"></td></tr>
+      <tr><td><code>last_login_days</code></td><td>number</td><td class="r">1%</td><td><span class="pill ok">yes</span></td><td>A number the model can use; empty cells are filled inside each fold</td><td class="ai-only"></td></tr>
+      <tr><td><code>contract_end</code></td><td>date</td><td class="r">38%</td><td><span class="pill ok">yes</span></td><td>A date: turned into date parts; empty means no fixed contract</td><td class="ai-only">Assistant: fill empty with “no contract”. Rules: same. <span class="pill ok">both agreed</span></td></tr>
+      <tr><td><code>support_tickets_90d</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>A number the model can use</td><td class="ai-only"></td></tr>
+      <tr><td><code>tenure_months</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>A number the model can use</td><td class="ai-only"></td></tr>
+      <tr><td><code>late_payments_6m</code></td><td>number</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>A number the model can use</td><td class="ai-only"></td></tr>
+      <tr><td><code>region_code</code></td><td>category</td><td class="r">0%</td><td><span class="pill ok">yes</span></td><td>A category the model can use (12 values)</td><td class="ai-only">Assistant: leave out (low importance). Rules: keep. <span class="pill warn">they disagreed: we asked you</span></td></tr>
+      <tr class="dim"><td colspan="6">… 17 more columns, all used</td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div data-tabpanel="data:versions">
+  <div class="tbl card"><table>
+    <thead><tr><th>File</th><th>Uploaded</th><th>By</th><th class="r">Rows</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><b>Customer data · Sep 2026</b><br><small class="muted">customers_2026_09.csv</small></td><td>Tue</td><td>Maya Chen</td><td class="r">53,540</td><td><span class="pill det">newer</span> Used by Run 5, the retrain. Not in use until someone switches.</td></tr>
+      <tr class="win"><td><b>Customer data · Jun 2026</b><br><small class="muted">customers_2026Q3.csv</small></td><td>12 weeks ago</td><td>You</td><td class="r">48,210</td><td><span class="pill ok">in use</span> The model in use was built on this file.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="small muted">Old files are never changed or deleted. A newer file is a new version; what was built on an older one says <b>built on an older version</b>.</p>
+  <div class="card">
+    <h3>Upload log <span class="sp">every upload, accepted or rejected · kept for 90 days · names and sizes only, never the content</span></h3>
+    <div class="tbl"><table>
+      <thead><tr><th>When</th><th>File</th><th>By</th><th class="r">Size</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>Tue</td><td><code>customers_2026_09.csv</code></td><td>Maya Chen</td><td class="r">9.8 MB</td><td><span class="pill ok">accepted</span></td></tr>
+        <tr class="tr-row-fail"><td>Last week</td><td><code>customers_2026Q3_extra.xlsx</code></td><td>You</td><td class="r">2.1 MB</td><td><span class="pill crit">rejected</span> The spreadsheet could not be read. Nothing was added.</td></tr>
+        <tr><td>12 weeks ago</td><td><code>customers_2026Q3.csv</code></td><td>You</td><td class="r">8.7 MB</td><td><span class="pill ok">accepted</span></td></tr>
+      </tbody>
+    </table></div>
+    <p class="small muted">The reason is DCLab’s own words, never the file’s content. Uploads from Studio, the SDK and connected tools are all listed.</p>
+  </div>
+</div>
+
+<div data-tabpanel="data:balance">
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>Customer data · Sep 2026 <span class="sp">newer file, used by the retrain</span></h3>
+      <svg class="chart" viewBox="0 0 470 184" role="img" aria-label="Customer data, September 2026 file. Share of training rows whose answer is yes, by month, rising from about 18 percent. Training rate 21.3%. The final-test months are a shaded band with no line, point or rate: sealed until the final test runs."><line class="grid-l" x1="50" y1="141.0" x2="452" y2="141.0"/><text class="axis" x="44" y="145.0" text-anchor="end">15%</text><line class="grid-l" x1="50" y1="96.0" x2="452" y2="96.0"/><text class="axis" x="44" y="100.0" text-anchor="end">20%</text><line class="grid-l" x1="50" y1="51.0" x2="452" y2="51.0"/><text class="axis" x="44" y="55.0" text-anchor="end">25%</text><line class="ln-c" x1="50" y1="84.3" x2="386.6" y2="84.3"/><text class="axis" x="54" y="79.3">training rows 21.3%</text><path class="area" d="M50.0,150 L50.0,115.8 L69.8,112.3 L89.6,108.7 L109.4,105.2 L129.2,101.6 L149.0,98.1 L168.8,94.5 L188.6,91.0 L208.4,87.4 L228.2,83.9 L248.0,80.3 L267.8,76.8 L287.6,73.2 L307.4,69.7 L327.2,66.1 L347.0,62.6 L366.8,59.0 L386.6,55.5 L386.6,150 Z"/><polyline class="ln-a" points="50.0,115.8 69.8,112.3 89.6,108.7 109.4,105.2 129.2,101.6 149.0,98.1 168.8,94.5 188.6,91.0 208.4,87.4 228.2,83.9 248.0,80.3 267.8,76.8 287.6,73.2 307.4,69.7 327.2,66.1 347.0,62.6 366.8,59.0 386.6,55.5"/><circle class="pt-a" cx="386.6" cy="55.5" r="4.5"/><rect class="sealed" x="397.4" y="18" width="57.6" height="132" rx="4"/><text class="axis" x="426.2" y="34" text-anchor="middle">final test</text><text class="axis" x="426.2" y="48" text-anchor="middle">sealed</text><text class="axis" x="50.0" y="172" text-anchor="middle">Jan 25</text><text class="axis" x="228.2" y="172" text-anchor="middle">Oct 25</text><text class="axis" x="386.6" y="172" text-anchor="middle">Jun 26</text><text class="axis" x="446.0" y="172" text-anchor="middle">Sep 26</text></svg>
+      <p class="small muted">Training months only. The final test months (Jul – Sep 2026, 9,610 rows) are <b>sealed until the final test runs</b> for the model in use: no line, point or rate is shown inside the band.</p>
+    </div>
+    <div class="card">
+      <h3>Customer data · Jun 2026 <span class="sp">in use</span></h3>
+      <svg class="chart" viewBox="0 0 470 184" role="img" aria-label="Customer data, June 2026 file, in use. Share of training rows whose answer is yes, by month, rising from about 18 percent. Training rate 20.7%. The final-test months are drawn apart and labelled disclosed after the final test."><line class="grid-l" x1="50" y1="141.0" x2="452" y2="141.0"/><text class="axis" x="44" y="145.0" text-anchor="end">15%</text><line class="grid-l" x1="50" y1="96.0" x2="452" y2="96.0"/><text class="axis" x="44" y="100.0" text-anchor="end">20%</text><line class="grid-l" x1="50" y1="51.0" x2="452" y2="51.0"/><text class="axis" x="44" y="55.0" text-anchor="end">25%</text><line class="ln-c" x1="50" y1="89.7" x2="376.1" y2="89.7"/><text class="axis" x="54" y="84.7">training rows 20.7%</text><path class="area" d="M50.0,150 L50.0,115.8 L73.3,112.3 L96.6,108.7 L119.9,105.2 L143.2,101.6 L166.5,98.1 L189.8,94.5 L213.1,91.0 L236.4,87.4 L259.6,83.9 L282.9,80.3 L306.2,76.8 L329.5,73.2 L352.8,69.7 L376.1,66.1 L376.1,150 Z"/><polyline class="ln-a" points="50.0,115.8 73.3,112.3 96.6,108.7 119.9,105.2 143.2,101.6 166.5,98.1 189.8,94.5 213.1,91.0 236.4,87.4 259.6,83.9 282.9,80.3 306.2,76.8 329.5,73.2 352.8,69.7 376.1,66.1"/><circle class="pt-a" cx="376.1" cy="66.1" r="4.5"/><rect class="tst" x="390.4" y="18" width="64.6" height="132" rx="4"/><polyline class="ln-disc" points="399.4,65.4 422.7,60.0 446.0,54.6"/><circle class="pt-w" cx="399.4" cy="65.4" r="3.5"/><circle class="pt-w" cx="422.7" cy="60.0" r="3.5"/><circle class="pt-w" cx="446.0" cy="54.6" r="3.5"/><text class="axis" x="422.7" y="34" text-anchor="middle">disclosed after</text><text class="axis" x="422.7" y="48" text-anchor="middle">the final test</text><text class="axis" x="50.0" y="172" text-anchor="middle">Jan 25</text><text class="axis" x="213.1" y="172" text-anchor="middle">Aug 25</text><text class="axis" x="376.1" y="172" text-anchor="middle">Mar 26</text><text class="axis" x="446.0" y="172" text-anchor="middle">Jun 26</text></svg>
+      <p class="small muted">The model in use was trained on this file and has had its one final test, so the final-test months (Apr – Jun 2026) are drawn apart and labelled <b>disclosed after the final test</b>.</p>
+    </div>
+  </div>
+  <p class="small muted">Months are calendar months in UTC. The rate counts training rows whose answer is yes.</p>
+</div>
+
+<div data-tabpanel="data:checks">
+  <div class="grid cols-2">
+    <div class="card">
+      <h3>Checked on upload <span class="sp">fast checks on the whole file, when it arrives</span></h3>
+      <div class="tbl"><table>
+        <thead><tr><th>Check</th><th>Result</th><th>What we found</th></tr></thead>
+        <tbody>
+          <tr><td>Duplicate rows</td><td><span class="pill warn">look at this</span></td><td>14 rows appear twice (0.03%).</td></tr>
+          <tr><td>Missing values</td><td><span class="pill warn">look at this</span></td><td>1.9% of all cells are empty. Most empty: <code>churned_at</code>, <code>contract_end</code>.</td></tr>
+          <tr><td>Dates</td><td><span class="pill ok">ok</span></td><td>Every column that looks like dates could be read as dates.</td></tr>
+          <tr><td>ID-like columns</td><td><span class="pill warn">look at this</span></td><td><code>customer_id</code> looks like an ID.</td></tr>
+          <tr><td>Constant columns</td><td><span class="pill ok">ok</span></td><td>No column has one value or none.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <h3>Checked inside each run <span class="sp">need the goal and the test design</span></h3>
+      <div class="tbl"><table>
+        <thead><tr><th>Check</th><th>Result (Run 1)</th><th>What we found</th></tr></thead>
+        <tbody>
+          <tr><td>Leakage</td><td><span class="pill ok">pass</span></td><td><code>churned_at</code> would give away the answer; it was left out.</td></tr>
+          <tr><td>Duplicates</td><td><span class="pill ok">pass</span></td><td>No repeated rows reach both training and checking.</td></tr>
+          <tr><td>Missing values: train vs test</td><td><span class="pill ok">pass</span></td><td>Empty cells are about as common in both.</td></tr>
+          <tr><td>Train rows in the test set</td><td><span class="pill ok">pass</span></td><td>No training row is also in the final test set.</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small muted">Leakage is checked only here, because it needs to know what we predict. <a href="experiments.html">All 15 trust checks</a></p>
+    </div>
+  </div>
+</div>
+
+<div data-tabpanel="data:access">
+  <div class="card">
+    <h3>Access to this file</h3>
+    <dl class="kv">
+      <dt>Who it is shared with</dt><dd>Published for training, predictions and download by members of this workspace; not shared with other workspaces.</dd>
+      <dt>What AI help may see</dt><dd>Column names, types and summary counts</dd>
+      <dt>Column labels</dt><dd>Every column is labelled</dd>
+    </dl>
+    <h4>Who can read</h4>
+    <p class="small">Members of this workspace who can read data: admins, data scientists and analysts (view only). Business users see only the Business view. Connected tools (an access token) with read access get the same summary on this page: column names, types and training-row counts, never final test set values. They can also download prediction files of this project, which hold the values of each scored row.</p>
+    <p class="small muted">Retention and storage labels are recorded but not enforced yet.</p>
+  </div>
+</div>
+  </div>
+</main>
+<aside class="ai-panel" id="ai-panel" aria-label="AI suggestions" hidden></aside>
+<aside class="ai-panel asst" id="asst-panel" aria-label="Assistant" hidden></aside>
+</div>
+<script src="app.js"></script>
+<script src="../versions.js" data-version="v8"></script>
+<script src="guide.js"></script>
+</body>
+</html>

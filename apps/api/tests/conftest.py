@@ -38,6 +38,10 @@ TEST_URL += ("&" if "?" in TEST_URL else "?") + "options=-c%20synchronous_commit
 # default; tests must not.
 _TEST_OBJECT_STORE_ROOT = Path(tempfile.mkdtemp(prefix="dclab-test-object-store-"))
 os.environ["OBJECT_STORAGE_ROOT"] = str(_TEST_OBJECT_STORE_ROOT)
+# The engine's per-run working files go to a throwaway root too; the system-temp default
+# (<tmp>/dclab-runs) is never cleaned and filled the disk after a few full runs.
+_TEST_RUN_SCRATCH_ROOT = Path(tempfile.mkdtemp(prefix="dclab-test-run-scratch-"))
+os.environ["RUN_SCRATCH_ROOT"] = str(_TEST_RUN_SCRATCH_ROOT)
 # AI development permissions (fake provider / runtime, the global_ai seed) need an
 # explicit development DCLAB_ENV; an unset variable does not count (P6.7-A).
 os.environ["DCLAB_ENV"] = "test"
@@ -60,6 +64,7 @@ def _clear_test_object_store() -> None:
 
 def pytest_configure(config: pytest.Config) -> None:
     os.environ["OBJECT_STORAGE_ROOT"] = str(_TEST_OBJECT_STORE_ROOT)
+    os.environ["RUN_SCRATCH_ROOT"] = str(_TEST_RUN_SCRATCH_ROOT)
     from app.config import get_settings
 
     get_settings.cache_clear()
@@ -67,6 +72,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     shutil.rmtree(_TEST_OBJECT_STORE_ROOT, ignore_errors=True)
+    shutil.rmtree(_TEST_RUN_SCRATCH_ROOT, ignore_errors=True)
 
 
 def _ensure_database() -> None:

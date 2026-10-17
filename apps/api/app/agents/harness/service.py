@@ -1039,6 +1039,14 @@ def lead_spec(db: Session, *, workspace_id: UUID, project_id: UUID, user_id: UUI
         may_propose=may_propose, parent_run_id=parent_run_id, limits=limits, turn=turn)
 
 
+def lead_model(policy: AiPolicyV1) -> str:
+    """The model the lead (the assistant) routes to under ``policy``: the router's own choice (D6a reads)."""
+
+    from app.agents.gateway.router import select_model
+
+    return select_model(policy, role=RUN_KIND_ROLE["lead"], agent_key=lead_runtime.AGENT_KEY, requested=None)
+
+
 def submit_review(db: Session, spec: AgentRunSpec, *, settings: Any = None,
                   bind: Callable[[UUID], None] | None = None) -> UUID:
     """Queue a specialist run a person asked for (``POST /v1/agent-reviews``); raises ``AgentRunRefused``."""

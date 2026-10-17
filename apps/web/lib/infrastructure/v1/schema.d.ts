@@ -171,7 +171,8 @@ export interface paths {
          * @description Run one turn and stream it as Server-Sent Events: ``turn_started``, ``tool_call``, ``tool_result``
          *     (shaped, holdout-free preview), ``step_rejected`` (the model's step failed validation),
          *     ``call_refused`` (a tool or model call refused by capability, limit or policy), ``proposal_created``
-         *     (pending your confirmation), ``assistant_message``, ``budget_exhausted`` and ``turn_done``. Requires
+         *     (pending your confirmation), ``assistant_message``, ``budget_exhausted`` and ``turn_done``. An optional
+         *     ``page_context`` (screen + node ids of this project) reaches the assistant as context. Requires
          *     ``Idempotency-Key``: the same key replays the stored turn (never a second turn or proposal); a turn
          *     already running on the thread is ``409 turn_in_progress``; an exhausted thread or user limit is ``429``.
          *     With AI off the turn is a deterministic template (``templated: true``, ``llm_used: false``). Replies
@@ -737,6 +738,28 @@ export interface paths {
         get: operations["read_governance_v1_governance_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/governance/incidents/{incident_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Governance Incident
+         * @description Resolve an open incident of this workspace (owner/admin; a person, never a token). The resolution is plain
+         *     text. Resolving never restores a level or re-enables a switch: those stay separate human acts. An incident
+         *     already resolved is ``409 incident_not_open``; another workspace's or a platform incident is 404.
+         */
+        post: operations["resolve_governance_incident_v1_governance_incidents__incident_id__resolve_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2622,6 +2645,32 @@ export interface components {
              */
             workspace_id: string;
         };
+        /** AssistantCostRead */
+        AssistantCostRead: {
+            /**
+             * By Turn Micros
+             * @description Ledger cost per model turn (turn_id); templated turns cost 0.
+             */
+            by_turn_micros: {
+                [key: string]: number;
+            };
+            /**
+             * Conversation Micros
+             * @description Sum of the ledger cost (llm_invocations) of every turn.
+             */
+            conversation_micros: number;
+            /**
+             * Currency
+             * @default USD
+             * @constant
+             */
+            currency: "USD";
+            /**
+             * Price Is Upper Bound
+             * @description Some of it was priced with a conservative bound, not yet confirmed.
+             */
+            price_is_upper_bound: boolean;
+        };
         /** AssistantEventRead */
         AssistantEventRead: {
             /** Created At */
@@ -2645,11 +2694,56 @@ export interface components {
         };
         /** AssistantMessageCreate */
         AssistantMessageCreate: {
+            /** @description Optional: the screen and node ids in view, passed to the assistant as context. */
+            page_context?: components["schemas"]["AssistantPageContext"] | null;
             /**
              * Text
              * @description The new user message only; the server rebuilds the conversation from its record.
              */
             text: string;
+        };
+        /** AssistantModelRead */
+        AssistantModelRead: {
+            /**
+             * Model
+             * @description The model the router picks for the assistant under the effective policy.
+             */
+            model: string;
+            /**
+             * Price Is Upper Bound
+             * @description Its price is a conservative bound, not yet confirmed.
+             */
+            price_is_upper_bound: boolean;
+            /** Provider */
+            provider?: string | null;
+            /**
+             * Role
+             * @default lead
+             * @constant
+             */
+            role: "lead";
+        };
+        /**
+         * AssistantPageContext
+         * @description The screen the user is on and the nodes it shows (untrusted: every id is checked to be a node of
+         *     the thread's project; another workspace's or an unknown id is ``422 page_context_invalid``).
+         */
+        AssistantPageContext: {
+            /** Dataset Id */
+            dataset_id?: string | null;
+            /** Experiment Id */
+            experiment_id?: string | null;
+            /** Model Version Id */
+            model_version_id?: string | null;
+            /** Problem Spec Id */
+            problem_spec_id?: string | null;
+            /**
+             * Screen
+             * @enum {string}
+             */
+            screen: "home" | "project" | "data" | "goal" | "experiments" | "experiment" | "improve" | "models" | "model" | "predictions" | "monitoring" | "decisions" | "graph" | "inbox";
+            /** Split Plan Id */
+            split_plan_id?: string | null;
         };
         /** AssistantThreadCreate */
         AssistantThreadCreate: {
@@ -2668,6 +2762,7 @@ export interface components {
         AssistantThreadDetail: {
             /** Ai Available */
             ai_available: boolean;
+            cost: components["schemas"]["AssistantCostRead"];
             /**
              * Created At
              * Format: date-time
@@ -2694,6 +2789,11 @@ export interface components {
              * Format: uuid
              */
             project_id: string;
+            /**
+             * Provider Notice
+             * @description Fixed text for the composer: where chat text goes.
+             */
+            provider_notice: string;
             /** Quick Actions */
             quick_actions: string[];
             /** Status */
@@ -3653,6 +3753,8 @@ export interface components {
             r3_evidence?: components["schemas"]["R3EvidenceRead"] | null;
             /** Stage */
             stage: string;
+            /** @description null: not tested yet (no live R3 run). */
+            tested?: components["schemas"]["TestedCasesRead"] | null;
             /** Workspace Level */
             workspace_level: number;
         };
@@ -5131,11 +5233,24 @@ export interface components {
         GovernanceRead: {
             /** Ai Enabled Setting */
             ai_enabled_setting: boolean;
+            /**
+             * Assistant Beta
+             * @description The workspace's ai_assistant_beta flag (DCLab staff set it).
+             * @default false
+             */
+            assistant_beta: boolean;
             data_classes?: components["schemas"]["DataClassesRead"] | null;
+            /**
+             * Incidents
+             * @description Open and resolved incidents, newest first (at most 50).
+             */
+            incidents?: components["schemas"]["IncidentRead"][];
             /** Levels */
             levels: components["schemas"]["DecisionPointLevelRead"][];
             /** Model Allowlist */
             model_allowlist?: components["schemas"]["ModelRoleRead"][];
+            model_in_use?: components["schemas"]["AssistantModelRead"] | null;
+            month_spend?: components["schemas"]["LedgerSpendRead"] | null;
             /** Open Incidents */
             open_incidents: components["schemas"]["IncidentRead"][];
             policy?: components["schemas"]["EffectivePolicyRead"] | null;
@@ -5146,6 +5261,12 @@ export interface components {
              * @description Set when the policy cannot load: AI is refused.
              */
             policy_unavailable?: string | null;
+            /**
+             * Provider Notice
+             * @description Fixed text: where assistant chat text goes.
+             * @default
+             */
+            provider_notice: string;
             /** Recent Changes */
             recent_changes: components["schemas"]["RecentChangeRead"][];
             spend?: components["schemas"]["SpendRead"] | null;
@@ -5841,12 +5962,26 @@ export interface components {
              * Format: date-time
              */
             opened_at: string;
+            /**
+             * Resolution
+             * @description Plain text written by the person who resolved it.
+             */
+            resolution?: string | null;
+            /** Resolved At */
+            resolved_at?: string | null;
+            /** Resolved By */
+            resolved_by?: string | null;
             /** Status */
             status: string;
             /** Subject Key */
             subject_key: string;
             /** Subject Kind */
             subject_kind: string;
+        };
+        /** IncidentResolveRequest */
+        IncidentResolveRequest: {
+            /** Resolution */
+            resolution: string;
         };
         /** JobCountRead */
         JobCountRead: {
@@ -5880,6 +6015,35 @@ export interface components {
              * @enum {string}
              */
             status: "queued" | "running" | "cancelling" | "needs_input" | "completed" | "failed" | "skipped" | "cancelled";
+        };
+        /**
+         * LedgerSpendRead
+         * @description This UTC month's AI spend of the workspace summed from the ledger (``llm_invocations``), every purpose.
+         */
+        LedgerSpendRead: {
+            /**
+             * Calls
+             * @description Model calls answered by a provider this month.
+             */
+            calls: number;
+            /**
+             * Currency
+             * @default USD
+             * @constant
+             */
+            currency: "USD";
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /**
+             * Price Is Upper Bound
+             * @description Some of it was priced with an unconfirmed (upper-bound) price.
+             */
+            price_is_upper_bound: boolean;
+            /** Spent Micros */
+            spent_micros: number;
         };
         /** LockedOperatingPointRead */
         LockedOperatingPointRead: {
@@ -7667,6 +7831,11 @@ export interface components {
         OperatorWorkspaceRead: {
             /** Active Last 7D */
             active_last_7d: boolean;
+            /**
+             * Assistant Beta
+             * @description The ai_assistant_beta flag (set with `dclab entitlements set`).
+             */
+            assistant_beta: boolean;
             /**
              * Created At
              * Format: date-time
@@ -10080,6 +10249,33 @@ export interface components {
              * @description First final-test month (`after_training` only).
              */
             start_month: string | null;
+        };
+        /**
+         * TestedCasesRead
+         * @description "Tested cases so far" for a decision point (D6a): a scalar summary of the newest live, digest-verified
+         *     R3 run of the current (release, model) pair, partition ``both``. Never the report body.
+         */
+        TestedCasesRead: {
+            /**
+             * Agreement Rate
+             * @description Share of the answered cases where the AI agreed with the rule.
+             */
+            agreement_rate: number;
+            /**
+             * N
+             * @description Answered cases of the run.
+             */
+            n: number;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
         };
         /** UnsubscribeRead */
         UnsubscribeRead: {
@@ -13835,6 +14031,109 @@ export interface operations {
             };
             /** @description Unprocessable entity (error envelope) */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Internal server error (error envelope) */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    resolve_governance_incident_v1_governance_incidents__incident_id__resolve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Client-chosen key ([A-Za-z0-9._:-]{1,128}) binding this POST to its request digest: a replay returns the original result, a different request under the key is 409. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                incident_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IncidentResolveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description `true` when this response replays an earlier request with the same Idempotency-Key. */
+                    "Idempotent-Replayed"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncidentRead"];
+                };
+            };
+            /** @description Bad request (error envelope) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized (error envelope) */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden (error envelope) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Not found (error envelope) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict (error envelope) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable entity (error envelope) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["V1ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition required (error envelope) */
+            428: {
                 headers: {
                     [name: string]: unknown;
                 };

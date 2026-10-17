@@ -1,0 +1,47 @@
+{
+  "case": "explain_run",
+  "exchanges": [
+    {
+      "events": [
+        {
+          "event": "turn_started"
+        },
+        {
+          "event": "tool_call",
+          "tool": "get_experiment"
+        },
+        {
+          "event": "tool_result",
+          "ok": true,
+          "tool": "get_experiment"
+        },
+        {
+          "citations": [
+            {
+              "id": "<id:1>",
+              "kind": "experiment"
+            }
+          ],
+          "event": "assistant_message",
+          "fallback": null,
+          "kind": "answer",
+          "llm_used": true,
+          "message": "[E1](dclab://experiment/<id:1>) is the best run: CV roc_auc 0.812 on the shared split."
+        },
+        {
+          "error_code": null,
+          "event": "turn_done",
+          "proposals": 0,
+          "status": "completed"
+        }
+      ],
+      "request": {
+        "text": "Explain the best run."
+      },
+      "status": 200
+    }
+  ],
+  "ledger_rows": 2,
+  "model_calls": 2,
+  "proposals": []
+}

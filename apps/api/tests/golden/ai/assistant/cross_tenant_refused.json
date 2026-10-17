@@ -1,0 +1,59 @@
+{
+  "case": "cross_tenant_refused",
+  "exchanges": [
+    {
+      "error": "page_context_invalid",
+      "request": {
+        "page_context": {
+          "dataset_id": "<id:1>",
+          "screen": "data"
+        },
+        "text": "Open the other team's data."
+      },
+      "status": 422
+    },
+    {
+      "events": [
+        {
+          "event": "turn_started"
+        },
+        {
+          "event": "tool_call",
+          "tool": "inspect_dataset"
+        },
+        {
+          "code": "not_found",
+          "event": "tool_result",
+          "ok": false,
+          "tool": "inspect_dataset"
+        },
+        {
+          "citations": [
+            {
+              "id": "<id:2>",
+              "kind": "experiment"
+            }
+          ],
+          "event": "assistant_message",
+          "fallback": null,
+          "kind": "answer",
+          "llm_used": true,
+          "message": "That dataset is not part of this project; [E1](dclab://experiment/<id:2>) is."
+        },
+        {
+          "error_code": null,
+          "event": "turn_done",
+          "proposals": 0,
+          "status": "completed"
+        }
+      ],
+      "request": {
+        "text": "Open the other team's data."
+      },
+      "status": 200
+    }
+  ],
+  "ledger_rows": 2,
+  "model_calls": 2,
+  "proposals": []
+}

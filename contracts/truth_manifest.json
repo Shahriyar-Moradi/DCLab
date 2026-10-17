@@ -4,16 +4,16 @@
       "sha256": "fbe72726c739f49106cf34c76aeb297699c64fe8813b4a4af46820d917999dcb"
     },
     "contracts/openapi_operations.json": {
-      "sha256": "a1655bf0eeaf3aa7dee0fa1859a63cef122bd29f3abf66a328fc14cca43c39eb"
+      "sha256": "19a3f8ffb9d0b993d80afa16b3be39f14d7b59bdbb66c9c899a53a6f7804ddf9"
     },
     "contracts/sqlalchemy_tables.json": {
       "sha256": "d3d3cdb9a41b7633dc10d9b97c758399de3786b6fbe012630e19e8925e75d20e"
     },
     "contracts/truth_baseline.json": {
-      "sha256": "7c0eac7c5381083c36e97cf461420c808f978f6ec421c2a9ff02dba965b4ef2e"
+      "sha256": "09b555047ee5cc5eebce9897a4faeb53430c8cf31eb4a0617063a5b8ceeaa696"
     },
     "contracts/v1_openapi.json": {
-      "sha256": "80e8514a9ebc18f38e4e6c15310bbdec2f18272baea536ddcaffa59f5e14065a"
+      "sha256": "c0406fdbadda061156836145fda1de73350bbe363fd2edbe30b9cd2b3fe05aa6"
     }
   },
   "generator": {
@@ -21,6 +21,6 @@
     "version": "1.0.0"
   },
   "schema_version": 1,
-  "source_sha": "420c7cd03543f5a0b1008082a71374fd320d8aaa88147b739f90c89ea6958b74",
+  "source_sha": "95323ddefcdeee84f3ec5fc88a9d8db941f6026929c191bec36a5f3574bca207",
   "source_sha_algorithm": "sha256"
 }
