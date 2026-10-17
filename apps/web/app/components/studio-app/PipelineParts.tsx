@@ -16,6 +16,7 @@ import { Level } from "@/components/studio/Level";
 import { Pill } from "@/components/studio/Pill";
 import { Term } from "@/components/studio/Term";
 import { plainText } from "@/lib/application/command-search";
+import { actionErrorSentence } from "@/lib/application/api-error-text";
 import { safeFilename } from "@/lib/application/studio-inspect";
 import { anyAiAnswer, pointLabel } from "@/lib/application/studio-runs";
 import { downloadArtifactBlob, replayAgentRun, type RunAgentRun, type RunArtifact } from "@/lib/application/studio-pipeline-hooks";
@@ -170,7 +171,7 @@ export function Artifacts({ workspaceId, artifacts, pending, error, reproduction
     if (busy) return;
     setBusy(id);
     setFailure(null);
-    try { await work(); } catch (caught) { setFailure(caught instanceof Error ? caught.message : "The download failed."); } finally { setBusy(null); }
+    try { await work(); } catch (caught) { setFailure(actionErrorSentence(caught, "downloading the file")); } finally { setBusy(null); }
   };
   const columns: Column<RunArtifact>[] = [
     { key: "type", header: "Artifact", sortValue: (a) => a.artifact_type, render: (a) => plainText(a.artifact_type.replaceAll("_", " "), 40) },

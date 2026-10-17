@@ -45,8 +45,11 @@ test("status tags open What's real today; sidebar, glossary and guide toggle", a
   await expect(row("Monitoring")).toContainText("Working today");
   await expect(row("Business view")).toContainText("Working today");
   await expect(row("Usage & cost (in Settings)")).toContainText("Working today");
-  await expect(row("Notifications (email)")).toContainText("Partly working · no screen yet");
-  await expect(row("Integrations (webhooks)")).toContainText("Partly working · no screen yet");
+  // D8b: both have a Settings tab now; what still depends on the server is named.
+  await expect(row("Notifications (email, in Settings)")).toContainText("Partly working · no email service yet");
+  await expect(row("Integrations (webhooks, in Settings)")).toContainText("Partly working · off until set up on the server");
+  await expect(table.getByRole("link", { name: "Integrations (webhooks, in Settings)" })).toHaveAttribute("href", "/settings?tab=integrations");
+  await expect(row("Monitoring")).toContainText("Retrain on newest data works");
   await expect(row("Assistant")).toContainText("Partly working · Beta");
   await expect(row("AI settings")).toContainText("Partly working · Beta");
   await expect(table.getByRole("link", { name: "Business view" })).toHaveAttribute("href", "/outcomes");

@@ -61,6 +61,17 @@ test("the registry reflects the real state today, not the demo's older tags", ()
   for (const id of ["improve", "monitoring", "business", "usage", "model", "predictions", "history", "connect"]) assert.equal(main(id), "working", id);
   for (const id of ["notifications", "webhooks", "settings", "console", "assistant", "aiSettings"]) assert.equal(main(id), "partly", id);
   assert.match(screenStatus("improve")!.missing, /Guided/);
+  // D8b: the entries say what V7-D4..D7 built (retrain, alert lines, rule suggestions, upload log, who decided, settings tabs).
+  assert.match(screenStatus("improve")!.missing, /suggested by the rules/);
+  assert.match(screenStatus("monitoring")!.missing, /Retrain on newest data works/);
+  assert.match(screenStatus("monitoring")!.missing, /change the alert lines and floors/);
+  assert.doesNotMatch(screenStatus("monitoring")!.missing, /Nothing retrains|cannot be changed/);
+  assert.match(screenStatus("data")!.missing, /upload log/);
+  assert.match(screenStatus("goal")!.missing, /who decided/);
+  for (const id of ["settings", "notifications", "webhooks"]) assert.doesNotMatch(screenStatus(id)!.missing + tagLabel(screenStatus(id)!.tags[0]), /no screen yet/i, id);
+  assert.equal(screenStatus("notifications")!.href, "/settings?tab=notifications");
+  assert.equal(screenStatus("webhooks")!.href, "/settings?tab=integrations");
+  assert.doesNotMatch(REAL_SUMMARY, /no screen yet/);
   assert.deepEqual(screenStatus("inbox")!.tags.map(tagLabel), ["Working today", "Partly working · Beta: items from the assistant"]);
   // D6b: both are a labelled beta, never "Working today".
   assert.deepEqual(screenStatus("aiSettings")!.tags.map(tagLabel), ["Partly working · Beta"]);

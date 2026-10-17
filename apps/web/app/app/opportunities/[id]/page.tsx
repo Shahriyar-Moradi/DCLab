@@ -11,6 +11,7 @@ import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNo
 import { decisionToView, formatMoney, formatTimestamp, generateToView, type SignalTone } from "@/lib/domain";
 import { useParams } from "next/navigation";
 import { useState } from "react";
+import { actionErrorSentence } from "@/lib/application/api-error-text";
 
 function stageTone(stage: string): SignalTone {
   if (stage === "closed_won") return "green";
@@ -147,7 +148,7 @@ export default function OpportunityDetailPage() {
         )}
         {generate.isError ? (
           <p className="mt-3 text-body text-oxblood" role="alert">
-            {generate.error.message}
+            {actionErrorSentence(generate.error, "generating")}
           </p>
         ) : null}
       </Panel>

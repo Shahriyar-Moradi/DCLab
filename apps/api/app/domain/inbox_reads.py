@@ -94,6 +94,13 @@ class InboxMonitoringRead(BaseModel):
     model_version_id: UUID
     max_psi: float | None = Field(default=None, description="Largest feature PSI of the week.")
     prediction_psi: float | None = Field(default=None, description="PSI of the model's scores.")
+    summary_code: str | None = Field(
+        default=None,
+        description=(
+            "Why the week is an alert: `below_floor` (real outcomes under a floor) or a drift code "
+            "(`inputs_moved` | `scores_moved` | `inputs_and_scores_moved`)."
+        ),
+    )
 
 
 class InboxItemRead(BaseModel):

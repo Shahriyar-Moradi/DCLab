@@ -14,6 +14,7 @@ import { useCreateServiceToken, useRevokeServiceToken, useServiceTokens } from "
 import { SERVICE_TOKEN_SCOPES, formatTimestamp, type ServiceTokenScope } from "@/lib/domain";
 import { abilityHelp, abilityLabel, TOKEN_LIMIT_TEXT } from "@/lib/application/studio-agents";
 import { newIdempotencyKey } from "@/lib/infrastructure/api-client";
+import { actionErrorSentence, readErrorSentence } from "@/lib/application/api-error-text";
 
 const STATUS_TONE = { active: "green", expired: "amber", revoked: "oxblood" } as const;
 const EXPIRY_DAYS = ["7", "30", "90"] as const;
@@ -118,7 +119,7 @@ export function ServiceTokensPanel() {
           >
             Create token
           </Button>
-          {create.error ? <p className="mt-2 text-body text-oxblood">{create.error.message}</p> : null}
+          {create.error ? <p className="mt-2 text-body text-oxblood">{actionErrorSentence(create.error, "creating the access token")}</p> : null}
         </div>
       </form>
 
@@ -142,7 +143,7 @@ export function ServiceTokensPanel() {
         {tokens.isLoading ? (
           <Skeleton className="h-24" />
         ) : tokens.error ? (
-          <ErrorState body={tokens.error.message} onRetry={() => void tokens.refetch()} />
+          <ErrorState body={readErrorSentence(tokens.error, "access tokens")} onRetry={() => void tokens.refetch()} />
         ) : !tokens.data?.length ? (
           <p className="text-body text-ink-muted">No access tokens in this workspace yet.</p>
         ) : (
@@ -188,7 +189,7 @@ export function ServiceTokensPanel() {
             </tbody>
           </Table>
         )}
-        {revoke.error ? <p className="mt-2 text-body text-oxblood">{revoke.error.message}</p> : null}
+        {revoke.error ? <p className="mt-2 text-body text-oxblood">{actionErrorSentence(revoke.error, "revoking the access token")}</p> : null}
       </div>
     </Panel>
   );

@@ -169,4 +169,12 @@ class RetrainStatusRead(BaseModel):
     real_outcomes: RetrainRealOutcomesRead | None = None
     proposal_id: UUID | None = None
     proposal_state: Literal["proposed", "accepted", "rejected"] | None = None
+    can_start: bool = Field(
+        default=False,
+        description=(
+            "The caller may retrain now on `newer_dataset_id` (the server's rule: a person with workspace ML "
+            "execution, a model in use, a newer labelled file not yet retrained on, no retrain running). "
+            "Always false for service tokens and agents. Plan limits may still refuse the start (429)."
+        ),
+    )
     notes: list[str] = Field(default_factory=lambda: list(NOTES))

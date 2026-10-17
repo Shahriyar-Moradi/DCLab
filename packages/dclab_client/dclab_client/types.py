@@ -677,6 +677,7 @@ class ActivityItem(BaseModel):
     summary: str
     status: str | None = None
     decision_type: str | None = None
+    summary_code: str | None = None  # drift_alert: below_floor | inputs_moved | scores_moved | inputs_and_scores_moved
     link: ActivityLink
     # `run_finished` with locked evidence: model_family, algorithm, metric, cv_score (CV only).
     run_result: dict[str, Any] | None = None
@@ -730,7 +731,7 @@ class InboxItem(BaseModel):
     can_act: bool
     agreement: str | None = None  # Jev items: agree | disagree | abstain | unavailable
     resolved_by: dict[str, Any] | None = None  # done items: {"kind": person | rule | agent, "is_you": bool}
-    monitoring: dict[str, Any] | None = None  # drift_alert items: window_start, model_version_id, max_psi, ...
+    monitoring: dict[str, Any] | None = None  # drift_alert: window_start, model_version_id, max_psi, summary_code, ...
 
 
 class InboxViewer(BaseModel):
@@ -1273,6 +1274,7 @@ class Experiment(_Versioned):
     task_type: str | None = None
     target_column: str | None = None
     intent: str | None = None
+    started_by: str | None = None  # you | person | connected_tool | assistant | rules (never "you" for tokens)
     evidence_mode: str = "scored"  # sealed: an improve try, the final test set not used
     evidence_note: str | None = None
     lineage: ExperimentLineage
@@ -1296,6 +1298,7 @@ class ExperimentListItem(BaseModel):
     has_change_set: bool = False
     evidence_mode: str = "scored"
     intent: str | None = None
+    started_by: str | None = None  # you | person | connected_tool | assistant | rules
     untrusted_fields: list[str] = Field(default_factory=list)
 
 
@@ -1668,6 +1671,7 @@ class RetrainStatus(BaseModel):
     real_outcomes: dict[str, Any] | None = None
     proposal_id: UUID | None = None
     proposal_state: str | None = None
+    can_start: bool = False  # the server's rule: this caller may retrain now (always false for tokens)
     notes: list[str] = Field(default_factory=list)
 
 

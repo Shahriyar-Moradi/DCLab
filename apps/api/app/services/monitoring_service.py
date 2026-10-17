@@ -776,11 +776,15 @@ def _window_limits(db: Session, workspace_id: UUID, project_id: UUID, version_id
 
 
 def can_edit_thresholds(db: Session, user: User, workspace_id: UUID) -> bool:
-    """A workspace owner or administrator, never platform staff (the retrain policy's rule)."""
+    """A workspace owner or administrator, never platform staff (the retrain policy's rule), who
+    also holds workspace ML execution (what the PUT itself requires): the read's ``can_edit``
+    never promises a save the route refuses."""
 
     from app.services.retrain_service import can_set_policy
+    from app.services.workspace_capability_service import WORKSPACE_EXECUTE_ML, effective_capability_matrix
 
-    return can_set_policy(db, user, workspace_id)
+    return (can_set_policy(db, user, workspace_id)
+            and effective_capability_matrix(db, user, workspace_id)[WORKSPACE_EXECUTE_ML])
 
 
 def thresholds_read(db: Session, *, actor: User, workspace_id: UUID, project_id: UUID,

@@ -144,23 +144,26 @@ const BY_CODE: Record<string, PlainError> = {
   length_required: { title: "The upload could not be sent", detail: "Try again; if it keeps failing, use a smaller file.", fixable: true },
 };
 
-/** Backend error -> plain language. Unknown codes keep the backend's own (plain text) message. */
+/**
+ * Backend error -> plain language (D8b): every sentence is fixed, chosen by the error code (own keys only) and then the HTTP
+ * status. The server's message, an exception's message and validation details are never shown.
+ */
 export function mapWizardError(error: unknown): PlainError {
   if (error instanceof WizardInputError) return { title: "Check your answers", detail: error.message, fixable: true };
   const status = (error as { status?: unknown } | null)?.status;
-  const { code, message, details } = envelope((error as { body?: unknown } | null)?.body);
+  const { code } = envelope((error as { body?: unknown } | null)?.body);
   const known = Object.hasOwn(BY_CODE, code) ? BY_CODE[code] : undefined;
   if (known) return known;
-  if (code === "validation_failed") {
-    const first = (details.errors as Array<{ loc?: unknown[]; msg?: string }> | undefined)?.[0];
-    const where = Array.isArray(first?.loc) ? first.loc.filter((p) => p !== "body").join(" / ") : "";
-    return { title: "Some answers are not valid", detail: first?.msg ? `${where ? `${where}: ` : ""}${first.msg}` : "Check the highlighted answers.", fixable: true };
-  }
-  if (status === 429) return { title: "Too many runs at once", detail: message || "Wait for a run to finish, then try again.", fixable: false };
-  if (status === 403) return { title: "You cannot do this here", detail: "Starting a run needs a role that can write ML work in this workspace.", fixable: false };
-  if (status === 404) return { title: "Not found", detail: message || "The project or dataset is not in this workspace.", fixable: false };
-  if (status === 409 || status === 422 || status === 400) return { title: "The request was refused", detail: message || "Check your answers and try again.", fixable: true };
-  return { title: "Something went wrong", detail: message || (error instanceof Error ? error.message : "Try again."), fixable: false };
+  if (code === "validation_failed") return { title: "Some answers are not valid", detail: "Check the answers and try again.", fixable: true };
+  if (typeof status !== "number") return { title: "Something went wrong", detail: "Nothing was confirmed. Check your connection, reload the page and look before you try again.", fixable: false };
+  if (status === 401) return { title: "Your session ended", detail: "Sign in again; nothing was changed.", fixable: false };
+  if (status === 429) return { title: "Too many requests at once", detail: "Wait for a run to finish or a moment to pass, then try again.", fixable: false };
+  if (status === 403) return { title: "You cannot do this here", detail: "This needs a role that can write ML work in this workspace.", fixable: false };
+  if (status === 404) return { title: "Not found", detail: "It is not in this workspace any more, or you cannot see it. Reload the page.", fixable: false };
+  if (status === 413) return BY_CODE.payload_too_large;
+  if (status === 409 || status === 412 || status === 428) return { title: "This changed while you were looking", detail: "Reload the page and try again.", fixable: false };
+  if (status === 422 || status === 400) return { title: "The request was refused", detail: "Check your answers and try again.", fixable: true };
+  return { title: "Something went wrong", detail: "Try again. If it keeps failing, reload the page.", fixable: false };
 }
 
 // --- fixed error sentences for the New project flow (D2b review) ---------------------------

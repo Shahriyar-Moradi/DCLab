@@ -114,6 +114,23 @@ export function statusWords(status: string): { label: string; tone: Tone } {
 export const NOT_THE_MODEL = "Drift means the inputs look different from training. It does not mean the model is wrong.";
 export const NOTHING_AUTOMATIC = "Nothing switches the model in use on its own: a person decides. A retrain starts by itself only when the project's retrain policy is Automatic.";
 export const BELOW_FLOOR = "below_floor";
+
+/**
+ * D8a/D8b: why a monitoring week is an alert, from its closed `summary_code` (Inbox, Home, History, Monitoring all use this):
+ * `below_floor` is real outcomes under a floor and is never called drift; the three drift codes are drift; anything else
+ * (an older item without the code) names both causes.
+ */
+export type AlertCause = "below_floor" | "inputs_moved" | "scores_moved" | "inputs_and_scores_moved" | "unknown";
+const ALERT_CAUSES: ReadonlySet<string> = new Set(["below_floor", "inputs_moved", "scores_moved", "inputs_and_scores_moved"]);
+export const alertCause = (code: string | null | undefined): AlertCause => (code && ALERT_CAUSES.has(code) ? (code as AlertCause) : "unknown");
+const CAUSE_WORDS: Record<AlertCause, string> = {
+  below_floor: "real outcomes fell below a floor set for this project (this is not drift)",
+  inputs_moved: "drift (the inputs look different from training)",
+  scores_moved: "drift (the model's scores look different from training)",
+  inputs_and_scores_moved: "drift (the inputs and the scores look different from training)",
+  unknown: "drift, or real outcomes below a floor",
+};
+export const alertCauseWords = (code: string | null | undefined): string => CAUSE_WORDS[alertCause(code)];
 /** The week's own watch and alert lines: the values it was computed with, else (computed before they were recorded) `fallback`. */
 export function weekLines<T extends Pick<Thresholds, "psi_watch" | "psi_alert">>(w: Pick<WeekSummaryLike, "thresholds_used">, fallback: T): T {
   const used = w.thresholds_used;

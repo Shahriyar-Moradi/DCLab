@@ -48,7 +48,7 @@ from sqlalchemy.dialects.postgresql import distinct_on, insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import AgentRun, Artifact, LlmInvocation, MlJob, UsageRecord, User, Workspace
+from app.db.models import AgentRun, Artifact, LlmInvocation, MlJob, UsageRecord, User, Workspace, WorkspaceEntitlement
 from app.domain.errors import IdentityError, QuotaExceededError
 from app.domain.ml_jobs import JOB_TYPE_AUTO_TRAIN, JOB_TYPE_BATCH_PREDICT
 from app.domain.usage import (
@@ -183,6 +183,45 @@ def measure_quota(db: Session, workspace_id: UUID, key: str, moment: datetime) -
     if key == QUOTA_MEMBERS:
         return member_count(db, workspace_id)
     raise ValueError(f"unknown quota {key!r}")
+
+
+def page_usage(db: Session, workspace_ids: list[UUID], moment: datetime
+               ) -> dict[UUID, tuple[str, dict[str, tuple[int, int | None]]]]:
+    """Operator console (D8a): plan name and ``(used, limit)`` of each enforced quota for a page of
+    workspaces in four grouped statements; the same measures and limits as ``measure_quota`` /
+    ``quota_limit`` (an invalid stored value falls back to the default plan's limit)."""
+
+    if not workspace_ids:
+        return {}
+    today = moment.astimezone(UTC).date()
+    rows = db.execute(select(WorkspaceEntitlement.workspace_id, WorkspaceEntitlement.entitlement_key,
+                             WorkspaceEntitlement.value_json).where(
+        WorkspaceEntitlement.workspace_id.in_(workspace_ids),
+        WorkspaceEntitlement.entitlement_key.in_((PLAN_ENTITLEMENT_KEY, *ENFORCED_QUOTAS)))).all()
+    stored = {(ws, key): value for ws, key, value in rows}
+    seconds = func.coalesce(func.sum(func.extract("epoch", MlJob.completed_at - MlJob.started_at)), 0)
+    used = {
+        QUOTA_COMPUTE_SECONDS_MONTH: dict(db.execute(select(MlJob.workspace_id, seconds).where(
+            MlJob.workspace_id.in_(workspace_ids), MlJob.job_type.in_(RUN_JOB_TYPES), MlJob.started_at.is_not(None),
+            MlJob.completed_at.is_not(None), MlJob.completed_at >= MlJob.started_at,
+            MlJob.completed_at >= day_start(today.replace(day=1)))
+            .group_by(MlJob.workspace_id)).all()),
+        QUOTA_STORAGE_BYTES: dict(db.execute(select(Artifact.workspace_id, func.coalesce(func.sum(
+            Artifact.size_bytes), 0)).where(Artifact.workspace_id.in_(workspace_ids))
+            .group_by(Artifact.workspace_id)).all()),
+        QUOTA_RUNS_PER_DAY: dict(db.execute(select(MlJob.workspace_id, func.count()).where(
+            MlJob.workspace_id.in_(workspace_ids), MlJob.job_type.in_(RUN_JOB_TYPES),
+            MlJob.created_at >= day_start(today)).group_by(MlJob.workspace_id)).all()),
+    }
+    out = {}
+    for ws in workspace_ids:
+        plan = stored.get((ws, PLAN_ENTITLEMENT_KEY))
+        quotas = {}
+        for key in ENFORCED_QUOTAS:
+            limit = _as_limit(stored[(ws, key)]) if (ws, key) in stored else BETA_LIMITS[key]
+            quotas[key] = (int(used[key].get(ws) or 0), BETA_LIMITS[key] if limit is False else limit)
+        out[ws] = (plan if isinstance(plan, str) and re.fullmatch(PLAN_NAME_PATTERN, plan) else DEFAULT_PLAN, quotas)
+    return out
 
 
 def resets_at(key: str, moment: datetime) -> datetime | None:

@@ -347,6 +347,10 @@ def _persist_experiment_test_predictions(db: Session, experiment: Experiment, re
         )
 
 
+# D8a: a finished auto-train run before its evidence lock (an existing engine stage; STATUS_SQL reads it as running).
+HELD_STATUS = "REPORTING"
+
+
 def execute_experiment(
     db: Session,
     experiment: Experiment,
@@ -358,11 +362,16 @@ def execute_experiment(
     holdout_partition: tuple[Collection[int], Collection[int]] | None = None,
     target_labels: Mapping[str, Any] | None = None,
     service_overrides: ServiceOverrides | None = None,
+    hold_completion: bool = False,
 ) -> Experiment:
     """``service_overrides`` (ADR 0007 §6.2, service-only): the pinned budget and the goal's
     constraints apply to this execution's own copy of the configuration (never stored back into
     ``config``); ``expected_selection`` aborts the run at the winner lock, before the final test,
-    unless the selection reproduces. ``evidence_mode`` was fixed at INSERT."""
+    unless the selection reproduces. ``evidence_mode`` was fixed at INSERT.
+
+    ``hold_completion`` (D8a, the auto-train path): a successful run is left at ``HELD_STATUS``
+    (read as running, no ``ended_at``); the caller sets ``COMPLETED`` in the transaction that locks
+    its evidence, so no reader ever sees a completed run without its lock."""
 
     if experiment.scientific_evidence_locked_at is not None:
         # Re-running replaces preprocessing, findings, and stage facts. PostgreSQL
@@ -449,6 +458,8 @@ def execute_experiment(
     experiment.result = result
     experiment.status = result.get("status") or "COMPLETED"
     experiment.ended_at = datetime.now(timezone.utc)
+    if hold_completion and experiment.status == "COMPLETED":
+        experiment.status, experiment.ended_at = HELD_STATUS, None
     logger.info(
         "lab experiment %s finished status=%s trained=%s",
         experiment.id,

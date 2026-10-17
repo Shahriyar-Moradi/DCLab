@@ -175,8 +175,8 @@ export const comparisonsText = (n: number | null | undefined): string | null => 
 
 export const marginText = (v: VerdictLike): string | null => (num(v.margin) !== null ? fmtNum(num(v.margin)!) : null);
 
-/** One or two plain sentences for a verdict, built from the numbers only. */
-export function verdictSentence(v: VerdictLike): string {
+/** One or two plain sentences for a verdict, built from the numbers only. `against` names the other run (Compare: "the run it is based on"). */
+export function verdictSentence(v: VerdictLike, against = "the run in use"): string {
   const key = verdictKey(shownVerdict(v));
   if (key === "unknown") return "This result was not recognised, so no conclusion is drawn.";
   if (key === "not_comparable") return notComparableText(v.reason);
@@ -186,11 +186,18 @@ export function verdictSentence(v: VerdictLike): string {
   const margin = marginText(v);
   const folds = num(v.folds);
   if (diff === null || margin === null || folds === null) return "The numbers behind this result were not returned, so no conclusion is drawn.";
-  const lead = `Across the same ${folds} folds, ${metricName(v)} was ${diff} on average than in the run in use.`;
+  const lead = `Across the same ${folds} folds, ${metricName(v)} was ${diff} on average than in ${against}.`;
   if (key === "beats_the_noise") return `${lead} That is more than the noise margin of ${margin}, so it is unlikely to be luck for this one comparison. It is evidence, not proof.`;
   if (key === "worse") return `${lead} That is a drop larger than the noise margin of ${margin}.`;
-  if (v.reason === "below_minimum_effect") return `${lead} That is too small a change to matter, so keep the current model.`;
-  return `${lead} That is inside the noise margin of ${margin}, so it could be luck. Keep the current model.`;
+  const keep = against === "the run in use" ? "Keep the current model." : `It is no evidence that the change helped.`;
+  if (v.reason === "below_minimum_effect") return `${lead} That is too small a change to matter. ${keep}`;
+  return `${lead} That is inside the noise margin of ${margin}, so it could be luck. ${keep}`;
+}
+
+/** D8b: the compared runs that are based on another compared run (child, parent), for the verdict on Compare. Own ids only. */
+export function parentChildPairs(items: ReadonlyArray<{ experiment_id: string; parent_experiment_id?: string | null }>): Array<{ child: string; parent: string }> {
+  const ids = new Set(items.map((i) => i.experiment_id));
+  return items.flatMap((i) => (i.parent_experiment_id && i.parent_experiment_id !== i.experiment_id && ids.has(i.parent_experiment_id) ? [{ child: i.experiment_id, parent: i.parent_experiment_id }] : []));
 }
 
 // --- looks at the final test set ----------------------------------------------------------
@@ -224,7 +231,7 @@ export function newModelsText(n: number | null | undefined): string | null {
 
 // --- tries: the runs based on the run in use ----------------------------------------------
 
-export type RunLike = { id: string; status: string; created_at: string; intent?: string | null; parent_experiment_id?: string | null; evidence_mode?: string | null };
+export type RunLike = { id: string; status: string; created_at: string; intent?: string | null; parent_experiment_id?: string | null; evidence_mode?: string | null; started_by?: string | null };
 
 /**
  * The runs whose parent is the run in use, newest first. A run with no recorded parent is never one of them. Sealed improvement-loop

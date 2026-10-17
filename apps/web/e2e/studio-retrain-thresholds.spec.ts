@@ -44,7 +44,8 @@ function status(projectId: string, state: string, extra: Record<string, unknown>
   return {
     project_id: projectId, policy: "ask", state, model_in_use_id: MV, latest_window_start: "2026-10-05T00:00:00Z", latest_window_status: "alert", newer_dataset_id: DS,
     request: null, comparison: null, comparison_withheld: false, real_outcomes: { label: "not the same data", window_start: "2026-10-05T00:00:00Z", precision: 0.48, recall: 0.8, n_labelled: 400 },
-    proposal_id: null, proposal_state: null, notes: ["SERVER NOTE"], ...extra,
+    // D8a: the server's rule decides the retrain button (here: only before a retrain on this file exists).
+    proposal_id: null, proposal_state: null, can_start: state === "drift_found", notes: ["SERVER NOTE"], ...extra,
   };
 }
 

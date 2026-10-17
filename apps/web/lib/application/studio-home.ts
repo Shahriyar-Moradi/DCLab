@@ -10,6 +10,7 @@ import { inboxQuestion, inboxTitle, lookup, questionHref, suggestedBy } from "./
 import { metricInfo } from "./studio-goal.ts";
 import { familyLabel, stageWords, statusWords } from "./studio-runs.ts";
 import { utcWhen } from "./format-time.ts";
+import { alertCause, alertCauseWords } from "./studio-monitoring.ts";
 import { whatWords } from "./studio-history.ts";
 
 export type PillToneName = "ok" | "warn" | "crit" | "ai" | "det" | "gray";
@@ -49,7 +50,7 @@ const RETRAIN_REQUESTED: Record<string, string> = {
 const RUN_END: Record<string, string> = { completed: "finished", failed: "failed", cancelled: "was cancelled", skipped: "was skipped", ended: "ended" };
 const withoutQuestionMark = (text: string): string => text.replace(/\?$/, "");
 
-type ActivityText = ActivityLike & { summary: string; status?: string | null; decision_type?: string | null; subject?: { kind: string; id?: string | null } };
+type ActivityText = ActivityLike & { summary: string; status?: string | null; decision_type?: string | null; subject?: { kind: string; id?: string | null }; summary_code?: string | null };
 
 /** An activity row as a sentence (without the actor). Run names come from the caller; the server's fixed summaries are only matched. */
 export function activitySentence(item: ActivityText, runName: string | null): string {
@@ -72,6 +73,8 @@ export function activitySentence(item: ActivityText, runName: string | null): st
   if (item.kind === "agent_run_finished") return `An AI agent run ${item.status ? statusWords(item.status).toLowerCase() : "ended"}`;
   // D5c: retrain events (the status is the origin, or the comparison's outcome); no figures.
   if (item.kind === "retrain_requested") return lookup(RETRAIN_REQUESTED, item.status ?? "", "Retrain on newest data");
+  // D8b: the alert's cause from its closed code; the server's summary is not shown.
+  if (item.kind === "drift_alert") return `Weekly monitoring marked a week as alert: ${alertCauseWords(item.summary_code)}`;
   if (item.kind === "retrain_compared") return item.status === "compared" ? "The retrained model was put beside the model in use (same kind of test, latest months)" : "The retrained model could not be compared with the model in use";
   const question = questionEventWords(item.kind, item.status);
   if (question) return question;
@@ -160,6 +163,7 @@ type NeedsYouItem = {
   kind: string; project_id?: string | null; summary: string; status: string; can_act: boolean;
   proposed_by?: string | null; decision_type?: string | null; proposal_type?: string | null;
   subject: { kind: string; id?: string | null };
+  monitoring?: { summary_code?: string | null } | null;
 };
 export type NeedsYouRow = { title: string; sentence: string; action: { label: string; href: string } };
 
@@ -183,7 +187,9 @@ export function needsYouRow(item: NeedsYouItem, context: { projectName: string |
   if (item.kind === "drift_alert" || item.kind === "retrain_ask" || item.kind === "challenger_ready") {
     const href = project ? safeInternalHref(`/projects/${project}/monitoring`) : null;
     const sentence = item.kind === "drift_alert"
-      ? `The weekly check${where} marked the newest week as alert: drift, or real outcomes below a floor. Monitoring says which.`
+      ? alertCause(item.monitoring?.summary_code) === "unknown"
+        ? `The weekly check${where} marked the newest week as alert: drift, or real outcomes below a floor. Monitoring says which.`
+        : `The weekly check${where} marked the newest week as alert: ${alertCauseWords(item.monitoring?.summary_code)}.`
       : item.kind === "retrain_ask"
         ? `A newer labelled file exists${where} and the newest week is an alert. Retrain on it from Monitoring, or leave it.`
         : `A retrained model${where} is beside the model in use. Switch to it or keep the model in use.`;
@@ -232,6 +238,21 @@ export function foldMeter(progress: ProgressLike | null | undefined): { value: n
     step: `Model being trained: fold ${k} of ${n}${done ? " done" : ""}`,
     text: done ? `Fold ${k} of ${n} done` : `Fold ${k} of ${n} in progress, ${(k as number) - 1} done`,
   };
+}
+
+/**
+ * D8b: the progress text of one row of the Experiments list, only for the project's latest run while it is unfinished (the
+ * project summary records the latest event of that run alone; other running rows show no progress rather than a guess).
+ */
+export function listProgressText(
+  experimentId: string, status: string,
+  latest: { experiment_id: string; status?: string; progress?: ProgressLike | null } | null | undefined,
+): string | null {
+  if (!latest || latest.experiment_id !== experimentId || !["running", "cancelling"].includes(status)) return null;
+  const meter = foldMeter(latest.progress);
+  if (!meter) return null;
+  const family = familyLabel(latest.progress?.model_family);
+  return family ? `${family}: ${meter.text.charAt(0).toLowerCase()}${meter.text.slice(1)}` : meter.text;
 }
 
 /** A run in progress as a title ("Run 6 · CatBoost") and one line from its latest recorded event; nothing is estimated. Without `now` (first render) the start is left out. */

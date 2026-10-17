@@ -71,6 +71,7 @@ from app.domain.home_reads import (
     ProjectSummaryRead,
     RunProgressRead,
 )
+from app.domain.monitoring import BELOW_FLOOR
 from app.domain.scoring_schedules import OUTCOME_FAILED_TO_QUEUE, OUTCOME_QUEUED
 from app.domain.state_graph import node_key
 from app.services.authorization_service import can_read_workspace
@@ -401,17 +402,18 @@ def _final_test_items(db: Session, ws: UUID, project_id: UUID | None, after: _Ke
 def _drift_items(db: Session, ws: UUID, project_id: UUID | None, after: _Key | None,
                  n: int) -> list[ActivityItemRead]:
     mw = MonitoringWindow
-    stmt = select(mw.id, mw.project_id, mw.computed_at, mw.model_version_id).where(
+    stmt = select(mw.id, mw.project_id, mw.computed_at, mw.model_version_id, mw.summary_code).where(
         mw.workspace_id == ws, mw.status == "alert", latest_window_revision())
     return [
         ActivityItemRead(
             id=f"drift_alert:{window_id}", kind="drift_alert", occurred_at=at, project_id=proj,
             actor=ActivityActorRead(kind="rule"), subject=_subject("model_version", version_id),
-            summary="Weekly monitoring found drift (alert)", status="alert",
-            link=ActivityLinkRead(kind="monitoring_window", id=window_id),
+            summary=("Weekly monitoring found real outcomes below the floor (alert)" if code == BELOW_FLOOR
+                     else "Weekly monitoring found drift (alert)"), status="alert",
+            summary_code=code_value(code), link=ActivityLinkRead(kind="monitoring_window", id=window_id),
         )
-        for window_id, proj, at, version_id in _page(db, stmt, "drift_alert", mw.computed_at, mw.id, mw.project_id,
-                                                     project_id, after, n)
+        for window_id, proj, at, version_id, code in _page(db, stmt, "drift_alert", mw.computed_at, mw.id,
+                                                           mw.project_id, project_id, after, n)
     ]
 
 

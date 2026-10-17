@@ -46,7 +46,7 @@ const InboxItemSchema = z.object({
   // V7 BE-A: Jev agreement, who closed a Done item, and a drift alert's aggregates.
   agreement: nullableString,
   resolved_by: z.object({ kind: z.string(), is_you: z.boolean().optional() }).nullable().optional(),
-  monitoring: z.object({ window_start: z.string(), model_version_id: z.string(), max_psi: z.number().nullable().optional(), prediction_psi: z.number().nullable().optional() }).nullable().optional(),
+  monitoring: z.object({ window_start: z.string(), model_version_id: z.string(), max_psi: z.number().nullable().optional(), prediction_psi: z.number().nullable().optional(), summary_code: z.string().nullable().optional() }).nullable().optional(),
 });
 type RawInboxItem = z.infer<typeof InboxItemSchema>;
 /** The API omits empty lists; the UI always gets arrays and maps. */

@@ -85,8 +85,17 @@ class OperatorOverviewRead(_Read):
     readiness: ReadinessRead
 
 
+class OperatorQuotaRead(_Read):
+    """One enforced plan limit of a workspace (P8.4 usage; the workspace's own Usage page measures)."""
+
+    key: Literal["compute_seconds_month", "storage_bytes", "runs_per_day"]
+    used: int
+    limit: int | None = Field(description="null = unlimited.")
+    percent: float | None = Field(description="used / limit x 100 (null when unlimited or 0).")
+    over: bool = Field(description="used >= limit (a new run or upload would be refused while quotas are enforced).")
+
+
 class OperatorWorkspaceRead(_Read):
-    # TODO(P8.4-A): plan and usage vs limits join here once the usage service exists; absent until then.
     id: UUID
     name: str = Field(description="Customer-chosen text: render as plain text.")
     kind: str
@@ -97,6 +106,8 @@ class OperatorWorkspaceRead(_Read):
     failed_jobs_last_24h: int
     active_last_7d: bool
     assistant_beta: bool = Field(description="The ai_assistant_beta flag (set with `dclab entitlements set`).")
+    plan: str = Field(description="Plan name (set with `dclab usage set-plan`; `beta` by default).")
+    usage: list[OperatorQuotaRead] = Field(description="Used vs limit of each enforced quota (this month / today).")
 
 
 class OperatorWorkspacePage(_Read):

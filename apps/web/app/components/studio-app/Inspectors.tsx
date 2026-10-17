@@ -41,6 +41,7 @@ import {
   type StudioExperimentCode, type StudioExperimentDetail,
 } from "@/lib/application/studio-inspect-hooks";
 import { kindLabel, shortId } from "@/lib/application/studio-graph";
+import { readErrorSentence } from "@/lib/application/api-error-text";
 
 const TERMS = {
   cv: "Cross-validation (CV): the training rows are split into folds; each fold is held out once while the model trains on the others. Models are compared on these CV scores only.",
@@ -98,7 +99,7 @@ function CodeActions({ filename, source, label }: { filename: string; source: st
 
 function CodeTab({ code, error, pending }: { code?: StudioExperimentCode; error: unknown; pending: boolean }) {
   if (pending) return <p role="status">Loading the code…</p>;
-  if (!code) return <Banner tone="warn">Code to reproduce this run is not available{error instanceof Error ? ` (${error.message})` : ""}. Runs from before the code generator, or runs that are still going, have none.</Banner>;
+  if (!code) return <Banner tone="warn">Code to reproduce this run is not available{error ? ` (${readErrorSentence(error, "code").replace(/\.$/, "")})` : ""}. Runs from before the code generator, or runs that are still going, have none.</Banner>;
   return (
     <>
       <p className="muted">

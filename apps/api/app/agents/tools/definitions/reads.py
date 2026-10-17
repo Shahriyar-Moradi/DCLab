@@ -212,7 +212,7 @@ class ServiceReads:
     def experiments(self, project_id: UUID, limit: int) -> Any:
         from app.services.experiment_service import list_experiments
 
-        return list_experiments(self.db, **self._who, project_id=project_id, limit=limit)
+        return list_experiments(self.db, **self._who, project_id=project_id, limit=limit, agent=True)
 
     def datasets(self, limit: int) -> list[Any]:
         from app.services.technical_explorer_service import list_datasets
@@ -232,7 +232,7 @@ class ServiceReads:
     def experiment(self, experiment_id: UUID) -> Any:
         from app.services.experiment_service import experiment_read
 
-        return experiment_read(self.db, **self._who, experiment_id=experiment_id)
+        return experiment_read(self.db, **self._who, experiment_id=experiment_id, agent=True)
 
     def compare(self, experiment_ids: list[UUID]) -> Any:
         from app.domain.experiment_resources import ExperimentComparisonRead

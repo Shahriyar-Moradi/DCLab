@@ -3,7 +3,8 @@
 import { memo, useMemo } from "react";
 import { DataTable, type Column } from "@/components/studio/DataTable";
 import { Pill } from "@/components/studio/Pill";
-import { STATUS_TONE } from "@/app/components/studio-app/StudioParts";
+import { statusTone } from "@/app/components/studio-app/StudioParts";
+import { nodeStatusText } from "@/lib/application/studio-runs";
 import type { StudioGraph, StudioGraphNode } from "@/lib/application/studio-data-hooks";
 import {
   NODE_H, NODE_W, REF_BADGE, builtFrom, groupByKind, kindLabel, markersFor, nameLookup, refBadges, relationLabel,
@@ -19,7 +20,7 @@ const inUseWords = (badge: string) => (badge === REF_BADGE.champion_model ? badg
 export function nodeName(node: StudioGraphNode, markers: number, name: string): string {
   return [
     name,
-    node.status ? `status ${node.status.toLowerCase()}` : "",
+    node.status ? `status ${nodeStatusText(node.status)}` : "",
     node.stale ? "built on an older version" : "",
     ...refBadges(node).map(inUseWords),
     markers ? `${markers} AI answer${markers === 1 ? "" : "s"} recorded` : "",
@@ -29,7 +30,7 @@ export function nodeName(node: StudioGraphNode, markers: number, name: string): 
 function Badges({ node, markers }: { node: StudioGraphNode; markers: number }) {
   return (
     <>
-      {node.status ? <Pill tone={STATUS_TONE[node.status.toLowerCase()] ?? "gray"}>{node.status.toLowerCase().replaceAll("_", " ")}</Pill> : null}
+      {node.status ? <Pill tone={statusTone(node.status)}>{nodeStatusText(node.status)}</Pill> : null}
       {refBadges(node).map((badge) => <Pill key={badge} tone={badge === REF_BADGE.champion_model ? "ok" : "det"}>{badge}</Pill>)}
       {node.stale ? <Pill tone="warn"><span aria-hidden="true">⚠ </span>built on an older version</Pill> : null}
       {markers ? <Pill tone="ai"><span aria-hidden="true">◆ </span>AI ×{markers}</Pill> : null}

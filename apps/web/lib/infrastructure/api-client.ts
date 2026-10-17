@@ -250,6 +250,10 @@ export function apiPut<T>(path: string, schema: ZodType<T>, json: unknown, heade
   return request(path, schema, { method: "PUT", body: JSON.stringify(json), headers });
 }
 
+export function apiPatch<T>(path: string, schema: ZodType<T>, json: unknown, headers?: Record<string, string>): Promise<T> {
+  return request(path, schema, { method: "PATCH", body: JSON.stringify(json), headers });
+}
+
 export async function apiPostEmpty(path: string): Promise<void> {
   const context = requestWorkspace(path);
   const headers = await csrfHeaders(path, context, { Accept: "application/json" });

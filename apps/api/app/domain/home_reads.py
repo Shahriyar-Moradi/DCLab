@@ -114,6 +114,13 @@ class ActivityItemRead(BaseModel):
         ),
     )
     decision_type: DecisionType | None = None
+    summary_code: str | None = Field(
+        default=None,
+        description=(
+            "`drift_alert` only: the monitoring window's code (`below_floor` = real outcomes under a floor; "
+            "`inputs_moved` | `scores_moved` | `inputs_and_scores_moved` = drift)."
+        ),
+    )
     link: ActivityLinkRead
     run_result: ActivityRunResultRead | None = Field(
         default=None, description="`run_finished` with locked evidence: the winner's family and CV score."

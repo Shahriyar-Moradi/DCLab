@@ -380,13 +380,14 @@ MONDAY = datetime(2026, 10, 5, tzinfo=UTC)
 
 
 def _window(db, g, model_version_id, *, week: int = 0, revision: int = 1, status: str = "alert",
-            max_psi: float = 0.31) -> MonitoringWindow:
+            max_psi: float = 0.31, code: str | None = None) -> MonitoringWindow:
     start = MONDAY + timedelta(days=7 * week)
     row = MonitoringWindow(
         workspace_id=g.ws, project_id=g.project.id, model_version_id=model_version_id, window_start=start,
         window_end=start + timedelta(days=7), revision=revision, n_rows=10, n_batch_predictions=1,
         input_drift={"max_psi": max_psi, "features": []}, prediction_drift={"psi": 0.05}, outcomes={},
-        status=status, summary_code="drift" if status == "alert" else "stable", summary="weekly check")
+        status=status, summary_code=code or ("inputs_moved" if status == "alert" else "stable"),
+        summary="weekly check")
     db.add(row)
     db.commit()
     return row
@@ -424,12 +425,19 @@ def test_activity_projects_uploads_final_tests_drift_and_schedule(client, db_ses
     drift = by_id[f"drift_alert:{alert.id}"]
     assert (drift["status"], drift["subject"]["id"], drift["link"]) == (
         "alert", str(h.mv[0]), {"kind": "monitoring_window", "id": str(alert.id)})
+    # D8a: the cause travels as the window's code; a floor alert is never called drift.
+    assert (drift["summary"], drift["summary_code"]) == ("Weekly monitoring found drift (alert)", "inputs_moved")
+    assert {i["summary_code"] for i in by_id.values() if i["kind"] != "drift_alert"} == {None}
     assert f"drift_alert:{older.id}" not in by_id
     weekly = by_id[f"scheduled_scoring:{tick.id}"]
     assert (weekly["summary"], weekly["status"], weekly["actor"]["kind"]) == (
         "Weekly scoring skipped", "skipped_no_new_file", "rule")
     for size in (1, 3):  # the new kinds page with the others
         assert [i["id"] for i in _all(client, h, limit=size)] == [i["id"] for i in response.json()["items"]]
+    floor = _window(db, h, h.mv[0], week=1, code="below_floor")
+    floor_item = {i["id"]: i for i in _all(client, h, limit=100)}[f"drift_alert:{floor.id}"]
+    assert (floor_item["summary"], floor_item["summary_code"]) == (
+        "Weekly monitoring found real outcomes below the floor (alert)", "below_floor")
     _token, raw = create_service_token(db, creator=h.actor, workspace_id=h.ws, name="r", scopes=["read"],
                                        expires_in_days=1, current_password="test-password")
     db.commit()

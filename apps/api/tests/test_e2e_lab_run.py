@@ -266,6 +266,70 @@ def test_6_mid_run_refresh_reads_backend_state(auth_client, db_session, monkeypa
 
 
 # ---------------------------------------------------------------------------
+# D8a — no reader ever sees a completed run without its evidence lock
+# ---------------------------------------------------------------------------
+
+
+def test_completed_is_committed_with_the_evidence_lock(auth_client, db_session, test_engine, monkeypatch):
+    from sqlalchemy import event
+    from sqlalchemy.orm import sessionmaker
+
+    from app.db.models import ModelVersion
+    from app.services import reproducibility_service
+    from app.services.experiment_service import STATUS_SQL
+
+    _no_background(monkeypatch)
+    upload_id = _upload(auth_client, _classification(seed=12))
+    other = sessionmaker(bind=test_engine)
+    seen: list[tuple] = []
+
+    def outside(experiment_id) -> None:
+        """What another connection (an API reader) sees now."""
+        with other() as reader:
+            raw, public, locked = reader.execute(
+                select(Experiment.status, STATUS_SQL, Experiment.scientific_evidence_locked_at)
+                .where(Experiment.id == experiment_id)).one()
+            versions = reader.scalar(select(ModelVersion.id).where(ModelVersion.pipeline_run_id == experiment_id))
+        seen.append((raw, public, locked, versions))
+
+    real_execute = training_stage.execute_experiment
+    real_repro = reproducibility_service.persist_reproducibility
+
+    def execute_then_look(db, experiment, **kwargs):
+        done = real_execute(db, experiment, **kwargs)
+        outside(done.id)  # training committed its results
+        return done
+
+    def repro_then_look(db, experiment, result):
+        outside(experiment.id)  # the run's result is committed; the lock transaction is open
+        return real_repro(db, experiment, result)
+
+    monkeypatch.setattr(training_stage, "execute_experiment", execute_then_look)
+    monkeypatch.setattr(reproducibility_service, "persist_reproducibility", repro_then_look)
+    unlocked: list = []
+
+    def guard(session) -> None:
+        """Every commit of the run: never a COMPLETED run without its evidence lock in the same commit."""
+        unlocked.extend(obj.id for obj in list(session.identity_map.values())
+                        if isinstance(obj, Experiment) and str(obj.status).upper() == "COMPLETED"
+                        and obj.scientific_evidence_locked_at is None)
+
+    event.listen(db_session, "before_commit", guard)
+    try:
+        upload, _result = _train(db_session, upload_id)
+    finally:
+        event.remove(db_session, "before_commit", guard)
+    assert unlocked == []
+    assert upload.pipeline_status == "completed" and len(seen) == 2
+    for raw, public, locked, version in seen:
+        assert raw != "COMPLETED" and public != "completed" and locked is None and version is None
+    outside(upload.experiment_id)
+    raw, public, locked, version = seen[-1]
+    assert (raw, public) == ("COMPLETED", "completed") and locked is not None and version is not None
+    assert db_session.get(Experiment, upload.experiment_id).ended_at is not None
+
+
+# ---------------------------------------------------------------------------
 # §27 Test 7 — a completed run reloads from persistence without retraining
 # ---------------------------------------------------------------------------
 

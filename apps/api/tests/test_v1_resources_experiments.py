@@ -12,7 +12,7 @@ from uuid import uuid4
 import numpy as np
 import pandas as pd
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.db.models import (
     ClientLabUpload,
@@ -680,3 +680,32 @@ def test_keys_cursors_and_untrusted_text_are_scoped_and_redacted(client, db_sess
         headers=_h(setup, setup["beta_admin"], workspace=setup["beta"]),
     )
     _assert_envelope(beta, 400, "invalid_cursor")
+
+    # D8a: who started each try, from existing records (never an id; never "you" for a token).
+    secret = create_service_token(db_session, creator=setup["alpha_admin"], workspace_id=setup["alpha"].id,
+                                  name="d8a", scopes=("read", "experiments:write"), expires_in_days=1,
+                                  current_password="test-password")[1]
+    db_session.commit()
+    bearer = {"Authorization": f"Bearer {secret}"}
+    tool = client.post("/v1/experiments", json={"project_id": str(setup["alpha_project"].id), "dataset_id": dataset_id,
+                                                "target_column": "label", "intent": "by a tool"},
+                       headers={**bearer, "Idempotency-Key": _key()})
+    assert tool.status_code == 202, tool.text
+    assert (mine["started_by"], tool.json()["started_by"]) == ("you", "connected_tool")
+
+    def started(headers) -> dict[str, str | None]:
+        return {item["id"]: item["started_by"]
+                for item in client.get("/v1/experiments", params={"limit": 50}, headers=headers).json()["items"]}
+
+    expected = {mine["id"]: "you", theirs.json()["id"]: "person", tool.json()["id"]: "connected_tool"}
+    assert {k: v for k, v in started(_h(setup)).items() if k in expected} == expected
+    assert started(_h(setup, engineer))[theirs.json()["id"]] == "you"
+    as_token = started(bearer)
+    assert as_token[mine["id"]] == "person" and "you" not in as_token.values()
+    assert str(setup["alpha_admin"].id) not in client.get("/v1/experiments", headers=bearer).text
+    assert client.get(f"/v1/experiments/{mine['id']}", headers=bearer).json()["started_by"] == "person"
+    run = db_session.get(Experiment, mine["id"])
+    db_session.execute(update(WorkflowRun).where(WorkflowRun.id == run.workflow_run_id)
+                       .values(initiated_by_type="schedule"))
+    db_session.commit()
+    assert client.get(f"/v1/experiments/{mine['id']}", headers=_h(setup)).json()["started_by"] == "rules"

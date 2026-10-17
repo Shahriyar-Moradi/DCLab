@@ -102,17 +102,18 @@ export function mapScoringError(error: unknown): PlainError {
   return mapWizardError(error);
 }
 
-/** Why a finished scoring failed, from the API's own code (its message is generic API text, shown as plain text). */
-export function failureError(code: string | null | undefined, message: string | null | undefined, scheduled = false): PlainError {
+/**
+ * Why a finished scoring failed, from the API's own code only (D8b): the stored failure message is never shown, so `_message`
+ * is accepted for the callers' convenience and ignored.
+ */
+export function failureError(code: string | null | undefined, _message: string | null | undefined, scheduled = false): PlainError {
   const key = code?.toLowerCase() ?? "";
   if (scheduled && key === "release_mismatch") {
     return { title: "This scheduled run did not score", detail: "The model in use changed before this scheduled run started, so nothing was scored.", fixable: false };
   }
-  if (key === "feature_contract_failed") return { ...BY_CODE.feature_contract_failed, detail: message ? `${message}.` : BY_CODE.feature_contract_failed.detail };
-  if (key === "scoring_failed" && message) return { ...BY_CODE.scoring_failed, detail: `${message}.` };
   const known = Object.hasOwn(BY_CODE, key) ? BY_CODE[key] : undefined;
   if (known) return known;
-  return { title: "Scoring did not finish", detail: message || "Try again with the same file.", fixable: false };
+  return { title: "Scoring did not finish", detail: "Try again with the same file.", fixable: false };
 }
 
 export const isTerminal = (status: string | null | undefined) => status === "completed" || status === "failed";

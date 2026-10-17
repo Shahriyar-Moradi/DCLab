@@ -13,7 +13,7 @@ from app.engine.modeling.holdout_planner import HoldoutPlan
 from app.engine.modeling.leakage_auditor import ModelDevelopmentPlan
 from app.engine.models.registry import available_families
 from app.services.auto_train.context import RunContext, StageHalt, service_module
-from app.services.lab_service import execute_experiment
+from app.services.lab_service import HELD_STATUS, execute_experiment
 
 
 class TrainingInput(BaseModel):
@@ -91,8 +91,9 @@ def run_training(ctx: RunContext, inp: TrainingInput) -> TrainingOutput:
             target_labels=inp.target_labels,
             # ADR 0007 §6.2: only a run branch_experiment inserted with service overrides has a record.
             service_overrides=ServiceOverrides.from_config(experiment.config),
+            hold_completion=True,  # D8a: COMPLETED is written with the evidence lock (persistence)
         )
-        if experiment.status != "COMPLETED":
+        if experiment.status != HELD_STATUS:
             result = dict(experiment.result or {})
             reason = result.get("error") or f"experiment ended with status {experiment.status}"
             ctx.fail(

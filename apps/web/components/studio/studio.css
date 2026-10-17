@@ -16,7 +16,7 @@
   --accent-text: #0A7A6D; --ai-text: #5A48E0; --ok-text: #0B7A3B; --warn-text: #9A5700; --crit-text: #B42318;
   --font-display: var(--font-manrope), var(--font-sans), -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-body: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --r: 16px; --r-sm: 10px; --nav-w: 240px; --glass: rgba(244,246,250,.86);
+  --r: 16px; --r-sm: 10px; --nav-w: 240px;
   --shadow: 0 1px 2px rgba(16,24,40,.04), 0 6px 20px rgba(16,24,40,.05);
   color-scheme: light;
 }
@@ -26,7 +26,7 @@
     --accent: #3FC3B1; --accent-strong: #3FC3B1; --accent-ink: #0F1218; --accent-soft: #15302C; --ai: #9A8EFF; --ai-soft: #262349; --ok: #4ADE80; --ok-soft: #14301F; --warn: #F4B04A; --warn-soft: #3A2A10; --crit: #F87171; --crit-soft: #3B1A1A;
     --primary: #E6E9EF; --primary-ink: #0F1218;
     --accent-text: #3FC3B1; --ai-text: #A99FFF; --ok-text: #4ADE80; --warn-text: #F4B04A; --crit-text: #F87171;
-    --glass: rgba(15,18,24,.86); --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25); color-scheme: dark;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25); color-scheme: dark;
   }
 }
 .studio[data-theme="dark"] {
@@ -34,7 +34,7 @@
   --accent: #3FC3B1; --accent-strong: #3FC3B1; --accent-ink: #0F1218; --accent-soft: #15302C; --ai: #9A8EFF; --ai-soft: #262349; --ok: #4ADE80; --ok-soft: #14301F; --warn: #F4B04A; --warn-soft: #3A2A10; --crit: #F87171; --crit-soft: #3B1A1A;
   --primary: #E6E9EF; --primary-ink: #0F1218;
   --accent-text: #3FC3B1; --ai-text: #A99FFF; --ok-text: #4ADE80; --warn-text: #F4B04A; --crit-text: #F87171;
-  --glass: rgba(15,18,24,.86); --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25); color-scheme: dark;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25); color-scheme: dark;
 }
 .studio { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 0.9375rem; line-height: 1.55; -webkit-font-smoothing: antialiased; }
 .studio *, .studio *::before, .studio *::after { box-sizing: border-box; }
@@ -81,7 +81,7 @@
 .studio .nav .user b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .studio .nav .user small { color: var(--muted); font-size: .76rem; overflow-wrap: anywhere; }
 .studio .main { min-width: 0; display: grid; grid-template-rows: auto 1fr; }
-.studio .topbar { display: flex; align-items: center; gap: 12px; padding: 12px 32px; background: var(--glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 5; min-width: 0; }
+.studio .topbar { display: flex; align-items: center; gap: 12px; padding: 12px 32px; /* opaque: text over scrolled content behind a see-through bar failed contrast */ background: var(--bg); position: sticky; top: 0; z-index: 5; min-width: 0; }
 .studio.embedded .topbar { position: static; }
 .studio .topbar .right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex: none; }
 .studio .crumbs { font-size: 0.88rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }

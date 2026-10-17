@@ -78,21 +78,13 @@ test("retrain steps: drift and a floor alert are named apart; asked, failed and 
   keep(floor);
 });
 
-test("the retrain button: a newer labelled file, a person who can start runs, nothing running", () => {
-  assert.equal(canOfferRetrain(st({ newer_dataset_id: DS }), true), true);
-  assert.equal(canOfferRetrain(st({ newer_dataset_id: DS }), false), false);
-  assert.equal(canOfferRetrain(st({ newer_dataset_id: null }), true), false);
-  assert.equal(canOfferRetrain(st({ newer_dataset_id: DS, state: "retraining" }), true), false);
-  assert.equal(canOfferRetrain(st({ newer_dataset_id: DS, request: { origin: "person", created_at: "x", dataset_id: DS, experiment_status: "needs_input" } }), true), false);
-  assert.equal(canOfferRetrain(undefined, true), false);
-  // One retrain per model in use and file: once the model in use was retrained on the newest file, no button in any later state.
+test("the retrain button follows the server's can_start (D8a), never a client-side guess", () => {
+  assert.equal(canOfferRetrain(st({ newer_dataset_id: DS, can_start: true })), true);
+  assert.equal(canOfferRetrain(st({ newer_dataset_id: DS, can_start: false })), false);
+  assert.equal(canOfferRetrain(st({ newer_dataset_id: DS })), false); // an older read without the field offers nothing
+  assert.equal(canOfferRetrain(st({ newer_dataset_id: null, can_start: true })), false);
+  assert.equal(canOfferRetrain(undefined), false);
   const done = (state: string, run: string) => st({ state, newer_dataset_id: DS, model_in_use_id: ME, request: { origin: "person", created_at: "x", dataset_id: DS, incumbent_model_version_id: ME, experiment_id: RUN, experiment_status: run } });
-  for (const [state, run] of [["waiting_for_you", "completed"], ["ready_to_compare", "completed"], ["kept", "completed"], ["drift_found", "failed"], ["drift_found", "cancelled"]]) {
-    assert.equal(canOfferRetrain(done(state, run), true), false, `${state}/${run}`);
-  }
-  // A newer file than the one retrained on, or a different model in use, offers it again.
-  assert.equal(canOfferRetrain({ ...done("kept", "completed"), newer_dataset_id: "44444444-4444-4444-8444-444444444444" }, true), true);
-  assert.equal(canOfferRetrain({ ...done("drift_found", "failed"), model_in_use_id: "55555555-5555-4555-8555-555555555555" }, true), true);
   for (const run of ["failed", "cancelled"]) assert.match(retrainSteps(done("drift_found", run), false)[0].text, /Nothing changed: the model in use stays in use\. Upload a newer labelled file to retrain again\.$/);
   const waits = retrainSteps(st({ state: "retraining", request: { origin: "person", created_at: "x", dataset_id: DS, experiment_id: RUN, experiment_status: "needs_input" } }), false)[0];
   assert.equal(waits.text, "Started by a person. The retrain run is waiting for an answer in the Inbox before it can go on.");

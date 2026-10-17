@@ -24,7 +24,7 @@ import { useExperimentFindings, useProjectGraph } from "@/lib/application/studio
 import { attentionCount, findingsState, parseBranchPrefill, passSummary } from "@/lib/application/studio-findings";
 import { designLabels, runName, runOrdinals } from "@/lib/application/studio-names";
 import { taskLabel } from "@/lib/application/studio-goal";
-import { statusWords } from "@/lib/application/studio-runs";
+import { startedByText, statusWords } from "@/lib/application/studio-runs";
 
 const mono = (value: string | null | undefined) => (value ? <span className="mono">{plainText(value, 80)}</span> : "—");
 
@@ -96,6 +96,7 @@ function ExperimentPageInner() {
           items={[
             { key: "task", label: "Kind of answer", value: taskLabel(experiment.task_type) ?? "—" },
             { key: "target", label: "Column to predict", value: mono(experiment.target_column) },
+            { key: "by", label: "Started by", value: startedByText(experiment.started_by) },
             { key: "parent", label: "Based on", value: parentName && parentId ? <Link href={`/projects/${id}/experiments/${parentId}`}>{parentName}</Link> : "Started from scratch" },
             { key: "split", label: "Test design", value: designName ?? "—" },
             { key: "started", label: "Started", value: formatWhen(experiment.started_at ?? experiment.created_at) },

@@ -55,6 +55,10 @@ test("write errors: owner_only is plain, 403/404/409/412/428 are mapped", () => 
   assert.match(mapInboxError(err(409, "invalid_decision_transition")).title, /Already decided/);
   assert.match(mapInboxError(err(412, "precondition_failed")).title, /changed/);
   assert.match(mapInboxError(err(428)).title, /out of date/);
+  // D8b: the server's message is never shown.
+  for (const e of [err(409, "invalid_decision_transition", "raw server words"), err(500, "", "raw server words"), err(400, "__proto__", "raw server words")]) {
+    assert.doesNotMatch(JSON.stringify(mapInboxError(e)), /raw server words/);
+  }
 });
 
 test("answers are shown as plain lines, summarised when nested, never raw JSON", () => {

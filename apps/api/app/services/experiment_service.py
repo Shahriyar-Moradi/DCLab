@@ -431,7 +431,61 @@ def _attempts(db: Session, workspace_id: UUID, job_id: UUID) -> list[ExperimentA
     ]
 
 
-def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_id: UUID) -> ExperimentDetailRead:
+_RULE_STARTS = frozenset({"system", "schedule"})
+
+
+def started_by(db: Session, workspace_id: UUID, experiments: list[Experiment],
+               viewer_id: UUID | None) -> dict[UUID, str | None]:
+    """D8a ``started_by`` of each run from existing records, in at most five workspace-scoped
+    statements: a service token's execution request or improve loop (``connected_tool``) > an
+    accepted AI proposal whose command started it (``assistant``) > an automatic retrain or a
+    system / scheduled workflow run (``rules``) > the person behind the improve loop, workflow run
+    or retrain (``you`` for ``viewer_id``, else ``person``). ``viewer_id`` is None for tokens/agents."""
+
+    from app.db.models import AgentProposal, ImproveIteration, ImproveRun, ProjectDecisionRecord, RetrainRequest
+
+    ids = [row.id for row in experiments]
+    if not ids:
+        return {}
+    tokens = set(db.scalars(select(ExecutionRequest.pipeline_run_id).where(
+        ExecutionRequest.workspace_id == workspace_id, ExecutionRequest.pipeline_run_id.in_(ids),
+        ExecutionRequest.initiated_by_service_token_id.is_not(None))))
+    loops = {exp: (token, user) for exp, token, user in db.execute(
+        select(ImproveIteration.experiment_id, ImproveRun.created_by_service_token_id, ImproveRun.created_by_user_id)
+        .join(ImproveRun, (ImproveRun.workspace_id == ImproveIteration.workspace_id)
+              & (ImproveRun.id == ImproveIteration.improve_run_id))
+        .where(ImproveIteration.workspace_id == workspace_id, ImproveIteration.experiment_id.in_(ids)))}
+    pdr, executed = ProjectDecisionRecord, ProjectDecisionRecord.details["executed"]
+    ai = set(db.scalars(select(executed["id"].astext).join(
+        AgentProposal, (AgentProposal.workspace_id == pdr.workspace_id) & (AgentProposal.decision_record_id == pdr.id))
+        .where(pdr.workspace_id == workspace_id, pdr.decision_type == "proposal_accepted",
+               executed["kind"].astext == "experiment", executed["id"].astext.in_([str(i) for i in ids]))))
+    retrains = {exp: (origin, user) for exp, origin, user in db.execute(
+        select(RetrainRequest.experiment_id, RetrainRequest.origin, RetrainRequest.requested_by_user_id)
+        .where(RetrainRequest.workspace_id == workspace_id, RetrainRequest.experiment_id.in_(ids)))}
+    run_ids = [row.workflow_run_id for row in experiments if row.workflow_run_id is not None]
+    runs = {run: (kind, user) for run, kind, user in db.execute(
+        select(WorkflowRun.id, WorkflowRun.initiated_by_type, WorkflowRun.requested_by)
+        .where(WorkflowRun.workspace_id == workspace_id, WorkflowRun.id.in_(run_ids)))} if run_ids else {}
+    out: dict[UUID, str | None] = {}
+    for row in experiments:
+        loop, retrain = loops.get(row.id), retrains.get(row.id)
+        kind, user = runs.get(row.workflow_run_id, (None, None))
+        if row.id in tokens or (loop is not None and loop[0] is not None) or kind == "agent":
+            out[row.id] = "connected_tool"
+        elif str(row.id) in ai:
+            out[row.id] = "assistant"
+        elif (retrain is not None and retrain[0] == "auto") or kind in _RULE_STARTS:
+            out[row.id] = "rules"
+        else:
+            person = loop[1] if loop is not None else user or (retrain[1] if retrain is not None else None)
+            you = viewer_id is not None and person == viewer_id
+            out[row.id] = None if person is None else "you" if you else "person"
+    return out
+
+
+def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_id: UUID,
+                    agent: bool = False) -> ExperimentDetailRead:
     _require_read(db, actor, workspace_id)
     experiment, status = _load(db, workspace_id, experiment_id)
     workflow_run = (
@@ -473,6 +527,7 @@ def experiment_read(db: Session, *, actor: User, workspace_id: UUID, experiment_
             256,
         ),
         intent=_intent(experiment),
+        started_by=started_by(db, workspace_id, [experiment], None if agent else actor.id)[experiment.id],
         evidence_mode=experiment.evidence_mode,
         evidence_note=SEALED_FINAL_TEST_NOTE if experiment.evidence_mode == EVIDENCE_MODE_SEALED else None,
         lineage=ExperimentLineage(
@@ -522,8 +577,10 @@ def list_experiments(
     has_change_set: bool | None = None,
     cursor: str | None = None,
     limit: int = 50,
+    agent: bool = False,
 ) -> ExperimentPage:
-    """Experiments of the workspace, newest first; the cursor is bound to the filters."""
+    """Experiments of the workspace, newest first; the cursor is bound to the filters. ``agent``:
+    a service token or agent reads (``started_by`` never says ``you``)."""
 
     _require_read(db, actor, workspace_id)
     limit = max(1, min(int(limit), EXPERIMENT_PAGE_MAX))
@@ -568,6 +625,7 @@ def list_experiments(
     if len(rows) > limit:
         last = page[-1][0]
         next_cursor = sign_cursor(scope, [last.created_at.isoformat(), str(last.id)])
+    starters = started_by(db, workspace_id, [row for row, _state in page], None if agent else actor.id)
     return ExperimentPage(
         items=[
             ExperimentListItem(
@@ -583,6 +641,7 @@ def list_experiments(
                 has_change_set=row.change_set is not None,
                 evidence_mode=row.evidence_mode,
                 intent=_intent(row),
+                started_by=starters[row.id],
             )
             for row, state in page
         ],

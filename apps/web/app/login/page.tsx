@@ -11,6 +11,7 @@ import { displayName, parseSessionUser, roleLabel } from "@/lib/infrastructure/s
 import { Lock, Mail } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import { apiStatus } from "@/lib/application/api-error-text";
 
 const LOCAL_ACCOUNTS = [
   { label: "DCLab Admin", email: "admin@dclab.io", password: "AdminPass123" },
@@ -52,10 +53,20 @@ function LoginForm() {
     );
   }
 
+  // D8b: fixed sentences by status; the server's message is never shown.
+  const loginStatus = apiStatus(login.error);
   const errorMessage = login.isError
-    ? login.error instanceof Error
-      ? login.error.message
-      : "Could not sign in."
+    ? loginStatus === 401
+      ? "The email or password is not right."
+      : loginStatus === 429
+        ? "Too many sign-in attempts. Wait a few minutes and try again."
+        : loginStatus === 400 || loginStatus === 422
+          ? "Enter a valid email and password."
+          : loginStatus === 403
+            ? "This account cannot sign in here."
+            : loginStatus !== null && loginStatus >= 500
+              ? "DCLab had a problem signing you in. Try again shortly."
+              : "Could not sign in. Check your connection and try again."
     : undefined;
 
   if (!loaded) {

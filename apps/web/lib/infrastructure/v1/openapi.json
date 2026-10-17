@@ -175,6 +175,18 @@
             "description": "One line built by the server from typed fields only (no free text).",
             "title": "Summary",
             "type": "string"
+          },
+          "summary_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`drift_alert` only: the monitoring window's code (`below_floor` = real outcomes under a floor; `inputs_moved` | `scores_moved` | `inputs_and_scores_moved` = drift).",
+            "title": "Summary Code"
           }
         },
         "required": [
@@ -4805,6 +4817,25 @@
             ],
             "title": "Started At"
           },
+          "started_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "you",
+                  "person",
+                  "connected_tool",
+                  "assistant",
+                  "rules"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who started this run, from existing records (never an id): `you` / `person` (a person; `you` never for service tokens or agents), `connected_tool` (a service token, or an improve loop a token started), `assistant` (a person accepted an AI proposal that started it), `rules` (an automatic retrain or a system / scheduled start); null when no record says.",
+            "title": "Started By"
+          },
           "status": {
             "enum": [
               "queued",
@@ -5225,6 +5256,25 @@
               }
             ],
             "title": "Started At"
+          },
+          "started_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "you",
+                  "person",
+                  "connected_tool",
+                  "assistant",
+                  "rules"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who started this run, from existing records (never an id): `you` / `person` (a person; `you` never for service tokens or agents), `connected_tool` (a service token, or an improve loop a token started), `assistant` (a person accepted an AI proposal that started it), `rules` (an automatic retrain or a system / scheduled start); null when no record says.",
+            "title": "Started By"
           },
           "status": {
             "enum": [
@@ -8415,6 +8465,18 @@
             ],
             "description": "PSI of the model's scores.",
             "title": "Prediction Psi"
+          },
+          "summary_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the week is an alert: `below_floor` (real outcomes under a floor) or a drift code (`inputs_moved` | `scores_moved` | `inputs_and_scores_moved`).",
+            "title": "Summary Code"
           },
           "window_start": {
             "format": "date-time",
@@ -13319,6 +13381,63 @@
         "title": "OperatorOverviewRead",
         "type": "object"
       },
+      "OperatorQuotaRead": {
+        "additionalProperties": false,
+        "description": "One enforced plan limit of a workspace (P8.4 usage; the workspace's own Usage page measures).",
+        "properties": {
+          "key": {
+            "enum": [
+              "compute_seconds_month",
+              "storage_bytes",
+              "runs_per_day"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null = unlimited.",
+            "title": "Limit"
+          },
+          "over": {
+            "description": "used >= limit (a new run or upload would be refused while quotas are enforced).",
+            "title": "Over",
+            "type": "boolean"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "used / limit x 100 (null when unlimited or 0).",
+            "title": "Percent"
+          },
+          "used": {
+            "title": "Used",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "used",
+          "limit",
+          "percent",
+          "over"
+        ],
+        "title": "OperatorQuotaRead",
+        "type": "object"
+      },
       "OperatorWorkspacePage": {
         "additionalProperties": false,
         "properties": {
@@ -13391,9 +13510,22 @@
             "title": "Name",
             "type": "string"
           },
+          "plan": {
+            "description": "Plan name (set with `dclab usage set-plan`; `beta` by default).",
+            "title": "Plan",
+            "type": "string"
+          },
           "project_count": {
             "title": "Project Count",
             "type": "integer"
+          },
+          "usage": {
+            "description": "Used vs limit of each enforced quota (this month / today).",
+            "items": {
+              "$ref": "#/components/schemas/OperatorQuotaRead"
+            },
+            "title": "Usage",
+            "type": "array"
           }
         },
         "required": [
@@ -13406,7 +13538,9 @@
           "jobs_last_30d",
           "failed_jobs_last_24h",
           "active_last_7d",
-          "assistant_beta"
+          "assistant_beta",
+          "plan",
+          "usage"
         ],
         "title": "OperatorWorkspaceRead",
         "type": "object"
@@ -17744,6 +17878,12 @@
       },
       "RetrainStatusRead": {
         "properties": {
+          "can_start": {
+            "default": false,
+            "description": "The caller may retrain now on `newer_dataset_id` (the server's rule: a person with workspace ML execution, a model in use, a newer labelled file not yet retrained on, no retrain running). Always false for service tokens and agents. Plan limits may still refuse the start (429).",
+            "title": "Can Start",
+            "type": "boolean"
+          },
           "comparison": {
             "anyOf": [
               {

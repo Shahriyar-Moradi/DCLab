@@ -13,6 +13,7 @@ import { buildFlow, flowRunStatuses, nextStepFor, projectModelId } from "@/lib/a
 import { useProjectFlow } from "@/lib/application/studio-flow-hooks";
 import { flowTiles } from "@/lib/application/studio-flow-tiles";
 import { ApiError } from "@/lib/infrastructure/api-client";
+import { readErrorSentence } from "@/lib/application/api-error-text";
 
 /** "No backend, no element": an explicit empty state. The plan's internal id (`phase`) is kept in code, never shown. */
 export function PhaseEmpty({ title, children }: { title: string; phase: string; children?: ReactNode }) {
@@ -28,7 +29,8 @@ export function QueryNotice({ error, what }: { error: unknown; what: string }) {
   if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
     return <Banner tone="warn">This {what} does not exist in the active workspace, or you cannot see it.</Banner>;
   }
-  return <Banner tone="crit">Could not load the {what}. {error instanceof Error ? error.message : ""}</Banner>;
+  // D8b: a fixed sentence by status; the server's message is never shown.
+  return <Banner tone="crit">{readErrorSentence(error, what)}</Banner>;
 }
 
 export function formatWhen(value: string | null | undefined): string {
@@ -41,10 +43,14 @@ export const STATUS_TONE: Record<string, PillTone> = {
   completed: "ok", running: "ai", queued: "gray", cancelling: "warn", needs_input: "warn",
   failed: "crit", cancelled: "gray", skipped: "gray", accepted: "ok", proposed: "warn", rejected: "crit", superseded: "gray",
   alert: "crit", // V7 UI-E: a drift alert in the Inbox
+  reporting: "ai", // D8a: results are still being saved (not finished)
 };
 
-/** Pill tone of a run status; own keys only (a status such as `__proto__` is gray). */
-export const statusTone = (status: string): PillTone => (Object.hasOwn(STATUS_TONE, status) ? STATUS_TONE[status] : "gray");
+/** Pill tone of a run status (case-insensitive); own keys only (a status such as `__proto__` is gray). */
+export const statusTone = (status: string): PillTone => {
+  const key = Object.hasOwn(STATUS_TONE, status) ? status : status.toLowerCase();
+  return Object.hasOwn(STATUS_TONE, key) ? STATUS_TONE[key] : "gray";
+};
 
 const REF_LABEL: Record<string, string> = {
   champion_model: "Model in use", problem_spec: "Goal", split_plan: "Test design", dataset: "Data", feature_recipe: "Features",

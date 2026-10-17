@@ -31,6 +31,7 @@ import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { actionErrorSentence } from "@/lib/application/api-error-text";
 
 type DetailFact = { label: string; value: string; mono?: boolean };
 
@@ -247,19 +248,10 @@ export default function LabRunPage() {
       await confirmTarget.mutateAsync({ uploadId: run.id, targetColumn: chosenTarget });
       await query.refetch();
     } catch (error) {
+      // D8b: a fixed sentence by status; the server's message is never shown.
       if (error instanceof ApiError) {
-        const body = error.body;
-        if (body && typeof body === "object" && "detail" in body) {
-          const detail = (body as { detail: unknown }).detail;
-          if (detail && typeof detail === "object" && detail !== null && "message" in detail) {
-            setConfirmError(String((detail as { message: unknown }).message));
-            return;
-          }
-          if (typeof detail === "string") {
-            setConfirmError(detail);
-            return;
-          }
-        }
+        setConfirmError(`Could not confirm that column. ${actionErrorSentence(error, "confirming the column")}`);
+        return;
       }
       setConfirmError("Could not confirm that column.");
     }

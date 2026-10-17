@@ -134,7 +134,8 @@ def _read(db: Session, user: User, workspace_id: UUID, experiment_id: UUID, requ
 
     try:
         return experiment_view(
-            request, experiment_read(db, actor=user, workspace_id=workspace_id, experiment_id=experiment_id)
+            request, experiment_read(db, actor=user, workspace_id=workspace_id, experiment_id=experiment_id,
+                                     agent=is_agent(request))
         )
     except ExperimentNotFoundError as exc:
         raise _not_found("experiment not found") from exc
@@ -180,6 +181,7 @@ def read_experiments(
             db, actor=user, workspace_id=workspace_id, project_id=project_id, status=status,
             parent_id=parent_id, split_plan_id=split_plan_id, created_after=created_after,
             created_before=created_before, has_change_set=has_change_set, cursor=cursor, limit=limit,
+            agent=is_agent(request),
         )
     except IdentityError as exc:
         raise domain_error(exc) from exc

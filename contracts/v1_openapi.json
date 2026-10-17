@@ -3819,6 +3819,7 @@
         "metrics",
         "project_id",
         "started_at",
+        "started_by",
         "status",
         "target_column",
         "task_type",
@@ -3896,6 +3897,7 @@
         "source_dataset_id",
         "split_plan_id",
         "started_at",
+        "started_by",
         "status",
         "untrusted_fields"
       ],

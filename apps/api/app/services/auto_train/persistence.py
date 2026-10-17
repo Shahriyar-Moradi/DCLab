@@ -288,7 +288,7 @@ def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput
         "categorical_cols": cat_cols,
         "boost_family_used": inp.boost_family_used,
         "model_families": [row.get("model_family") for row in (result.get("candidates") or [])],
-        "experiment_status": experiment.status,
+        "experiment_status": experiment.status if reuse_locked_run else "COMPLETED",
         "pipeline_trace": list(ctx.trace_entries),
         "stage_timings": list(result.get("stage_timings") or []),
         "problem_profile": result.get("problem_profile") or {},
@@ -326,6 +326,10 @@ def run_persistence(ctx: RunContext, inp: PersistenceInput) -> PersistenceOutput
     db.commit()
 
     if not reuse_locked_run:
+        # D8a: COMPLETED, the evidence lock, the model version and the first champion move commit
+        # together in this one transaction (training left the run at HELD_STATUS).
+        experiment.status = "COMPLETED"
+        experiment.ended_at = ml_ended_at
         from app.services.scientific_lineage_service import (
             lab_decision_sources_for_upload,
             persist_scientific_lineage_from_result,

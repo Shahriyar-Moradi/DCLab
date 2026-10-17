@@ -95,7 +95,9 @@ test("a platform administrator reads the real console of a seeded stack", async 
   const table = page.getByRole("table", { name: "Workspaces, oldest first" });
   await expect(table).toBeVisible();
   expect(await table.getByRole("row").count()).toBeGreaterThan(1);
-  await expect(page.getByText("Plan and usage per workspace are not in this read yet", { exact: false })).toBeVisible();
+  // D8b: plan, usage (used / limit / percent / over) and the assistant beta flag come from the workspaces read.
+  for (const header of ["Plan", "Compute, this month", "Storage", "Runs, today", "Assistant beta"]) await expect(table.getByRole("columnheader", { name: header, exact: true })).toBeVisible();
+  await expect(page.getByText("Plan and usage per workspace are not in this read yet", { exact: false })).toHaveCount(0);
   await expect(table.getByRole("button", { name: /^Copy the id of workspace / }).first()).toBeVisible();
   await bannedFree(page);
   expect(await axeViolations(page)).toEqual([]);

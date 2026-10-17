@@ -3,8 +3,7 @@
  * nothing about the model. Sentences come from the server's `what_this_means`; no holdout value exists here.
  */
 import type { OperatingChosen, OperatingDetail, OperatingPoint, StudioOperatingPoints } from "./studio-operating-hooks.ts";
-import { plainText } from "./command-search.ts";
-import { envelope, type PlainError } from "./studio-wizard.ts";
+import { envelope, mapWizardError, type PlainError } from "./studio-wizard.ts";
 
 export const REASON_MAX = 4000;
 export const CHART_MAX_POINTS = 160;
@@ -35,7 +34,7 @@ export type OperatingView =
 export function operatingView(data: StudioOperatingPoints): OperatingView {
   if (data.status === "available" && (data.points?.length ?? 0) > 0) return { state: "available" };
   const status = data.status === "available" ? "not_available" : data.status;
-  const base = NO_CURVE_TEXT[status] ?? data.message;
+  const base = (Object.hasOwn(NO_CURVE_TEXT, status) ? NO_CURVE_TEXT[status] : undefined) ?? "This run has no threshold curve to show.";
   const minimum = status === "not_evaluated" ? ` At least ${data.min_class_rows} rows of each class are needed.` : "";
   return { state: "empty", status, text: `${base}${minimum}` };
 }
@@ -197,7 +196,7 @@ export type ChooseOutcome = PlainError & { closest?: { threshold: number; summar
 
 export function mapChooseError(error: unknown): ChooseOutcome {
   const status = (error as { status?: unknown } | null)?.status;
-  const { code, message, details } = envelope((error as { body?: unknown } | null)?.body);
+  const { code, details } = envelope((error as { body?: unknown } | null)?.body);
   if (code === "threshold_not_on_curve") return { title: "That threshold is not on the stored curve", detail: "Pick one of the listed thresholds; the curve may have changed. Reload and choose again.", fixable: true };
   if (code === "objective_infeasible") {
     const closest = details.closest as Partial<OperatingPoint> | null | undefined;
@@ -208,13 +207,13 @@ export function mapChooseError(error: unknown): ChooseOutcome {
   }
   if (code === "cost_matrix_required") return { title: "Expected cost needs a cost matrix", detail: "This run declares no cost matrix, so cost cannot be the goal.", fixable: true };
   if (code === "idempotency_key_conflict" || status === 409 && code.includes("idempotency")) return { title: "This request was already used for a different choice", detail: "Reload the page and choose again.", fixable: false };
-  if (code.startsWith("operating_points_")) return { title: "Thresholds are not available for this run", detail: plainText(message, 300) || NO_CURVE_TEXT[code.replace("operating_points_", "")] || "Reload the page.", fixable: false };
+  if (code.startsWith("operating_points_")) return { title: "Thresholds are not available for this run", detail: (Object.hasOwn(NO_CURVE_TEXT, code.replace("operating_points_", "")) ? NO_CURVE_TEXT[code.replace("operating_points_", "")] : undefined) ?? "Reload the page.", fixable: false };
   if (code === "human_session_required" || code === "service_token_not_permitted") return { title: "Only people can choose", detail: "A threshold is chosen by a signed-in person, not by the assistant or a connected tool.", fixable: false };
   if (status === 403) return { title: "You cannot choose here", detail: "Choosing needs a role that can write ML work in this workspace.", fixable: false };
   if (status === 404) return { title: "Not found", detail: "The experiment is not in this workspace.", fixable: false };
-  if (status === 422) return { title: "The choice was not valid", detail: plainText(message, 300) || "Check the reason and the values.", fixable: true };
-  if (status === 409) return { title: "The request was refused", detail: plainText(message, 300) || "Reload the page and try again.", fixable: false };
-  return { title: "Something went wrong", detail: plainText(message, 300) || (error instanceof Error ? plainText(error.message, 300) : "Try again."), fixable: false };
+  if (status === 422) return { title: "The choice was not valid", detail: "Check the reason and the values.", fixable: true };
+  if (status === 409) return { title: "The request was refused", detail: "Reload the page and try again.", fixable: false };
+  return mapWizardError(error);
 }
 
 // --- Model card line ---------------------------------------------------------------------------

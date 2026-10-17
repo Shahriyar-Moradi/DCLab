@@ -77,6 +77,8 @@ const ExperimentItemSchema = z.object({
   ended_at: nullableString,
   /** `sealed`: an improvement-loop try, judged on cross-validation only (the final test set was not used). */
   evidence_mode: z.enum(["scored", "sealed"]).optional(),
+  /** D8a: who started it (`you` / `person` / `connected_tool` / `assistant` / `rules`), from existing records; null when none says. */
+  started_by: nullableString,
 });
 export type StudioExperimentItem = z.infer<typeof ExperimentItemSchema>;
 const ExperimentPageSchema = z.object({ items: z.array(ExperimentItemSchema), limit: z.number(), next_cursor: nullableString });
@@ -93,6 +95,7 @@ export const StudioExperimentSchema = z.object({
   failure_reason: nullableString,
   target_column: nullableString,
   task_type: nullableString,
+  started_by: nullableString,
   lineage: z.object({ parent_experiment_id: nullableString, split_plan_id: nullableString, problem_spec_id: nullableString, source_dataset_id: nullableString, execution_request_id: nullableString }),
   /** D2a: worker attempts of the run's job, oldest first (closed codes only; empty for older runs). */
   attempts: z.array(z.object({

@@ -16,6 +16,8 @@ from alembic.config import Config
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 
+from app.agents.governance.seed import seed_platform_governance
+from app.agents.prompt_releases import sync_prompt_releases
 from app.config import get_settings
 from app.db.models import (
     BusinessDomain,
@@ -232,6 +234,11 @@ def main() -> int:
                     )
                 )
         _seed_isolated_insights(db, workspaces)
+        # D8b: the platform governance seed (the code default AI policy) and the code-owned prompts as releases, as
+        # `dclab user seed` does (both idempotent), so the assistant beta answers on a fresh verification database
+        # instead of 503 policy_unavailable / assistant_unavailable.
+        seed_platform_governance(db)
+        sync_prompt_releases(db)
         db.commit()
         print(
             json.dumps(

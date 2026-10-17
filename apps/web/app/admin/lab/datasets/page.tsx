@@ -9,11 +9,11 @@ import { Skeleton } from "@/app/components/ui/Skeleton";
 import { UploadZone } from "@/app/components/ui/UploadZone";
 import { filterByText } from "@/app/components/ui/localCollection";
 import { useCreateLabWorkbook, useLabDatasets, useSession, useUploadLabDataset } from "@/lib/application";
-import { ApiError } from "@/lib/infrastructure";
 import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { actionErrorSentence } from "@/lib/application/api-error-text";
 
 export default function LabDatasetsPage() {
   const query = useLabDatasets();
@@ -66,9 +66,7 @@ export default function LabDatasetsPage() {
         hint={upload.isPending ? `Uploading ${progress}%` : "CSV or Parquet. After upload, open the dataset to train ready use cases."}
         error={
           upload.isError
-            ? upload.error instanceof ApiError
-              ? upload.error.message
-              : "Upload failed."
+            ? actionErrorSentence(upload.error, "uploading the file")
             : undefined
         }
         onFiles={(files) => {
@@ -91,7 +89,7 @@ export default function LabDatasetsPage() {
       </p>
       {sample.isError ? (
         <p className="mt-2 text-body text-oxblood">
-          {sample.error instanceof ApiError ? sample.error.message : "Could not create the sample workbook."}
+          {`Could not create the sample workbook. ${actionErrorSentence(sample.error, "building the sample workbook")}`}
         </p>
       ) : null}
       <div className="mt-8">

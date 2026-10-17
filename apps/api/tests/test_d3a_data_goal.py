@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import numpy as np
 import pandas as pd
@@ -20,7 +20,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
 from app.config import get_settings
-from app.db.models import ProjectDecisionRecord, SplitPlan, UploadAttempt
+from app.db.models import ExecutionRequest, ProjectDecisionRecord, SplitPlan, UploadAttempt
 from app.domain.decision_records import DecisionActor
 from app.domain.errors import DecisionActorNotPermittedError, InvalidDecisionRecordError
 from app.services import dataset_profile_service as profile_service
@@ -173,6 +173,34 @@ def test_target_by_period_end_to_end_sealing_tokens_and_tenants(client, db_sessi
     assert (rows["test_design"]["suggested_by"], rows["test_design"]["confirmed_by"]) == ("rules", None)
     assert (rows["target"]["suggested_by"], rows["target"]["confirmed_by"], rows["target"]["value"]) == (
         "person", "you", "label")
+
+    # D8a: a test-design confirmation describes only its own run's split plan.
+    def design() -> dict:
+        items = client.get(f"/v1/projects/{st.project.id}/goal/decisions", headers=_h(st.admin, st.alpha)).json()
+        return {row["what"]: row for row in items["items"]}["test_design"]
+
+    stray = SimpleNamespace(id=uuid4(), workspace_id=st.alpha.id, project_id=st.project.id)
+    record_test_design_confirmed(db, request=stray, user=st.admin, answer="keep_rule_split", rationale="Not this plan.")
+    db.commit()
+    assert (design()["suggested_by"], design()["confirmed_by"], design()["why"]) == ("rules", None, None)
+    own = db.scalar(select(ExecutionRequest).where(ExecutionRequest.workspace_id == st.alpha.id,
+                                                   ExecutionRequest.pipeline_run_id == run.id))
+    record_test_design_confirmed(db, request=own, user=st.admin, answer="keep_rule_split",
+                                 rationale="Months stay in order.")
+    db.commit()
+    confirmed = design()
+    assert (confirmed["suggested_by"], confirmed["confirmed_by"], confirmed["why"]) == (
+        "rules", "you", "Months stay in order.")
+    (tmp_path / "newer").mkdir()
+    newer_path, _newer = _dated_csv(tmp_path / "newer", n=300)
+    newer = human.datasets.upload(st.project.id, newer_path)
+    run2 = human.experiments.create(project_id=st.project.id, dataset_id=newer.id, problem_spec_id=spec.id,
+                                    target_column="label", intent="newer file")
+    assert _work(db, run2.id).status == "completed"
+    newest = design()  # a newer plan nobody was asked about: the older confirmation never describes it
+    assert (newest["suggested_by"], newest["confirmed_by"], newest["why"]) == ("rules", None, None)
+    plan_entry = db.get(ProjectDecisionRecord, UUID(newest["decision_id"]))
+    assert plan_entry.decision_type == "split_plan_created" and plan_entry.split_plan_id != plan.id
 
 
 # --- 12 + 13: upload log and upload checks ------------------------------------------------------

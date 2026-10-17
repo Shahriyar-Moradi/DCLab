@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { NotificationsPanel } from "@/app/components/studio-app/NotificationsPanel";
 import { UsagePanel } from "@/app/components/studio-app/UsagePanel";
+import { WebhooksPanel } from "@/app/components/studio-app/WebhooksPanel";
 import { TabPanel, Tabs } from "@/components/studio/Tabs";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
@@ -13,8 +15,11 @@ import { useSession } from "@/lib/application";
 import { ADDING_PEOPLE_TEXT, MORE_SETTINGS_TEXT, memberRow, membersCountText, myAccess, roleRow } from "@/lib/application/studio-settings";
 import { useWorkspaceMembers } from "@/lib/application/studio-settings-hooks";
 import { ApiError } from "@/lib/infrastructure/api-client";
+import { readErrorSentence } from "@/lib/application/api-error-text";
 import { usePreviewRole } from "@/app/components/studio-app/ViewAs";
 import { PREVIEW_ROLE_LABEL, PREVIEW_ROLE_VALUE } from "@/lib/application/view-as";
+
+const DEEP_TABS = ["usage", "notifications", "integrations"];
 
 export default function SettingsPage() {
   const session = useSession();
@@ -23,13 +28,14 @@ export default function SettingsPage() {
   const refused = members.error instanceof ApiError && members.error.status === 403;
   const hidden = session.loaded && (!access.canSeeMembers || refused);
   const [tab, setTab] = useState("people");
-  // Deep link: /settings?tab=usage (read after mount so the server and first client render agree).
+  // Deep link: /settings?tab=usage|notifications|integrations (read after mount so the server and first client render agree).
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("tab") === "usage") setTab("usage");
+    const asked = new URLSearchParams(window.location.search).get("tab") ?? "";
+    if (DEEP_TABS.includes(asked)) setTab(asked);
   }, []);
   const chooseTab = (id: string) => {
     setTab(id);
-    window.history.replaceState(null, "", id === "usage" ? "/settings?tab=usage" : "/settings");
+    window.history.replaceState(null, "", DEEP_TABS.includes(id) ? `/settings?tab=${id}` : "/settings");
   };
   const roles = (members.data?.roles ?? []).map(roleRow);
   // "View as" (admins only): what the previewed role may do, from the same server role table (no extra request).
@@ -39,11 +45,11 @@ export default function SettingsPage() {
 
   return (
     <>
-      <PageHead eyebrow="Admin" title="Settings" subtitle="Who is in this workspace, what each role can do, and how much of your plan is used." />
+      <PageHead eyebrow="Admin" title="Settings" subtitle="Who is in this workspace, what each role can do, how much of your plan is used, your email choices and the workspace's webhooks." />
       <PageGuide
-        purpose="See the people in your workspace, what each role is allowed to do, and how much of your plan is used."
-        howTo="Read the list of people, then the table of roles; open Usage & cost for limits and spend. To give an access token to your own code or tools, go to Connect."
-        youGet="Names, emails, roles and join dates of the people in this workspace, and what each role can and cannot do. Nothing here changes anything."
+        purpose="See the people in your workspace and what each role may do, how much of your plan is used, choose which emails you get, and connect your own systems with webhooks."
+        howTo="Read the list of people, then the table of roles; open Usage & cost for limits and spend, Notifications for your email choices, and Integrations for webhooks (owners and administrators). To give an access token to your own code or tools, go to Connect."
+        youGet="Names, emails, roles and join dates of the people in this workspace and what each role can and cannot do (read only); your own email choices; the workspace's webhooks with their delivery log."
         attention={hidden ? "Your role cannot see the list of people. Ask an admin." : undefined}
       />
 
@@ -52,8 +58,13 @@ export default function SettingsPage() {
         label="Settings sections"
         value={tab}
         onChange={chooseTab}
-        items={[{ id: "people", label: "People and roles" }, { id: "usage", label: "Usage & cost" }]}
+        items={[{ id: "people", label: "People and roles" }, { id: "usage", label: "Usage & cost" }, { id: "notifications", label: "Notifications" }, { id: "integrations", label: "Integrations" }]}
       />
+
+      <TabPanel idPrefix="settings" id="notifications" active={tab === "notifications"}>{tab === "notifications" ? <NotificationsPanel ready={session.loaded} /> : null}</TabPanel>
+      <TabPanel idPrefix="settings" id="integrations" active={tab === "integrations"}>
+        {tab === "integrations" ? <WebhooksPanel key={session.activeWorkspaceId ?? "none"} workspaceId={session.activeWorkspaceId} canManage={access.canSeeMembers} ready={session.loaded} /> : null}
+      </TabPanel>
 
       <TabPanel idPrefix="settings" id="usage" active={tab === "usage"}>{tab === "usage" ? <UsagePanel /> : null}</TabPanel>
       <TabPanel idPrefix="settings" id="people" active={tab === "people"}>
@@ -82,7 +93,7 @@ export default function SettingsPage() {
       {session.loaded && !hidden ? (
         <Card title="Members" aside={members.data ? membersCountText(members.data.members.length, members.data.more) : undefined}>
           {members.isPending ? <p role="status">Loading the people in this workspace…</p> : null}
-          {members.isError ? <Banner tone="crit">Could not load the members. {members.error instanceof Error ? members.error.message : ""}</Banner> : null}
+          {members.isError ? <Banner tone="crit">{readErrorSentence(members.error, "members")}</Banner> : null}
           {members.data && members.data.members.length === 0 ? <div className="empty">No active members found.</div> : null}
           {members.data && members.data.members.length > 0 ? (
             <div className="tbl" tabIndex={0} role="region" aria-label="People in this workspace (scrolls sideways on small screens)">

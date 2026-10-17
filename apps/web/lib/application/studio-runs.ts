@@ -261,10 +261,34 @@ export const anyAiAnswer = (rows: PointRow[]): boolean => rows.some((r) => !r.ai
 const STATUS_WORDS: Record<string, string> = {
   completed: "Finished", running: "Running", queued: "Waiting to start", failed: "Failed", cancelled: "Stopped", canceled: "Stopped",
   cancelling: "Stopping", needs_input: "Waiting for your input", skipped: "Skipped",
+  // D8a: a finished run whose results (evidence lock, model version) are still being saved; it is not finished yet.
+  reporting: "Saving results…",
 };
-/** A run status in words; an unknown status is shown as given (cleaned). */
+/** A run status in words (case-insensitive: some reads send the engine's upper-case status); an unknown status is shown as given (cleaned). */
 export function statusWords(status: string): string {
-  return own(STATUS_WORDS, status) ?? plainText(status.replaceAll("_", " "), 30);
+  return own(STATUS_WORDS, status) ?? own(STATUS_WORDS, status.toLowerCase()) ?? plainText(status.replaceAll("_", " "), 30);
+}
+
+/** A graph node's status in lower-case words; a run still saving its results (`REPORTING`) reads "saving results…", never finished. */
+export function nodeStatusText(status: string): string {
+  const key = status.toLowerCase();
+  return key === "reporting" ? "saving results…" : plainText(key.replaceAll("_", " "), 30);
+}
+
+/** D8a `started_by` in words. Access-token tools are never "the assistant"; null or an unknown value is "Not recorded". */
+export const STARTED_BY_LABEL: Record<string, string> = {
+  you: "You", person: "A person", connected_tool: "A connected tool", assistant: "The assistant (Beta)", rules: "The rules",
+};
+export function startedByText(value: string | null | undefined): string {
+  return (value ? own(STARTED_BY_LABEL, value) : undefined) ?? "Not recorded";
+}
+const STARTED_BY_PHRASE: Record<string, string> = {
+  you: "by you", person: "by a person", connected_tool: "by a connected tool", assistant: "by the assistant (Beta)", rules: "by the rules",
+};
+/** " by you" for a sentence ("Started … by you."), or "" when no record says who started it. */
+export function startedByPhrase(value: string | null | undefined): string {
+  const phrase = value ? own(STARTED_BY_PHRASE, value) : undefined;
+  return phrase ? ` ${phrase}` : "";
 }
 export const STATUS_FILTERS = [
   { id: "all", label: "All runs" }, { id: "completed", label: "Finished" }, { id: "live", label: "In progress" }, { id: "failed", label: "Failed or stopped" },

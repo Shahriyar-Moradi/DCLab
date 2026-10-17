@@ -92,7 +92,8 @@ export function RetrainAction({ projectId, status, canStartRuns }: { projectId: 
   if (!status) return null;
   const newer = status.newer_dataset_id ?? null;
   const data = projectHref(projectId, "data");
-  if (!canOfferRetrain(status, canStartRuns)) {
+  // D8a: the button follows the server's `can_start`; `canStartRuns` only chooses which explanation to show without it.
+  if (!canOfferRetrain(status)) {
     if (status.state === "retraining") return <Done text={done} projectId={projectId} />;
     if (newer && !canStartRuns) return <p className="muted" data-testid="retrain-viewer">A newer labelled file exists. A person who can run ML work in this workspace can retrain on it.</p>;
     if (!newer && canStartRuns) return <p className="muted">To retrain, a person uploads a newer labelled file{data ? <> on the <Link href={data}>Data</Link> screen</> : null}.</p>;

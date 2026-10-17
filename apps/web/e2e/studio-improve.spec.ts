@@ -46,7 +46,7 @@ test("Improve: goal, threshold card, start a try, verdict and look label, banner
   await expect(step3.getByText(/No tries yet/)).toBeVisible();
   await shot(page, "improve-1-before");
 
-  // Step 2: start a try. The app refuses a family the run already trained (with its own message); take the first it accepts.
+  // Step 2: start a try. The server refuses a family the run already trained (shown in fixed words); take the first it accepts.
   const step2 = page.locator("#try");
   await expect(step2.getByRole("heading", { name: "Step 2 · Try another model family" })).toBeVisible();
   await expect(step2.getByText(/same folds as the run in use/)).toBeVisible();

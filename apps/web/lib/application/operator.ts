@@ -5,7 +5,8 @@
  * Codes are mapped to fixed sentences with own-key lookups (`Object.hasOwn`), so a code such as `__proto__` reads as
  * "not recognised" instead of reaching a prototype. Workspace names are customer text: plain single-line text with a cap.
  * The reads carry ids, codes and counts only (no customer rows, payloads or free-text failure reasons); nothing here
- * invents a value the reads do not send (per-workspace plan and usage are not in the read yet).
+ * invents a value the reads do not send. Per-workspace plan and usage (D8b) come from the workspaces read: used, limit, percent and
+ * "over" exactly as sent (null limit = unlimited), keyed by the closed quota keys.
  */
 import { isUuid, plainText } from "./command-search.ts";
 import { utcWhen } from "./format-time.ts";
@@ -281,18 +282,48 @@ export const CAPS_READ_ONLY = "Set in code for the whole platform and read-only 
 
 // ---------------------------------------------------------------------------------------------- tables
 
+export type QuotaLike = { key: string; used: number; limit: number | null; percent: number | null; over: boolean };
 export type WorkspaceLike = {
   id: string; name: string; kind: string; created_at: string; member_count: number; project_count: number;
   jobs_last_30d: number; failed_jobs_last_24h: number; active_last_7d: boolean;
+  assistant_beta?: boolean; plan?: string; usage?: QuotaLike[];
 };
 
 const KIND: Record<string, string> = { business: "Business", personal: "Personal" };
 export const workspaceKind = (kind: string): string => own(KIND, kind) ?? "Other kind";
 
+export type UsageCell = { text: string; over: boolean };
 export type WorkspaceRow = {
   key: string; id: string | null; shortId: string; name: string; kind: string; created: string;
   members: number; projects: number; jobs30d: number; failed24h: number; active: string;
+  plan: string; compute: UsageCell; storage: UsageCell; runs: UsageCell; beta: string;
 };
+
+/** The three enforced quotas, in the read's own units: seconds of compute this month, bytes stored, runs today. */
+export const QUOTA_COLUMNS = [
+  { key: "compute_seconds_month", header: "Compute, this month" },
+  { key: "storage_bytes", header: "Storage" },
+  { key: "runs_per_day", header: "Runs, today" },
+] as const;
+
+function quotaAmount(key: string, value: number): string {
+  if (key === "compute_seconds_month") return value > 0 && value < 60 ? "under 1 min" : value < 3600 ? `${count(Math.floor(value / 60))} min` : `${(value / 3600).toLocaleString("en-US", { maximumFractionDigits: 1 })} h`;
+  if (key === "storage_bytes") {
+    const gb = value / 1024 ** 3;
+    return gb >= 1 ? `${gb.toLocaleString("en-US", { maximumFractionDigits: 1 })} GB` : `${(value / 1024 ** 2).toLocaleString("en-US", { maximumFractionDigits: 1 })} MB`;
+  }
+  return count(value);
+}
+
+/** "12 min of 10 h (2%)", "3 of unlimited", "Not in the read" when the quota is missing; `over` exactly as sent. */
+export function usageCell(usage: readonly QuotaLike[] | undefined, key: string): UsageCell {
+  const q = (usage ?? []).find((u) => u.key === key);
+  if (!q || typeof q.used !== "number" || !Number.isFinite(q.used)) return { text: "Not in the read", over: false };
+  const used = quotaAmount(key, Math.max(0, q.used));
+  if (q.limit === null || typeof q.limit !== "number" || !Number.isFinite(q.limit)) return { text: `${used} of unlimited`, over: false };
+  const pct = typeof q.percent === "number" && Number.isFinite(q.percent) ? ` (${Math.round(q.percent)}%)` : "";
+  return { text: `${used} of ${quotaAmount(key, q.limit)}${pct}`, over: q.over === true };
+}
 
 export function workspaceRows(items: readonly WorkspaceLike[]): WorkspaceRow[] {
   return items.map((w, i) => {
@@ -302,6 +333,9 @@ export function workspaceRows(items: readonly WorkspaceLike[]): WorkspaceRow[] {
       name: plainText(w.name, NAME_CAP) || "(no name)", kind: workspaceKind(w.kind), created: utcWhen(w.created_at),
       members: w.member_count, projects: w.project_count, jobs30d: w.jobs_last_30d, failed24h: w.failed_jobs_last_24h,
       active: w.active_last_7d ? "Yes" : "No",
+      plan: plainText(w.plan, 40) || "Not in the read",
+      compute: usageCell(w.usage, "compute_seconds_month"), storage: usageCell(w.usage, "storage_bytes"), runs: usageCell(w.usage, "runs_per_day"),
+      beta: w.assistant_beta === true ? "On" : w.assistant_beta === false ? "Off" : "Not in the read",
     };
   });
 }

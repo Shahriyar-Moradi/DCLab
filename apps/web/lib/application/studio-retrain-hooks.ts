@@ -37,6 +37,8 @@ const StatusSchema = z.object({
   request: RequestSchema.nullable().optional(), comparison: ComparisonSchema.nullable().optional(), comparison_withheld: z.boolean().optional(),
   real_outcomes: z.object({ window_start: z.string(), precision: nullableNumber, recall: nullableNumber, n_labelled: nullableNumber }).nullable().optional(),
   proposal_id: nullableString, proposal_state: nullableString,
+  /** D8a: the server's rule says this caller may retrain now on `newer_dataset_id` (false for tokens and agents). */
+  can_start: z.boolean().optional(),
 });
 export type StudioRetrainStatus = z.infer<typeof StatusSchema>;
 const PolicySchema = z.object({

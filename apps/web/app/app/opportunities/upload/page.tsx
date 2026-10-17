@@ -9,6 +9,7 @@ import { useUploadOpportunities } from "@/lib/application";
 import { ActiveWorkspaceNotice } from "@/app/components/layout/ActiveWorkspaceNotice";
 import Link from "next/link";
 import { useState } from "react";
+import { actionErrorSentence } from "@/lib/application/api-error-text";
 
 export default function UploadPage() {
   const upload = useUploadOpportunities();
@@ -40,7 +41,7 @@ export default function UploadPage() {
         disabled={upload.isPending}
         label="Drop a CSV here, or click to choose a file"
         hint="One row per opportunity. Invalid rows are rejected without blocking the rest of the file."
-        error={upload.isError ? upload.error.message : undefined}
+        error={upload.isError ? actionErrorSentence(upload.error, "uploading the file") : undefined}
         onFiles={(files) => {
           const file = files[0];
           if (file) send(file);

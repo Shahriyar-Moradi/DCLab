@@ -32,6 +32,9 @@ const WorkspacePageSchema = z.object({
   items: z.array(z.object({
     id: z.string(), name: z.string(), kind: z.string(), created_at: z.string(), member_count: z.number(), project_count: z.number(),
     jobs_last_30d: z.number(), failed_jobs_last_24h: z.number(), active_last_7d: z.boolean(),
+    // D8b: the ai_assistant_beta flag, the plan and used vs limit of each enforced quota.
+    assistant_beta: z.boolean().optional(), plan: z.string().optional(),
+    usage: z.array(z.object({ key: z.string(), used: z.number(), limit: z.number().nullable(), percent: z.number().nullable(), over: z.boolean() })).optional(),
   })),
   next_cursor: z.string().nullable(),
 });

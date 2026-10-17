@@ -10,7 +10,11 @@
  */
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { ChampionPanel } from "@/app/components/studio-app/CompareBranch";
 import { OperatingPointsPanel } from "@/app/components/studio-app/OperatingPoints";
+import { safeInternalHref } from "@/components/studio/safe-href";
+import { useExperimentFindings } from "@/lib/application/studio-data-hooks";
+import { ruleSuggestions } from "@/lib/application/studio-findings";
 import { QueryNotice, formatWhen, statusTone } from "@/app/components/studio-app/StudioParts";
 import { Banner } from "@/components/studio/Banner";
 import { Card } from "@/components/studio/Card";
@@ -36,7 +40,7 @@ import {
 } from "@/lib/application/studio-improve";
 import { modelName, runName, runOrdinals } from "@/lib/application/studio-names";
 import { runRef } from "@/lib/application/studio-model";
-import { changeSentences, familyLabel, runFacts, scoreText, statusWords } from "@/lib/application/studio-runs";
+import { changeSentences, familyLabel, runFacts, scoreText, startedByPhrase, statusWords } from "@/lib/application/studio-runs";
 import { useSession } from "@/lib/application/session-provider";
 import { ActionKeys, type PlainError } from "@/lib/application/studio-wizard";
 import { CAPABILITIES, hasCapability } from "@/lib/infrastructure/capabilities";
@@ -89,7 +93,7 @@ function TryForm({ projectId, parentId, taskType, tried, disabledReason, readFai
       <label className="field"><span>Why are you trying it? (saved with the run)</span>
         <textarea rows={2} maxLength={2000} value={intent} disabled={busy} onChange={(e) => { setIntent(e.target.value); setEdited(true); }} />
       </label>
-      <p className="muted">This app does not judge your choice. It refuses a family that is not installed or that the run in use already trained, with its own message, and then nothing is started.</p>
+      <p className="muted">This app does not judge your choice. The server refuses a family that is not installed or that the run in use already trained, and then nothing is started.</p>
       {error ? <Banner tone="crit"><b>{error.title}.</b> {error.detail}</Banner> : null}
       {started ? (
         <Banner tone="info">
@@ -138,6 +142,7 @@ export function ImproveScreen({ projectId, embedded = false }: { projectId: stri
   // The run in use has its own place among the looks even when no try has finished (its verdict read has no parent to compare with, but carries the counts).
   const ownLook = useVerdicts(runInUseId ? [runInUseId] : []).get(runInUseId ?? "");
   const details = useRunDetails(finishedIds);
+  const findings = useExperimentFindings(runInUseId);
   const experimentsHref = projectHref(projectId, "experiments");
   const modelsHref = projectHref(projectId, "models");
 
@@ -224,6 +229,34 @@ export function ImproveScreen({ projectId, embedded = false }: { projectId: stri
         </Card>
       </div>
 
+      <div id="suggested">
+        <Card title="Suggested by the rules" aside={<Pill tone="det">from the trust checks, no AI</Pill>}>
+          <p>Trust checks of the run in use that did not pass and have a change you can try. Each opens the change form on the run in use&apos;s page with the change and its reason filled in; nothing starts until you choose Start there, and each try spends one look at the final test set.</p>
+          {findings.isPending ? <p role="status">Reading the trust checks of the run in use…</p>
+            : findings.isError ? <QueryNotice error={findings.error} what="trust checks of the run in use" />
+              : !findings.data.investigated ? <p className="muted" role="note">The trust checks of the run in use are not recorded yet, so the rules suggest nothing.</p>
+                : (() => {
+                  const suggestions = ruleSuggestions(projectId, runInUseId, findings.data);
+                  if (suggestions.length === 0) return <div className="empty" role="note"><p>The rules suggest no change: no trust check of the run in use asks for one. Keeping the current model is a normal result.</p></div>;
+                  return (
+                    <ul className="plain-list" aria-label="Changes suggested by the rules">
+                      {suggestions.map((sug) => {
+                        const href = safeInternalHref(sug.href);
+                        return (
+                          <li key={sug.check} className="card flat" data-suggestion={sug.check}>
+                            <p className="toolbar"><Pill tone={sug.tone}>{sug.status}</Pill> <b>{sug.label}</b> <span className="muted">Suggested by: the rules</span></p>
+                            <p>{sug.what}</p>
+                            <p className="small muted">Reason filled in: &ldquo;{sug.reason}&rdquo;</p>
+                            {canRun ? (href ? <p><Link className="btn" href={href}>Try this change</Link></p> : null) : <p className="muted" role="note">{VIEWER_NOTE}</p>}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                })()}
+        </Card>
+      </div>
+
       <div id="try">
         <Card title="Step 2 · Try another model family" aside={<Pill tone="det">each try is a new run</Pill>}>
           <p>{SAME_FOLDS_NOTE} It adds one model family to the run in use; nothing else changes. {SPEND_NOTE}</p>
@@ -269,7 +302,7 @@ export function ImproveScreen({ projectId, embedded = false }: { projectId: stri
               return (
                 <li key={t.id} className="card flat">
                   <h3>{href ? <Link href={href}>{name}</Link> : name} <Pill tone={statusTone(t.status)}>{statusWords(t.status)}</Pill>{badge ? <> <Pill tone={badge.tone}>{badge.label}</Pill></> : null}</h3>
-                  <p className="muted">Started {formatWhen(t.created_at)}. {changes.length ? changes.join("; ") : run?.isPending ? "Reading what changed…" : "What changed is not recorded here; open the run."}</p>
+                  <p className="muted">Started {formatWhen(t.created_at)}{startedByPhrase(t.started_by)}. {changes.length ? changes.join("; ") : run?.isPending ? "Reading what changed…" : "What changed is not recorded here; open the run."}</p>
                   {t.status !== "completed" ? (
                     <p>{["running", "queued", "cancelling"].includes(t.status) ? "Still training. The verdict appears when it finishes." : "No verdict: this try did not finish. A run that failed or was stopped after choosing its best model may still count as a look."}</p>
                   ) : !read ? (
@@ -294,11 +327,14 @@ export function ImproveScreen({ projectId, embedded = false }: { projectId: stri
                         <details><summary>Fold by fold</summary><Folds v={v} metric={unit || "score"} name={name} /></details>
                       ) : null}
                       {key === "beats_the_noise" ? (
-                        <p>
-                          To use this model instead, {href ? <Link href={href}>open the run</Link> : "open the run"} and put its model in use there; DCLab saves that change in History.
-                          {" "}Choose it for the cross-validation result, not for its final-test number.
-                          {planRuns !== null && planRuns > 2 ? ` With ${planRuns} runs on these folds, one can beat the noise by luck.` : ""}
-                        </p>
+                        <>
+                          <p>
+                            To use this model instead, put it in use here or on {href ? <Link href={href}>the run&apos;s page</Link> : "the run's page"}; DCLab saves that change in History.
+                            {" "}Choose it for the cross-validation result, not for its final-test number.
+                            {planRuns !== null && planRuns > 2 ? ` With ${planRuns} runs on these folds, one can beat the noise by luck.` : ""}
+                          </p>
+                          <div aria-label={`Use the model of ${name}`} role="group"><h4>Use this model</h4><ChampionPanel projectId={projectId} experimentId={t.id} compact /></div>
+                        </>
                       ) : null}
                     </>
                   ) : null}

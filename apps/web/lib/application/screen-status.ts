@@ -56,7 +56,7 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
   {
     id: "home", name: "Home", group: "Workspace", href: "/home", feature: "home",
     tags: [{ kind: "working" }],
-    missing: "Nothing for the daily job. A running run shows the fold it is on; the things that need you have no evidence numbers yet, only who raised them and where.",
+    missing: "Nothing for the daily job. A running run shows the fold it is on; the things that need you have no evidence numbers yet, only who raised them, where and, for an alert, whether it is drift or real outcomes below a floor.",
   },
   {
     id: "inbox", name: "Inbox", group: "Workspace", href: "/inbox", feature: "inbox",
@@ -71,22 +71,22 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
   {
     id: "data", name: "Data", group: "Project", href: null, feature: "data",
     tags: [{ kind: "working" }],
-    missing: "Nothing.",
+    missing: "Nothing. Each file shows its checks on upload, and the upload log lists accepted and refused files (names and reasons only).",
   },
   {
     id: "goal", name: "Goal & test design", group: "Project", href: null, feature: "goal",
     tags: [{ kind: "working" }],
-    missing: "Nothing. The goal and test design are set when you start a run; this screen shows them.",
+    missing: "Nothing. The goal and test design are set when you start a run; this screen shows them and who decided each part.",
   },
   {
     id: "experiments", name: "Experiments", group: "Project", href: null, feature: "experiments",
     tags: [{ kind: "working" }],
-    missing: "Nothing.",
+    missing: "Nothing for the daily job. Only the project's latest run shows the fold it is on; other running runs show their status only. Who started a run is shown when a record says.",
   },
   {
     id: "improve", name: "Improve", group: "Project", href: null, feature: "improve",
     tags: [{ kind: "working" }],
-    missing: "Guided tries and an improvement loop within a budget work today; each loop try is sealed and only an accepted try scores the final test set once. A loop on a fresh split and AI-suggested tries are not built.",
+    missing: "Guided tries, changes suggested by the rules from the trust checks, putting a try's model in use, and an improvement loop within a budget work today; each loop try is sealed and only an accepted try scores the final test set once. A loop on a fresh split is not built, and tries suggested by AI appear only where the assistant beta is on.",
   },
   {
     id: "model", name: "Model", group: "Project", href: null, feature: "models",
@@ -101,7 +101,7 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
   {
     id: "monitoring", name: "Monitoring", group: "Project", href: null, feature: "monitoring",
     tags: [{ kind: "working" }],
-    missing: "Nothing retrains or switches the model on its own, and the alert lines cannot be changed on this screen.",
+    missing: "Nothing for the daily job. Retrain on newest data works, started by a person or by the project's Ask me or Automatic rule, and owners and administrators can change the alert lines and floors. Nothing ever switches the model in use on its own: a person decides.",
   },
   {
     id: "history", name: "History", group: "Project", href: null, feature: "decisions",
@@ -115,8 +115,8 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
   },
   {
     id: "settings", name: "Settings", group: "Admin", href: "/settings", feature: "settings",
-    tags: [{ kind: "partly", short: "notifications have no screen yet" }],
-    missing: "People and roles, and usage and cost work. Adding people, notifications and integrations have no screen yet.",
+    tags: [{ kind: "partly", short: "adding people not in Studio" }],
+    missing: "People and roles, usage and cost, your email choices (Notifications) and webhooks (Integrations) work. Adding or removing people is not in Studio yet; contact DCLab.",
   },
   {
     id: "usage", name: "Usage & cost (in Settings)", group: "Admin", href: "/settings?tab=usage", feature: null,
@@ -124,14 +124,14 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
     missing: "Nothing. The numbers are an estimate from DCLab's own records, not an invoice.",
   },
   {
-    id: "notifications", name: "Notifications (email)", group: "Admin", href: null, feature: null,
-    tags: [{ kind: "partly", short: "no screen yet" }],
-    missing: "Built on the server and switched off until an email service is chosen. There is no screen to choose what you get, and emails have no unsubscribe link yet.",
+    id: "notifications", name: "Notifications (email, in Settings)", group: "Admin", href: "/settings?tab=notifications", feature: null,
+    tags: [{ kind: "partly", short: "no email service yet" }],
+    missing: "You can choose which emails you get. DCLab sends no email until an email service is chosen for this server, and emails have no unsubscribe link yet.",
   },
   {
-    id: "webhooks", name: "Integrations (webhooks)", group: "Admin", href: null, feature: null,
-    tags: [{ kind: "partly", short: "no screen yet" }],
-    missing: "Built on the server and switched off by default. There is no screen to add, test or remove one yet.",
+    id: "webhooks", name: "Integrations (webhooks, in Settings)", group: "Admin", href: "/settings?tab=integrations", feature: null,
+    tags: [{ kind: "partly", short: "off until set up on the server" }],
+    missing: "Owners and administrators can add a webhook (its secret is shown once), make a new secret, send a test call, turn it on or off and read its delivery log. Webhooks work only once signing is set up on the server, and a webhook's name, address or events cannot be changed on this screen.",
   },
   {
     id: "connect", name: "Connect (API, SDK, MCP)", group: "Admin", href: "/agents", feature: "agents",
@@ -156,15 +156,16 @@ export const SCREEN_STATUS: readonly ScreenStatus[] = [
   {
     id: "console", name: "Platform console (DCLab staff only)", group: "Other views", href: null, feature: "operator_overview",
     tags: [{ kind: "partly", short: "some tabs planned" }],
-    missing: "Overview, workspaces and failed jobs work. Files held for review, AI limits per workspace and benchmark results are not built yet.",
+    missing: "Overview, workspaces (with plan, usage and the assistant beta flag) and failed jobs work. Files held for review, AI limits per workspace, benchmark results and backups are not built yet.",
   },
 ];
 
 /** Summary sentence of the `/real` page, written from the registry's real state. */
 export const REAL_SUMMARY =
-  "The whole project flow works today: data, goal and test design, experiments with trust checks, guided improve, the model and approving it for scoring, " +
-  "predictions for one file or every week, monitoring and history, plus the business view, usage and the platform console. " +
-  "The assistant and AI settings are a beta: AI is off by default, and the assistant shows only where DCLab switched its beta on. Notifications and integrations work on the server but have no screen yet.";
+  "The whole project flow works today: data with its upload log, goal and test design with who decided, experiments with trust checks, guided improve and the improvement loop, " +
+  "the model and approving it for scoring, predictions for one file or every week, monitoring with retrain on newest data and editable alert lines, and history, " +
+  "plus questions to the business view, usage, email choices, webhooks and the platform console. " +
+  "The assistant and AI settings are a beta: AI is off by default, and the assistant shows only where DCLab switched its beta on. No email is sent until an email service is chosen.";
 
 /** Words of the `/real` page. */
 export const REAL_PAGE_WORDS = {

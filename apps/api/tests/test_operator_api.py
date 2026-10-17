@@ -11,7 +11,8 @@ from sqlalchemy import create_engine, text
 
 from app.db.models import UserRole
 from app.domain.service_tokens import HUMAN_ONLY_ROUTES, TOKEN_ROUTE_SCOPES
-from app.services import operator_service, system_health_service as health
+from app.domain.usage import ENFORCED_QUOTAS
+from app.services import operator_service, system_health_service as health, usage_service
 from app.services.auth_service import create_access_token, create_user
 from app.services.ml_job_service import create_ml_job
 from app.services.workspace_service import create_business_workspace
@@ -22,7 +23,8 @@ ROUTES = ("/v1/operator/overview", "/v1/operator/workspaces", "/v1/operator/fail
 OVERVIEW_KEYS = {"generated_at", "workspaces", "jobs_last_24h", "queue", "workers", "failed_jobs_last_24h",
                  "failed_jobs_last_24h_truncated", "platform_ai_caps", "readiness"}
 WORKSPACE_KEYS = {"id", "name", "kind", "created_at", "member_count", "project_count", "jobs_last_30d",
-                  "failed_jobs_last_24h", "active_last_7d", "assistant_beta"}
+                  "failed_jobs_last_24h", "active_last_7d", "assistant_beta", "plan", "usage"}
+QUOTA_KEYS = {"key", "used", "limit", "percent", "over"}
 FAILED_JOB_KEYS = {"id", "workspace_id", "job_type", "handler_key", "code", "attempts", "failed_at"}
 SECRET_REASON = "KeyError: customer.email@acme.test salary=91000 /tmp/upload/clients.csv"
 
@@ -57,6 +59,9 @@ def op(db_session):
         "client": _user(db, UserRole.CLIENT_USER, alpha.id),
     }
     failed = _job(db, alpha.id, status="failed", reason=SECRET_REASON)
+    _job(db, alpha.id, status="completed", job_type="batch_predict", handler="models.batch_predict")  # one run today
+    usage_service.set_plan(db, actor=users["platform_admin"], workspace_id=alpha.id, plan="pilot",
+                           limits={"runs_per_day": 1, "storage_bytes": None})
     coded = _job(db, beta.id, status="failed", reason="feature_contract_failed",
                  job_type="batch_predict", handler="models.batch_predict")
     queued = _job(db, alpha.id, status="queued")
@@ -136,6 +141,19 @@ def test_workspace_and_failed_job_pages_have_exact_keys_and_cursors(client, op):
     alpha = by_id[str(op["alpha"].id)]
     assert alpha["name"] == "Alpha <b>Telecom</b>"  # untrusted text, returned verbatim (rendered as text)
     assert alpha["member_count"] >= 4 and alpha["failed_jobs_last_24h"] == 1 and alpha["active_last_7d"] is True
+    # D8a: plan and usage vs limits, the same measures and limits as the workspace's own usage read.
+    db = op["db"]
+    assert (alpha["plan"], by_id[str(op["beta"].id)]["plan"]) == ("pilot", "beta")
+    for workspace in (op["alpha"], op["beta"]):
+        row = by_id[str(workspace.id)]
+        assert all(set(quota) == QUOTA_KEYS for quota in row["usage"])
+        moment = datetime.now(UTC)
+        assert {q["key"]: (q["used"], q["limit"]) for q in row["usage"]} == {
+            key: (usage_service.measure_quota(db, workspace.id, key, moment),
+                  usage_service.quota_limit(db, workspace.id, key).value) for key in ENFORCED_QUOTAS}
+    runs = {q["key"]: q for q in alpha["usage"]}["runs_per_day"]
+    assert (runs["used"], runs["limit"], runs["percent"], runs["over"]) == (1, 1, 100.0, True)
+    assert {q["key"]: q for q in alpha["usage"]}["storage_bytes"]["limit"] is None  # unlimited
     jobs = client.get("/v1/operator/failed-jobs").json()
     assert all(set(item) == FAILED_JOB_KEYS for item in jobs["items"])
     by_job = {item["id"]: item for item in jobs["items"]}

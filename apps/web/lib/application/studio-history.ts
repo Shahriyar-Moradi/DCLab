@@ -6,6 +6,7 @@
 import { questionEventWords, studioQuestionHref } from "./business-questions.ts";
 import { plainText, projectHref } from "./command-search.ts";
 import { utcWhen } from "./format-time.ts";
+import { alertCauseWords } from "./studio-monitoring.ts";
 import { ENGINE_OWNED_TYPES } from "./studio-compare.ts";
 import { actorWords } from "./studio-goal.ts";
 import { shortId } from "./studio-graph.ts";
@@ -136,7 +137,7 @@ export const LOG_EVENT_KINDS: ReadonlySet<string> = new Set([
 ]);
 
 export type ActivityEventLike = {
-  id: string; kind: string; occurred_at: string; status?: string | null;
+  id: string; kind: string; occurred_at: string; status?: string | null; summary_code?: string | null;
   actor: { kind: string; is_you?: boolean | null }; subject: { kind: string; id?: string | null }; link: { kind: string; id: string };
 };
 export type EventRow = {
@@ -181,9 +182,9 @@ export function eventRow(e: ActivityEventLike, projectId: string, names: Readonl
         href: evidenceHref(projectId, { kind: "experiment", id: e.link.id }), linkLabel: run ? `Open ${run}` : "Open the run", undo: "Cannot be repeated for this run." };
     }
     case "drift_alert": {
-      // The event does not say whether drift or a floor on real outcomes raised it, so it names both.
+      // D8b: the event's `summary_code` names the cause; without it (older events) both are named.
       const model = names.get(`model_version:${subjectId}`) ?? "the model";
-      return { ...base, what: `Weekly monitoring marked a week as alert for ${model}: drift, or real outcomes below a floor`, about: model,
+      return { ...base, what: `Weekly monitoring marked a week as alert for ${model}: ${alertCauseWords(e.summary_code)}`, about: model,
         href: projectHref(projectId, "monitoring"), linkLabel: "Open Monitoring", undo: "Nothing to undo: it is a check. What to do about it is a person's choice." };
     }
     case "retrain_requested": {

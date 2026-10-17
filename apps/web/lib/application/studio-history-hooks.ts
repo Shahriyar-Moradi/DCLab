@@ -17,6 +17,8 @@ const ActivityEventSchema = z.object({
   kind: z.string(),
   occurred_at: z.string(),
   status: nullableString,
+  /** D8a, `drift_alert` only: `below_floor` or a drift code. */
+  summary_code: nullableString,
   actor: z.object({ kind: z.string(), is_you: z.boolean().optional() }),
   subject: z.object({ kind: z.string(), id: nullableString }),
   link: z.object({ kind: z.string(), id: z.string() }),

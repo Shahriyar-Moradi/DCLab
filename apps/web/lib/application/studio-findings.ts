@@ -248,3 +248,26 @@ export function parseBranchPrefill(params: { get(name: string): string | null })
   if (transform && (TRANSFORMS as readonly string[]).includes(transform)) draft.transform = transform as ChangeDraft["transform"];
   return { intent: text("intent"), draft };
 }
+
+// --- Improve: "Suggested by the rules" (D8b) ---------------------------------------------
+
+export type RuleSuggestion = { check: string; label: string; status: string; tone: FindingTone; what: string; reason: string; href: string };
+
+/**
+ * The run in use's trust checks that did not pass and map to a change a person can start (the same mapping as "Try this
+ * change" on the run page), worst first. Each carries the prefilled reason that names the check and a same-origin link to the
+ * run's change panel; nothing is started from here. Checks that need a data decision are left out (they have no change).
+ */
+export function ruleSuggestions(projectId: string, experimentId: string, findings: FindingsLike | null | undefined): RuleSuggestion[] {
+  if (!findings?.investigated) return [];
+  return sortFindings((findings.checks ?? []).filter((f) => f.status === "fail" || f.status === "warning")).flatMap((finding) => {
+    const prefill = prefillFor(finding);
+    const href = prefill ? branchPrefillHref(projectId, experimentId, finding) : null;
+    const kind = finding.recommendation_kind ?? "";
+    if (!prefill || !href) return [];
+    return [{
+      check: finding.check, label: checkLabel(finding.check), status: findingStatusLabel(finding.status, finding.severity), tone: findingTone(finding.status),
+      what: (Object.hasOwn(RECOMMENDATION_TEXT, kind) ? RECOMMENDATION_TEXT[kind] : null) ?? "Try the change this check suggests.", reason: prefill.intent, href,
+    }];
+  });
+}

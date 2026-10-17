@@ -35,7 +35,7 @@ export type RetrainStatusLike = {
   policy: string; state: string; model_in_use_id?: string | null; latest_window_start?: string | null; latest_window_status?: string | null; newer_dataset_id?: string | null;
   request?: RetrainRequestLike | null; comparison?: RetrainComparisonLike | null; comparison_withheld?: boolean;
   real_outcomes?: { window_start: string; precision?: number | null; recall?: number | null; n_labelled?: number | null } | null;
-  proposal_id?: string | null; proposal_state?: string | null;
+  proposal_id?: string | null; proposal_state?: string | null; can_start?: boolean;
 };
 export type RetrainPolicyLike = { policy: string; version: number; updated_at?: string | null; updated_by_user_id?: string | null; owner_can_start?: boolean | null; auto_paused_until?: string | null };
 
@@ -71,7 +71,6 @@ export function policyFacts(p: RetrainPolicyLike, myUserId: string | null | unde
 
 /* ---------- "What the system does on its own": the retrain steps ---------- */
 
-const UNFINISHED = new Set(["queued", "running", "cancelling", "needs_input"]);
 const STOPPED: Record<string, string> = { failed: "failed", cancelled: "was cancelled", skipped: "was skipped" };
 const REFUSAL: Record<string, string> = {
   model_in_use_changed: "No switch decision was opened: the model in use changed after the retrain started.",
@@ -150,13 +149,13 @@ export function retrainSteps(s: RetrainStatusLike | undefined, failed: boolean):
   ];
 }
 
-/** Whether to offer "Retrain on newest data": a newer labelled file, a person who can start runs, nothing running. */
-export function canOfferRetrain(s: RetrainStatusLike | undefined, canStartRuns: boolean): boolean {
-  if (!s || !canStartRuns || !s.newer_dataset_id) return false;
-  const r = s.request;
-  // One retrain per model in use and file: the same file again would judge a second retrained model on the same final test.
-  if (r?.experiment_id && r.dataset_id === s.newer_dataset_id && r.incumbent_model_version_id === s.model_in_use_id) return false;
-  return s.state !== "retraining" && !(r && UNFINISHED.has(r.experiment_status ?? ""));
+/**
+ * Whether to offer "Retrain on newest data": the server's own rule (`can_start`, D8a: a person with workspace ML execution, a
+ * model in use, a newer labelled file not yet retrained on, nothing running). The page no longer guesses from the session's
+ * capabilities; the start itself is still decided by the server (plan limits may refuse it).
+ */
+export function canOfferRetrain(s: RetrainStatusLike | undefined): boolean {
+  return !!s && s.can_start === true && !!s.newer_dataset_id;
 }
 
 /** The confirm step before a retrain starts: what happens, in fixed words. */

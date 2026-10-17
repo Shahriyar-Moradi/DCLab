@@ -335,7 +335,9 @@ def test_v7_resolver_agreement_and_drift_alerts(ib):
     monitoring = item["monitoring"]
     assert datetime.fromisoformat(monitoring.pop("window_start").replace("Z", "+00:00")) == datetime(
         2026, 10, 5, tzinfo=UTC)
-    assert monitoring == {"model_version_id": str(ib.g.mv[0]), "max_psi": 0.42, "prediction_psi": 0.05}
+    assert monitoring == {"model_version_id": str(ib.g.mv[0]), "max_psi": 0.42, "prediction_psi": 0.05,
+                          "summary_code": "inputs_moved"}
+    assert item["summary"] == "Drift alert on the model in use"
     counts = _get(ib, path="/v1/inbox/counts")
     assert counts["needs_decision"] == len(_all(ib, limit=100))
     _window(ib.db, ib.g, ib.g.mv[0], week=1, status="ok")  # a newer, quiet week: the alert is history
@@ -343,3 +345,12 @@ def test_v7_resolver_agreement_and_drift_alerts(ib):
     assert f"drift_alert:{alert.id}" in {i["id"] for i in _all(ib, tab="done", limit=100)}
     assert _get(ib, path="/v1/inbox/counts") == {**counts, "needs_decision": counts["needs_decision"] - 1,
                                                  "done": counts["done"] + 1}
+    # D8a: a floor alert names its cause (code and summary), now and as history.
+    floor = _window(ib.db, ib.g, ib.g.mv[0], week=2, code="below_floor")
+    current = {i["id"]: i for i in _all(ib, limit=100)}[f"drift_alert:{floor.id}"]
+    assert (current["summary"], current["monitoring"]["summary_code"]) == (
+        "Real outcomes below the floor on the model in use", "below_floor")
+    _window(ib.db, ib.g, ib.g.mv[0], week=3, status="ok")
+    past = {i["id"]: i for i in _all(ib, tab="done", limit=100)}
+    assert past[f"drift_alert:{floor.id}"]["summary"] == "Real outcomes below the floor (an earlier week or model)"
+    assert past[f"drift_alert:{alert.id}"]["summary"] == "Drift alert (an earlier week or model)"

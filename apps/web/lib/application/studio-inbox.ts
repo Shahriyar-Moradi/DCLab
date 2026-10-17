@@ -6,7 +6,7 @@ import { safeInternalHref } from "../../components/studio/safe-href.ts";
 import { isUuid, plainText } from "./command-search.ts";
 import { BUSINESS_QUESTIONS_HREF, studioQuestionHref } from "./business-questions.ts";
 import { improveNoticeHref } from "./studio-improve-loop.ts";
-import { weekKey, weekLabel } from "./studio-monitoring.ts";
+import { alertCause, weekKey, weekLabel } from "./studio-monitoring.ts";
 import { statusWords } from "./studio-runs.ts";
 import { envelope, mapWizardError, type PlainError } from "./studio-wizard.ts";
 
@@ -137,13 +137,13 @@ export function questionHref(item: Pick<InboxItemLike, "subject" | "project_id">
 /** Inbox write failures in plain language (the API's `owner_only` is shown as such). */
 export function mapInboxError(error: unknown): PlainError {
   const status = (error as { status?: unknown } | null)?.status;
-  const { code, message } = envelope((error as { body?: unknown } | null)?.body);
+  const { code } = envelope((error as { body?: unknown } | null)?.body);
   if (code === "owner_only") return { title: "Only the owner can do this", detail: "Only the person whose conversation this came from can do this. An approver can still reject it.", fixable: false };
   if (status === 428 || code === "ref_versions_required") return { title: "The page is out of date", detail: "The versions currently in use were not available. Reload the inbox and try again.", fixable: false };
   if (status === 412 || code === "ref_version_conflict" || code === "precondition_failed") return { title: "This changed while you were looking", detail: "Reload the inbox to see the current state, then decide again.", fixable: false };
   if (status === 403) return { title: "You cannot do this here", detail: "Deciding needs a role that can write ML work in this workspace. The API enforces this; the disabled button is only a hint.", fixable: false };
   if (status === 404) return { title: "This item is gone", detail: "It is not in this workspace any more, or you cannot see it. Reload the inbox.", fixable: false };
-  if (status === 409 || code === "invalid_decision_transition") return { title: "Already decided", detail: message || "Someone else resolved this first, or it expired. Reload the inbox.", fixable: false };
+  if (status === 409 || code === "invalid_decision_transition") return { title: "Already decided", detail: "Someone else resolved this first, or it expired. Reload the inbox.", fixable: false };
   return mapWizardError(error);
 }
 
@@ -190,9 +190,13 @@ const PROPOSAL_QUESTION: Record<string, string> = {
 const RUN_WORDS: Record<string, string> = { completed: "finished", failed: "failed", cancelled: "was cancelled", skipped: "was skipped", ended: "ended" };
 
 /** The card's plain title. Run names come from the caller ("Run 3"); the server's fixed summaries are only matched, never shown. */
-export function inboxTitle(item: Pick<InboxItemLike, "kind" | "subject"> & { summary: string; decision_type?: string | null; proposal_type?: string | null; status: string; tab?: string | null }, runName?: string | null): string {
-  // The item does not say whether drift or a floor on real outcomes raised the alert, so the title names neither.
-  if (item.kind === "drift_alert") return item.tab === "done" ? "Alert on an earlier week or model" : "Alert on the model in use";
+export function inboxTitle(item: Pick<InboxItemLike, "kind" | "subject"> & { summary: string; decision_type?: string | null; proposal_type?: string | null; status: string; tab?: string | null; monitoring?: InboxMonitoringLike | null }, runName?: string | null): string {
+  // D8b: the week's `summary_code` says which cause raised the alert; without it the title names neither.
+  if (item.kind === "drift_alert") {
+    const cause = alertCause(item.monitoring?.summary_code);
+    const what = cause === "below_floor" ? "Real outcomes below a floor" : cause === "unknown" ? "Alert" : "Drift alert";
+    return item.tab === "done" ? `${what} on an earlier week or model` : `${what} on the model in use`;
+  }
   if (item.kind === "retrain_ask") return item.tab === "done" || item.status === "closed" ? "Retrain on newest data? (answered or no longer current)" : "Retrain on newest data?";
   if (item.kind === "challenger_ready") return lookup(CHALLENGER_TITLE, item.status, "Retrained model: decided");
   if (item.kind === "improve_run") return lookup(IMPROVE_TITLE, item.status, "Improvement loop stopped");
@@ -283,7 +287,7 @@ export function answerLines(answer: Record<string, unknown> | null | undefined):
 
 /* ---------- V7 UI-E: drift alerts, agreement and who closed an item ---------- */
 
-export type InboxMonitoringLike = { window_start?: string | null; max_psi?: number | null; prediction_psi?: number | null };
+export type InboxMonitoringLike = { window_start?: string | null; max_psi?: number | null; prediction_psi?: number | null; summary_code?: string | null };
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 /** The evidence stats of a drift alert, from the item's own aggregates only (no rows, no column names). */
@@ -299,11 +303,19 @@ export function driftStats(m: InboxMonitoringLike | null | undefined): Array<{ l
 /** What a drift alert means, in fixed words; the newest week of the model in use waits for a person, earlier ones are done. */
 export function driftSentence(item: { tab: string; monitoring?: InboxMonitoringLike | null }): string {
   const week = weekKey(item.monitoring?.window_start) ? `the ${weekLabel(item.monitoring?.window_start)}` : "a week";
-  const lead = `Weekly monitoring marked ${week} as alert: the inputs or the scores of this model look different from training (drift), or its real outcomes fell below a floor set for this project.`;
-  const meaning = "Monitoring says which. It does not mean the model is wrong, and nothing switched the model in use.";
+  const cause = alertCause(item.monitoring?.summary_code);
+  const lead = cause === "below_floor"
+    ? `Weekly monitoring marked ${week} as alert: the real outcomes of this model fell below a precision or recall floor set for this project. This is not drift.`
+    : cause === "inputs_moved" ? `Weekly monitoring marked ${week} as alert: the inputs of this model look different from training (drift).`
+      : cause === "scores_moved" ? `Weekly monitoring marked ${week} as alert: the scores of this model look different from training (drift).`
+        : cause === "inputs_and_scores_moved" ? `Weekly monitoring marked ${week} as alert: the inputs and the scores of this model look different from training (drift).`
+          : `Weekly monitoring marked ${week} as alert: the inputs or the scores of this model look different from training (drift), or its real outcomes fell below a floor set for this project.`;
+  const meaning = cause === "unknown"
+    ? "Monitoring says which. It does not mean the model is wrong, and nothing switched the model in use."
+    : "Nothing switched the model in use.";
   return item.tab === "done"
     ? `${lead} ${meaning} This is an earlier week, or a model that is no longer in use; Monitoring has the latest status.`
-    : `${lead} ${meaning} Open Monitoring to see which columns moved, then decide what to do; going back to an earlier model is your choice.`;
+    : `${lead} ${meaning} ${cause === "below_floor" ? "Open Monitoring to see the real outcomes week by week" : "Open Monitoring to see which columns moved"}, then decide what to do; going back to an earlier model is your choice.`;
 }
 
 /** D5c: what the retrain rule's question and the retrained model's card mean, in fixed words. */

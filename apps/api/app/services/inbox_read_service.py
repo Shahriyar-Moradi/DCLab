@@ -45,6 +45,7 @@ from app.db.models import (
 from app.domain.agent_records import AGENT_SUBJECT_COLUMNS, SEMANTIC_AGREEMENTS
 from app.domain.business_questions import STATUS_ANSWERED, STATUS_OPEN
 from app.domain.improve import RUN_WAITING_USER
+from app.domain.monitoring import BELOW_FLOOR
 from app.domain.decision_records import (
     ACTOR_AGENT,
     ACTOR_RULE,
@@ -88,6 +89,7 @@ from app.services.authorization_service import (
 from app.services.cursor_codec import open_cursor, scope_digest, sign_cursor
 from app.services.experiment_service import STATUS_SQL
 from app.services.home_read_service import (
+    code_value,
     decision_summary,
     keyset_before,
     latest_window_revision,
@@ -211,7 +213,7 @@ def _drift_alerts(ctx: _Ctx, current: bool) -> tuple[Any, Any, Any, Any]:
     mw = MonitoringWindow
     newest = newest_week_of_model_in_use()
     stmt = select(mw.id, mw.project_id, mw.model_version_id, mw.window_start, mw.computed_at,
-                  mw.input_drift["max_psi"].as_float(), mw.prediction_drift["psi"].as_float()).where(
+                  mw.input_drift["max_psi"].as_float(), mw.prediction_drift["psi"].as_float(), mw.summary_code).where(
         mw.status == "alert", latest_window_revision(), newest if current else not_(newest))
     return _scoped(stmt, mw.workspace_id, mw.project_id, ctx), mw.computed_at, mw.id, mw.project_id
 
@@ -470,16 +472,17 @@ def _resolver(ctx: _Ctx, kind: str, user_id: UUID | None) -> InboxResolverRead:
 
 
 def _drift_item(tab: str, window_id: UUID, project_id: UUID, version_id: UUID, start: datetime, at: datetime,
-                max_psi: float | None, prediction_psi: float | None) -> InboxItemRead:
+                max_psi: float | None, prediction_psi: float | None, summary_code: str | None) -> InboxItemRead:
     current = tab == "needs_decision"
+    what = "Real outcomes below the floor" if summary_code == BELOW_FLOOR else "Drift alert"
     return _item(
         id=f"drift_alert:{window_id}", kind="drift_alert", tab=tab, occurred_at=at, project_id=project_id,
-        summary="Drift alert on the model in use" if current else "Drift alert (an earlier week or model)",
+        summary=f"{what} on the model in use" if current else f"{what} (an earlier week or model)",
         status="alert", source=InboxRefRead(kind="monitoring_window", id=window_id),
         subject=_subject("model_version", version_id), proposed_by="rule",
         evidence_refs=_refs(_ref("model_version", version_id)), actions=[],
         monitoring=InboxMonitoringRead(window_start=start, model_version_id=version_id, max_psi=max_psi,
-                                       prediction_psi=prediction_psi),
+                                       prediction_psi=prediction_psi, summary_code=code_value(summary_code)),
     )
 
 

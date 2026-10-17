@@ -88,7 +88,7 @@ test("branch, compare, accept: the champion decision appears", async ({ page }) 
   await page.emulateMedia({ colorScheme: "light" });
 
   // A run in progress offers Cancel, a finished one does not (checked on the root later).
-  // Branch: an invalid change set is refused by the API with its own message and starts nothing.
+  // Branch: an invalid change set is refused by the API (shown in fixed words by its reason code) and starts nothing.
   await page.goto(`/projects/${projectId}/experiments/${rootId}`);
   const branch = page.getByRole("region", { name: "Try a change" }).or(page.locator("section", { has: page.getByRole("heading", { name: "Try a change" }) }));
   await expect(branch).toBeVisible();

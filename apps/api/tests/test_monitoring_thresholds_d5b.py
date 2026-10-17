@@ -278,6 +278,21 @@ def test_reads_writes_authority_if_match_history_and_tenancy(client, db_session,
     assert other.status_code == 200 and other.json()["version"] == 1  # its own project, its own versions
 
 
+def test_can_edit_also_needs_workspace_ml_execution(db_session, setup, monkeypatch):  # noqa: F811
+    """D8a: ``can_edit`` is the PUT's own rule (owner/administrator AND workspace ML execution)."""
+
+    from app.services import workspace_capability_service as wcs
+
+    db, admin, ws = db_session, setup["alpha_admin"], setup["alpha"].id
+    assert ms.can_edit_thresholds(db, admin, ws) is True
+    real = wcs.effective_capability_matrix
+    monkeypatch.setattr(wcs, "effective_capability_matrix",
+                        lambda *a, **k: {**real(*a, **k), wcs.WORKSPACE_EXECUTE_ML: False})
+    assert ms.can_edit_thresholds(db, admin, ws) is False
+    read = ms.thresholds_read(db, actor=admin, workspace_id=ws, project_id=setup["alpha_project"].id, agent=False)
+    assert read.can_edit is False
+
+
 # --- end to end: closed weeks keep their values, the open week uses and stores the new ones -------
 
 

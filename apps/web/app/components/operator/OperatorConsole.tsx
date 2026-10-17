@@ -24,7 +24,7 @@ import { utcWhen } from "@/lib/application/format-time";
 import {
   CAPS_READ_ONLY, JOB_STATUSES, NO_CUSTOMER_ROWS, OPERATOR_TABS, TIMES_UTC, ageText, capsItems, checkLabel, checkName, checkSentence, checkTone,
   codeText, count, failedJobRows, failuresView, jobStatusLabel, jobsPivot, nextPageAction, pageSentence, signInHref, queueSentence, readFailure, readinessView, requiredText,
-  statusTag, tabFromQuery, workersView, workspaceRows, type FailedJobRow, type JobPivotRow, type ReadErrorLike, type WorkspaceRow,
+  QUOTA_COLUMNS, statusTag, tabFromQuery, workersView, workspaceRows, type FailedJobRow, type JobPivotRow, type ReadErrorLike, type WorkspaceRow,
 } from "@/lib/application/operator";
 import { useOperatorFailedJobs, useOperatorListReset, useOperatorOverview, useOperatorWorkspaces, type OperatorOverview } from "@/lib/application/operator-hooks";
 
@@ -99,7 +99,7 @@ function Overview({ data }: { data: OperatorOverview }) {
       <section aria-labelledby="jobs-24h" className="grid" style={{ gap: 12 }}>
         <h2 id="jobs-24h">Jobs in the last 24 hours</h2>
         <p data-testid="jobs-sentence">{jobs.sentence}</p>
-        {jobs.rows.length ? <DataTable caption="Jobs queued in the last 24 hours by type and status" columns={jobColumns} rows={jobs.rows} rowKey={(r) => r.type} /> : null}
+        {jobs.rows.length ? <DataTable caption="Jobs queued in the last 24 hours by type and status" columns={jobColumns} rows={jobs.rows} rowKey={(r) => r.type} scrollLabel="Jobs queued in the last 24 hours (scrolls sideways on small screens)" /> : null}
       </section>
       <Card title="Platform AI caps" aside={<Pill tone="det">Read-only</Pill>}>
         <p className="muted">{CAPS_READ_ONLY}</p>
@@ -136,12 +136,21 @@ function Workspaces() {
     { key: "jobs30d", header: "Jobs, 30 days", numeric: true, render: (r) => count(r.jobs30d) },
     { key: "failed24h", header: "Failed, 24 h", numeric: true, render: (r) => count(r.failed24h) },
     { key: "active", header: "Active, 7 days" },
+    { key: "plan", header: "Plan", render: (r) => <span data-untrusted="">{r.plan}</span> },
+    ...QUOTA_COLUMNS.map((q) => ({
+      key: q.key, header: q.header,
+      render: (r: WorkspaceRow) => {
+        const cell = q.key === "compute_seconds_month" ? r.compute : q.key === "storage_bytes" ? r.storage : r.runs;
+        return <>{cell.text}{cell.over ? <> <Pill tone="crit">at or over the limit</Pill></> : null}</>;
+      },
+    })),
+    { key: "beta", header: "Assistant beta", render: (r) => <Pill tone={r.beta === "On" ? "ai" : "gray"}>{r.beta}</Pill> },
     { key: "id", header: "Workspace id", render: (r) => <IdCell id={r.id} short={r.shortId} label={`Copy the id of workspace ${r.name}`} /> },
   ];
   return (
     <div className="grid" style={{ gap: 16 }}>
       <p>Every workspace, oldest first. Names are chosen by customers and shown as plain text. &ldquo;Active&rdquo; means it queued at least one job in the last 7 days. {TIMES_UTC}</p>
-      <Banner tone="info">Plan and usage per workspace are not in this read yet, so they are not shown here. Each workspace&apos;s owners see their own usage in Studio settings.</Banner>
+      <p className="muted">Plan and usage are what the workspace&apos;s own Usage page measures: compute this month, storage now and runs today, each against its plan limit (&ldquo;unlimited&rdquo; when the plan sets none). &ldquo;At or over the limit&rdquo; means a new run or upload would be refused while limits are enforced. The assistant beta is switched per workspace by DCLab staff on the command line.</p>
       {read.isError ? <NextPageProblem error={read.error} what="workspaces" onRetry={() => void read.fetchNextPage()} onRestart={restart} /> : null}
       <DataTable caption="Workspaces, oldest first" columns={columns} rows={rows} rowKey={(r) => r.key} emptyMessage="There is no workspace yet." />
       {rows.length ? <p className="muted" role="status">{pageSentence(rows.length, !!read.hasNextPage, ["workspace", "workspaces"])}</p> : null}

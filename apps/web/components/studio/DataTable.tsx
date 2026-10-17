@@ -20,9 +20,14 @@ export type DataTableProps<Row> = {
   caption: string;
   highlightRow?: (row: Row) => boolean;
   emptyMessage?: ReactNode;
+  /**
+   * Set when the table may scroll sideways with no focusable cell (axe `scrollable-region-focusable`): the scroll box
+   * becomes a labelled, keyboard-focusable region.
+   */
+  scrollLabel?: string;
 };
 
-export function DataTable<Row>({ columns, rows, rowKey, caption, highlightRow, emptyMessage }: DataTableProps<Row>) {
+export function DataTable<Row>({ columns, rows, rowKey, caption, highlightRow, emptyMessage, scrollLabel }: DataTableProps<Row>) {
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const sorted = useMemo(() => {
     const column = columns.find((c) => c.key === sort?.key);
@@ -34,7 +39,7 @@ export function DataTable<Row>({ columns, rows, rowKey, caption, highlightRow, e
   if (rows.length === 0) return <div className="empty">{emptyMessage ?? "Nothing to show yet."}</div>;
 
   return (
-    <div className="tbl card">
+    <div className="tbl card" {...(scrollLabel ? { tabIndex: 0, role: "region", "aria-label": scrollLabel } : {})}>
       <table>
         <caption className="sr-only">{caption}</caption>
         <thead>

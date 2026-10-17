@@ -23,10 +23,10 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import String, cast, select
 from sqlalchemy.orm import Session
 
-from app.db.models import ProblemSpec, ProjectDecisionRecord, User
+from app.db.models import ExecutionRequest, Experiment, ProblemSpec, ProjectDecisionRecord, User
 from app.domain.data_goal import GOAL_VALUE_MAX_CHARS, GOAL_WHY_MAX_CHARS, GoalDecisionRowRead, GoalDecisionsRead
 from app.domain.decision_records import (
     DECISION_SPLIT_PLAN_CREATED,
@@ -141,10 +141,32 @@ def _confirmed_by(row: ProjectDecisionRecord, viewer_id: UUID | None) -> str | N
     return "connected_tool" if row.actor_service_token_id is not None else None
 
 
+def _plan_confirmation(db: Session, workspace_id: UUID, project_id: UUID,
+                       plan_id: UUID | None) -> ProjectDecisionRecord | None:
+    """The newest ``test_design_confirmed`` entry whose execution request's run uses ``plan_id``
+    (entry -> ``details.execution_request_id`` -> request -> run -> split plan). An entry for an
+    older plan, or for a run that has no plan yet, never describes this one."""
+
+    if plan_id is None:
+        return None
+    pdr = ProjectDecisionRecord
+    return db.scalar(
+        select(pdr)
+        .join(ExecutionRequest, (ExecutionRequest.workspace_id == pdr.workspace_id)
+              & (cast(ExecutionRequest.id, String) == pdr.details["execution_request_id"].astext))
+        .join(Experiment, (Experiment.workspace_id == ExecutionRequest.workspace_id)
+              & (Experiment.id == ExecutionRequest.pipeline_run_id))
+        .where(pdr.workspace_id == workspace_id, pdr.project_id == project_id,
+               pdr.decision_type == GOAL_CONFIRMATION_DECISION_TYPES["test_design"], pdr.state == STATE_ACCEPTED,
+               Experiment.project_id == project_id, Experiment.split_plan_id == plan_id)
+        .order_by(pdr.recorded_at.desc(), pdr.id.desc()).limit(1))
+
+
 def goal_decisions(db: Session, *, actor: User, workspace_id: UUID, project_id: UUID,
                    viewer_id: UUID | None) -> GoalDecisionsRead:
-    """The newest entry per part; the test design falls back to the rules' split plan entry
-    (suggested by the rules, confirmed by nobody). ``viewer_id`` is None for service tokens."""
+    """The newest entry per part; the test design is the newest split plan's own confirmation, else
+    that plan's entry (suggested by the rules, confirmed by nobody). ``viewer_id`` is None for
+    service tokens."""
 
     project = get_project(db, actor=actor, workspace_id=workspace_id, project_id=project_id)
     ref = current_refs(db, workspace_id=workspace_id, project_id=project.id).get("problem_spec")
@@ -161,6 +183,8 @@ def goal_decisions(db: Session, *, actor: User, workspace_id: UUID, project_id: 
     found = {what: newest(decision_type, scoped=what != "test_design")
              for what, decision_type in GOAL_CONFIRMATION_DECISION_TYPES.items()}
     found["split_plan"] = newest(DECISION_SPLIT_PLAN_CREATED, scoped=False)
+    if found["split_plan"] is not None:  # D8a: only the newest plan's own confirmation describes it
+        found["test_design"] = _plan_confirmation(db, workspace_id, project.id, found["split_plan"].split_plan_id)
     items = []
     for what in GOAL_CONFIRMATION_DECISION_TYPES:
         row = found[what]

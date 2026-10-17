@@ -19,6 +19,8 @@ const ActivityItemSchema = z.object({
   summary: z.string(),
   status: nullableString,
   decision_type: nullableString,
+  /** D8a, `drift_alert` only: `below_floor` or a drift code. */
+  summary_code: nullableString,
   link: z.object({ kind: z.string(), id: z.string() }),
   /** `run_finished` with locked evidence: the winner's family and CV score (never a final test set value). */
   run_result: z.object({

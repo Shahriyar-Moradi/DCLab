@@ -28,7 +28,8 @@ test("training-file refusal and unknown codes read plainly", () => {
   assert.match(refused.title, /file this model learned from/);
   assert.equal(mapScoringError({ status: 403 }).title, "You cannot score files here");
   assert.equal(mapScoringError({ status: 422, body: { error: { code: "upload_rejected" } } }).title, "That file could not be read as a table");
-  assert.equal(failureError("feature_contract_failed", "the file is missing required columns: b").detail, "the file is missing required columns: b.");
+  // D8b: the stored failure message is never shown; the code picks a fixed sentence.
+  assert.equal(failureError("feature_contract_failed", "the file is missing required columns: b").detail, "See the column check for the missing columns.");
   assert.equal(failureError(null, null).title, "Scoring did not finish");
 });
 
@@ -56,7 +57,7 @@ test("a warning status and empty columns are never an empty banner; scoring_fail
   assert.equal(warn.tone, "warn");
   assert.match(warn.lines.join(" "), /could not be read and were treated as missing in: a\./);
   assert.match(contractSentences(contractView({ status: "failed", empty_columns: ["z"] })!).lines.join(" "), /empty in the file: z/);
-  assert.equal(failureError("scoring_failed", "the input file could not be read as a table").detail, "the input file could not be read as a table.");
+  assert.equal(failureError("scoring_failed", "the input file could not be read as a table").detail, "Try again with the same file.");
 });
 
 const M1 = "22222222-2222-4222-8222-222222222222";

@@ -513,6 +513,24 @@ def _comparison_read(row: RetrainComparison) -> dr.RetrainComparisonRead:
         proposal_refusal=result.get("proposal_refusal"), computed_at=row.created_at)
 
 
+def _may_start(db: Session, actor: User, workspace_id: UUID, project_id: UUID, version_id: UUID,
+               dataset_id: UUID) -> bool:
+    """``POST /retrain`` with the newest file would pass its authority and state checks now: a person
+    with workspace ML execution, no retrain running, the model in use not yet retrained on that file."""
+
+    from app.services.workspace_capability_service import WORKSPACE_EXECUTE_ML, effective_capability_matrix
+
+    if not (can_perform_ml_write(db, actor, workspace_id)
+            and effective_capability_matrix(db, actor, workspace_id)[WORKSPACE_EXECUTE_ML]):
+        return False
+    if _open_retrain(db, workspace_id, project_id) is not None:
+        return False
+    return db.scalar(select(RetrainRequest.id).where(
+        RetrainRequest.workspace_id == workspace_id, RetrainRequest.project_id == project_id,
+        RetrainRequest.incumbent_model_version_id == version_id, RetrainRequest.dataset_id == dataset_id,
+        RetrainRequest.experiment_id.is_not(None)).limit(1)) is None
+
+
 def retrain_status(db: Session, *, actor: User, workspace_id: UUID, project_id: UUID, agent: bool
                    ) -> dr.RetrainStatusRead:
     """The Monitoring card read: policy, state (drift found > retraining > ready to compare > waiting
@@ -567,6 +585,8 @@ def retrain_status(db: Session, *, actor: User, workspace_id: UUID, project_id: 
             state = "retraining"
         elif run_status == "completed":
             state = "ready_to_compare"
+    can_start = (not agent and current is not None and newer is not None
+                 and _may_start(db, actor, workspace_id, project_id, current[0].id, newer.id))
     incumbent = _scoped(db, Experiment, workspace_id, db.scalar(select(ModelVersion.pipeline_run_id).where(
         ModelVersion.workspace_id == workspace_id, ModelVersion.id == request.incumbent_model_version_id))) \
         if request is not None else None
@@ -583,4 +603,5 @@ def retrain_status(db: Session, *, actor: User, workspace_id: UUID, project_id: 
         ) if request is not None else None,
         comparison=None if agent or comparison is None else _comparison_read(comparison),
         comparison_withheld=agent and comparison is not None, real_outcomes=real,
-        proposal_id=proposal.id if proposal is not None else None, proposal_state=proposal_state)
+        proposal_id=proposal.id if proposal is not None else None, proposal_state=proposal_state,
+        can_start=can_start)

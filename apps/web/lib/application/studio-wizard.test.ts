@@ -66,7 +66,7 @@ test("single flight: a double submit runs once and a later submit runs again", a
   assert.equal(await c, 2);
 });
 
-test("backend codes map to plain language; unknown codes keep the backend message", () => {
+test("backend codes map to plain language; the backend's own message is never shown (D8b)", () => {
   assert.match(mapWizardError(err(422, "TARGET_NOT_IN_DATASET")).title, /target column/i);
   assert.match(mapWizardError(err(422, "plan_refused")).title, /plan/i);
   assert.match(mapWizardError(err(409, "split_confirmation_required")).title, /test design/i);
@@ -74,11 +74,13 @@ test("backend codes map to plain language; unknown codes keep the backend messag
   assert.match(mapWizardError(err(422, "upload_rejected")).title, /could not be read/);
   assert.match(mapWizardError(err(409, "idempotency_key_conflict")).title, /already used/);
   const v = mapWizardError(err(422, "validation_failed", "x", { errors: [{ loc: ["body", "target_column"], msg: "bad" }] }));
-  assert.equal(v.detail, "target_column: bad");
-  assert.equal(mapWizardError(err(409, "something_new", "Backend says no")).detail, "Backend says no");
+  assert.equal(v.detail, "Check the answers and try again.");
+  assert.doesNotMatch(JSON.stringify(mapWizardError(err(409, "something_new", "Backend says no"))), /Backend says no/);
+  assert.equal(mapWizardError(err(409, "__proto__", "Backend says no")).title, "This changed while you were looking");
+  assert.equal(mapWizardError(err(404, "constructor", "secret path")).title, "Not found");
   assert.match(mapWizardError(err(429, "run_quota_exceeded", "Quota")).title, /Too many/);
   assert.match(mapWizardError(err(403, "forbidden")).title, /cannot/);
-  assert.equal(mapWizardError(new Error("boom")).detail, "boom");
+  assert.doesNotMatch(mapWizardError(new Error("boom")).detail, /boom/);
   assert.equal(mapWizardError(null).title, "Something went wrong");
 });
 

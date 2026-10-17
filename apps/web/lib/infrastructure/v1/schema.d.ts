@@ -2552,6 +2552,11 @@ export interface components {
              * @description One line built by the server from typed fields only (no free text).
              */
             summary: string;
+            /**
+             * Summary Code
+             * @description `drift_alert` only: the monitoring window's code (`below_floor` = real outcomes under a floor; `inputs_moved` | `scores_moved` | `inputs_and_scores_moved` = drift).
+             */
+            summary_code?: string | null;
         };
         /** ActivityLinkRead */
         ActivityLinkRead: {
@@ -4496,6 +4501,11 @@ export interface components {
             /** Started At */
             started_at?: string | null;
             /**
+             * Started By
+             * @description Who started this run, from existing records (never an id): `you` / `person` (a person; `you` never for service tokens or agents), `connected_tool` (a service token, or an improve loop a token started), `assistant` (a person accepted an AI proposal that started it), `rules` (an automatic retrain or a system / scheduled start); null when no record says.
+             */
+            started_by?: ("you" | "person" | "connected_tool" | "assistant" | "rules") | null;
+            /**
              * Status
              * @enum {string}
              */
@@ -4655,6 +4665,11 @@ export interface components {
             split_plan_id?: string | null;
             /** Started At */
             started_at?: string | null;
+            /**
+             * Started By
+             * @description Who started this run, from existing records (never an id): `you` / `person` (a person; `you` never for service tokens or agents), `connected_tool` (a service token, or an improve loop a token started), `assistant` (a person accepted an AI proposal that started it), `rules` (an automatic retrain or a system / scheduled start); null when no record says.
+             */
+            started_by?: ("you" | "person" | "connected_tool" | "assistant" | "rules") | null;
             /**
              * Status
              * @enum {string}
@@ -5982,6 +5997,11 @@ export interface components {
              * @description PSI of the model's scores.
              */
             prediction_psi?: number | null;
+            /**
+             * Summary Code
+             * @description Why the week is an alert: `below_floor` (real outcomes under a floor) or a drift code (`inputs_moved` | `scores_moved` | `inputs_and_scores_moved`).
+             */
+            summary_code?: string | null;
             /**
              * Window Start
              * Format: date-time
@@ -7949,6 +7969,34 @@ export interface components {
             workers: components["schemas"]["WorkersRead"];
             workspaces: components["schemas"]["WorkspaceTotalsRead"];
         };
+        /**
+         * OperatorQuotaRead
+         * @description One enforced plan limit of a workspace (P8.4 usage; the workspace's own Usage page measures).
+         */
+        OperatorQuotaRead: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "compute_seconds_month" | "storage_bytes" | "runs_per_day";
+            /**
+             * Limit
+             * @description null = unlimited.
+             */
+            limit: number | null;
+            /**
+             * Over
+             * @description used >= limit (a new run or upload would be refused while quotas are enforced).
+             */
+            over: boolean;
+            /**
+             * Percent
+             * @description used / limit x 100 (null when unlimited or 0).
+             */
+            percent: number | null;
+            /** Used */
+            used: number;
+        };
         /** OperatorWorkspacePage */
         OperatorWorkspacePage: {
             /** Items */
@@ -7988,8 +8036,18 @@ export interface components {
              * @description Customer-chosen text: render as plain text.
              */
             name: string;
+            /**
+             * Plan
+             * @description Plan name (set with `dclab usage set-plan`; `beta` by default).
+             */
+            plan: string;
             /** Project Count */
             project_count: number;
+            /**
+             * Usage
+             * @description Used vs limit of each enforced quota (this month / today).
+             */
+            usage: components["schemas"]["OperatorQuotaRead"][];
         };
         /** OutcomeSetCreateRequest */
         OutcomeSetCreateRequest: {
@@ -9838,6 +9896,12 @@ export interface components {
         };
         /** RetrainStatusRead */
         RetrainStatusRead: {
+            /**
+             * Can Start
+             * @description The caller may retrain now on `newer_dataset_id` (the server's rule: a person with workspace ML execution, a model in use, a newer labelled file not yet retrained on, no retrain running). Always false for service tokens and agents. Plan limits may still refuse the start (429).
+             * @default false
+             */
+            can_start: boolean;
             comparison?: components["schemas"]["RetrainComparisonRead"] | null;
             /**
              * Comparison Withheld

@@ -51,7 +51,7 @@ POLICY_KEYS = {"project_id", "policy", "version", "etag", "updated_at", "updated
                "auto_paused_until"}
 STATUS_KEYS = {"project_id", "policy", "state", "model_in_use_id", "latest_window_start", "latest_window_status",
                "newer_dataset_id", "request", "comparison", "comparison_withheld", "real_outcomes", "proposal_id",
-               "proposal_state", "notes"}
+               "proposal_state", "can_start", "notes"}
 REQUEST_KEYS = {"id", "origin", "created_at", "incumbent_model_version_id", "dataset_id", "experiment_id",
                 "experiment_status", "window_start", "carried", "not_carried"}
 COMPARISON_KEYS = {"status", "reason_code", "message", "wording", "time_column", "incumbent_training_end",
@@ -199,6 +199,7 @@ def test_policy_and_status_reads_writes_and_refusals(client, db_session, setup):
 
     status = _status(client, setup)
     assert (status["policy"], status["state"], status["request"], status["comparison"]) == ("auto", "idle", None, None)
+    assert status["can_start"] is False  # D8a: no model in use
     assert _status(client, setup, _bearer(secret))["comparison_withheld"] is False
     dataset = setup["alpha_dataset"].id
     _assert_envelope(client.post(f"/v1/projects/{pid}/retrain", json={"dataset_id": str(dataset)},
@@ -358,6 +359,7 @@ def test_retrain_end_to_end_keep_then_switch(client, db_session, setup, monkeypa
         "auto", UUID(old_months["id"]), week, setup["alpha_admin"].id)
     first = _status(client, setup)
     assert first["state"] == "retraining" and set(first["request"]) == REQUEST_KEYS
+    assert first["can_start"] is False  # D8a: a retrain is running (and its file is already used)
     assert first["request"]["carried"] == ["target_column", "problem_spec"] and first["request"]["not_carried"] == []
     assert _work(db, auto.experiment_id).status == "completed"
     assert run_retrain_tick(db)["compared"] == 1
@@ -395,6 +397,11 @@ def test_retrain_end_to_end_keep_then_switch(client, db_session, setup, monkeypa
     _window(db, setup, incumbent.id, week + timedelta(days=14))
     assert run_retrain_tick(db) == {"compared": 0, "asked": 0, "started": 0}  # one question per 7 days
     assert _status(client, setup)["newer_dataset_id"] == newest["id"]
+    # D8a: the server's rule, so the web never guesses: people with ML execution only, never tokens.
+    assert _status(client, setup)["can_start"] is True
+    assert _status(client, setup, _bearer(secret))["can_start"] is False
+    assert _status(client, setup, _h(setup, _member(db, setup, WorkspaceRole.VIEWER)))["can_start"] is False
+    assert _status(client, setup, _h(setup, _member(db, setup, WorkspaceRole.ML_ENGINEER)))["can_start"] is True
 
     # 3. A person answers: quota applies, idempotent, single flight; compared on later rows; switch.
     _assert_envelope(client.post(f"/v1/projects/{pid}/retrain", json={"dataset_id": old_months["id"]},
@@ -415,6 +422,7 @@ def test_retrain_end_to_end_keep_then_switch(client, db_session, setup, monkeypa
     _assert_envelope(client.post(f"/v1/projects/{pid}/retrain", json={"dataset_id": later["id"]},
                                  headers=_h(setup, key=_key())), 409, "retrain_in_progress")
     assert started.json()["state"] == "retraining" and started.json()["request"]["origin"] == "person"
+    assert started.json()["can_start"] is False
     assert any(i["kind"] == "retrain_ask" and i["status"] == "closed" for i in _inbox(client, setup, "done"))
     run_id = UUID(started.headers["Location"].rsplit("/", 1)[1])
     assert _work(db, run_id).status == "completed"

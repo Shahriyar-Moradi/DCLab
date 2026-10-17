@@ -7,7 +7,7 @@
  * observed classes, leakage exclusions) is answered by the API's own 422 and shown as it comes back.
  * Compare shows cross-validation numbers only: the schema in the hooks has no final test set field.
  */
-import { isUuid, plainText } from "./command-search.ts";
+import { isUuid } from "./command-search.ts";
 import { mapWizardError, type PlainError } from "./studio-wizard.ts";
 
 export const COMPARE_MIN = 2;
@@ -37,10 +37,11 @@ const NOT_COMPARABLE: Record<string, string> = {
 /** Plain-language reason for a refused comparison (the API's `409` code), or null when it is not one. */
 export function compareRefusal(error: unknown): string | null {
   const status = (error as { status?: unknown } | null)?.status;
-  const body = (error as { body?: { error?: { code?: unknown; message?: unknown } } } | null)?.body;
+  const body = (error as { body?: { error?: { code?: unknown } } } | null)?.body;
   const code = typeof body?.error?.code === "string" ? body.error.code.toLowerCase() : "";
-  if (status !== 409 && !(code in NOT_COMPARABLE)) return null;
-  return NOT_COMPARABLE[code] ?? (typeof body?.error?.message === "string" ? body.error.message : "These runs cannot be compared.");
+  const known = Object.hasOwn(NOT_COMPARABLE, code) ? NOT_COMPARABLE[code] : undefined;
+  if (status !== 409 && !known) return null;
+  return known ?? "These runs cannot be compared.";
 }
 
 export type CompareItem = { experiment_id: string; cv?: Record<string, number>; family?: string | null; selection_metric?: string | null; selected_score?: number | null };
@@ -218,20 +219,44 @@ export function buildBranchBody(intent: string, drafts: ChangeDraft[]): BranchBo
   return { intent: intent.trim(), changes };
 }
 
-/** The API's `422 invalid_change_set` (reason + path) or its validation message, as shown under the form. */
+const CHANGE_REASONS: Record<string, string> = {
+  schema: "A change is not in the expected shape.",
+  non_finite_value: "A number in a change is not a finite number.",
+  intent_required: "Say why you are trying it (the reason is saved with the run).",
+  new_root_required: "This setting cannot change on top of a run; start a new run from scratch for it.",
+  unknown_family: "That model family is not installed for this kind of answer.",
+  family_not_in_portfolio: "That model family is not among the run's models.",
+  family_already_in_portfolio: "The run you start from already trains that model family.",
+  baseline_not_excludable: "The simple baseline model is always trained; it cannot be left out.",
+  portfolio_empty: "At least one model family other than the baseline must stay.",
+  unknown_column: "That column is not in the run's data.",
+  reserved_column: "That column is the target, group or time column, so it cannot be changed here.",
+  transform_not_applicable: "That column treatment does not fit this column.",
+  conflicting_transforms: "Two changes treat the same column in conflicting ways.",
+  class_weighting_not_applicable: "Class weights apply only to a yes/no or several-answer goal with a model that accepts them.",
+  threshold_objective_not_applicable: "A threshold rule applies only to a yes/no goal.",
+  invalid_objective: "The ranking score or rule is not valid for this goal.",
+};
+
+/**
+ * The API's `422 invalid_change_set` (its closed `reason` code and the field `path`) or another refusal, in fixed words (D8b):
+ * the server's message is never shown. A known reason code gets its sentence; the path is shown as plain text only when it is
+ * a short field path.
+ */
 export function branchProblem(error: unknown): PlainError {
-  const body = (error as { body?: { error?: { code?: unknown; message?: unknown; details?: Record<string, unknown> } } } | null)?.body;
+  const body = (error as { body?: { error?: { code?: unknown; details?: Record<string, unknown> } } } | null)?.body;
   const status = (error as { status?: unknown } | null)?.status;
   const code = typeof body?.error?.code === "string" ? body.error.code : "";
   const details = body?.error?.details ?? {};
   if (code === "invalid_change_set" || code === "new_root_required") {
-    const reason = typeof details.reason === "string" ? plainText(details.reason, 80) : "";
-    const where = typeof details.path === "string" ? plainText(details.path, 80) : "";
-    const message = typeof body?.error?.message === "string" ? plainText(body.error.message, 300) : "";
-    return { title: "This change was refused", detail: [message, reason && `Reason: ${reason}`, where && `At: ${where}`].filter(Boolean).join(" "), fixable: true };
+    const reasonCode = typeof details.reason === "string" ? details.reason : "";
+    const reason = Object.hasOwn(CHANGE_REASONS, reasonCode) ? CHANGE_REASONS[reasonCode] : "";
+    const path = typeof details.path === "string" && /^[A-Za-z0-9_.[\]]{1,80}$/.test(details.path) ? details.path : "";
+    const lead = code === "new_root_required" ? CHANGE_REASONS.new_root_required : "Nothing was started.";
+    return { title: "This change was refused", detail: [lead, reason !== lead ? reason : "", path && `At: ${path}.`].filter(Boolean).join(" "), fixable: true };
   }
   if (code === "experiment_not_branchable" || (status === 409 && code.includes("branch"))) {
-    return { title: "You cannot try a change on this run yet", detail: typeof body?.error?.message === "string" ? plainText(body.error.message, 300) : "Only a finished run with a chosen best model can be used as a starting point.", fixable: false };
+    return { title: "You cannot try a change on this run yet", detail: "Only a finished run with a chosen best model can be used as a starting point.", fixable: false };
   }
   return mapWizardError(error);
 }
@@ -241,9 +266,8 @@ export function branchProblem(error: unknown): PlainError {
 /** Ref-move and decision failures, with the conflict wording the brief asks for. */
 export function mapActionError(error: unknown, noun: "champion" | "decision" | "cancel"): PlainError {
   const status = (error as { status?: unknown } | null)?.status;
-  const body = (error as { body?: { error?: { code?: unknown; message?: unknown } } } | null)?.body;
+  const body = (error as { body?: { error?: { code?: unknown } } } | null)?.body;
   const code = typeof body?.error?.code === "string" ? body.error.code.toLowerCase() : "";
-  const message = typeof body?.error?.message === "string" ? body.error.message : "";
   if (status === 412 || code === "precondition_failed" || code === "ref_version_conflict" || code === "stale_ref_version") {
     return { title: noun === "champion" ? "Someone else changed the model in use" : "This changed while you were looking", detail: "Reload to see the current state, then decide again.", fixable: false };
   }
@@ -252,12 +276,12 @@ export function mapActionError(error: unknown, noun: "champion" | "decision" | "
     return { title: "Not comparable with the model in use", detail: "This model was not tested on the same test design as the model in use, so its final test set is different rows. Try a change on the run of the model in use to stay on the same design.", fixable: false };
   }
   if (code.startsWith("champion_") || code === "ref_target_not_found") {
-    return { title: "This model cannot be put in use yet", detail: message || "It needs a chosen best run with its final test, and its features must move with it.", fixable: false };
+    return { title: "This model cannot be put in use yet", detail: "It needs a chosen best run with its final test, and its features must move with it.", fixable: false };
   }
   if (code === "invalid_decision_transition" || (status === 409 && code !== "proposal_mismatch")) {
-    return { title: noun === "decision" ? "This decision was already resolved" : noun === "cancel" ? "This run can no longer be cancelled" : "The request was refused", detail: message || "Reload the list; it was probably resolved by someone else.", fixable: false };
+    return { title: noun === "decision" ? "This decision was already resolved" : noun === "cancel" ? "This run can no longer be cancelled" : "The request was refused", detail: "Reload the list; it was probably resolved by someone else.", fixable: false };
   }
-  if (status === 403 && !message) return { title: "You cannot do this here", detail: "Accepting, rejecting and changing the version in use needs a role that can write ML work in this workspace. The API enforces this; hiding the button is only a convenience.", fixable: false };
+  if (status === 403) return { title: "You cannot do this here", detail: "Accepting, rejecting and changing the version in use needs a role that can write ML work in this workspace. The API enforces this; hiding the button is only a convenience.", fixable: false };
   return mapWizardError(error);
 }
 

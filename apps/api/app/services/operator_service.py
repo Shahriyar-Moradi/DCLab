@@ -25,6 +25,7 @@ from app.domain.operator import (
     OperatorFailedJobPage,
     OperatorFailedJobRead,
     OperatorOverviewRead,
+    OperatorQuotaRead,
     OperatorWorkspacePage,
     OperatorWorkspaceRead,
     PlatformAiCapsRead,
@@ -33,6 +34,7 @@ from app.domain.operator import (
 )
 from app.services import system_health_service as health
 from app.services.cursor_codec import open_cursor, sign_cursor
+from app.services.usage_service import page_usage
 from app.services.workspace_entitlement_service import AI_ASSISTANT_BETA
 
 PAGE_DEFAULT, PAGE_MAX = 50, 200
@@ -163,12 +165,17 @@ def list_workspaces(db: Session, *, cursor: str | None = None, limit: int = PAGE
                                            .where(WorkspaceEntitlement.workspace_id.in_(ids),
                                                   WorkspaceEntitlement.entitlement_key == AI_ASSISTANT_BETA))
             if value is True}
+    usage = page_usage(db, ids, moment)
     items = [
         OperatorWorkspaceRead(
             id=row.id, name=row.name, kind=row.kind, created_at=row.created_at,
             member_count=members.get(row.id, 0), project_count=projects.get(row.id, 0),
             jobs_last_30d=jobs_30d.get(row.id, 0), failed_jobs_last_24h=failed_24h.get(row.id, 0),
-            active_last_7d=active.get(row.id, 0) > 0, assistant_beta=row.id in beta,
+            active_last_7d=active.get(row.id, 0) > 0, assistant_beta=row.id in beta, plan=usage[row.id][0],
+            usage=[OperatorQuotaRead(key=key, used=used, limit=limit,
+                                     percent=round(used * 100.0 / limit, 1) if limit else None,
+                                     over=limit is not None and used >= limit)
+                   for key, (used, limit) in usage[row.id][1].items()],
         )
         for row in page
     ]
